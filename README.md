@@ -81,13 +81,20 @@ This part of the app is used to generate a set of customised BRIRs and export to
 5. Select Headphone Type from options:
    - In-Ear Headphones
    - Over-Ear/On-Ear Headphones
-6. Select which files to include in the export
+6. Select Room Target from available options:
+   - Flat
+   - ASH Target
+   - Harman Target
+   - HATS Target
+   - Toole Target
+   - rtings Target
+7. Select which files to include in the export
    - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz
    - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 Channels, 24 bit depth, 44.1Khz
    - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 Channels, 24 bit depth, 44.1Khz and 48Khz
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs
-7. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
-8. Click the process BRIRs button to export the customised BRIRs to above directory
+8. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
+9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
 
 # License
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
