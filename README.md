@@ -29,7 +29,7 @@ Python libraries:
   ```
 Data files:
 
-HRIR, BRIR and filter datasets are required to run the app. Due to large file sizes the data files are stored using google drive.\
+HRIR, BRIR and filter datasets are required in the data folder to run the app. Due to large file sizes the data files are stored using google drive.\
 [Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
 
 Optional:
