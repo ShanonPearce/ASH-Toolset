@@ -50,9 +50,44 @@ Run the ash_toolset.py using python to launch the GUI
 python C:\sample-location\ASH-Toolset\ash_toolset.py
 ```
 
-### Customisation
+### Generate HpCFs for headphone correction
+This part of the app is used to generate a set of HpCFs for a selected headphone and export to files which can then be loaded into audio processing software to apply headphone correction.
+1. Select a headphone brand to filter down on the headphone list
+2. Select a specific headphone
+3. One or more samples will be available for the specified headphone. Select one to preview the filter response. Note that all samples will be exported for the selected headphone.
+4. Select which files to include in the export
+   - FIR Filters: Minimum phase WAV FIRs for convolution. 1 Channel, 24 bit depth, 44.1Khz
+   - stereo FIR Filters: Minimum phase WAV FIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz
+   - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with FIR filters
+   - Graphic EQ Filters: Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
+   - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
+   - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
+5. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
+6. Click the process HpCFs button to export the selected HpCFs to above directory
 
-
+### Generate BRIRs for binaural room simulation
+This part of the app is used to generate a set of customised BRIRs and export to WAV files which can then be loaded into audio processing software to apply binaural room simulation.
+1. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
+2. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in more late reflections and larger perceived space.
+3. Select Dummy Head / Head & Torso Simulator from available options:
+   - KU_100
+   - KEMAR_Large
+   - KEMAR_Normal
+   - B&K_4128
+   - DADEC
+   - HMSII.2
+   - KEMAR
+   - B&K_4128C
+5. Select Headphone Type from options:
+   - In-Ear Headphones
+   - Over-Ear/On-Ear Headphones
+6. Select which files to include in the export
+   - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz
+   - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 Channels, 24 bit depth, 44.1Khz
+   - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 Channels, 24 bit depth, 44.1Khz and 48Khz
+   - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs
+7. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
+8. Click the process BRIRs button to export the customised BRIRs to above directory
 
 # License
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
