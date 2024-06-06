@@ -816,7 +816,7 @@ def main():
         default_font = dpg.add_font(in_file_path, 14)    
     
     
-    dpg.create_viewport(title='Audio Spatialisation for Headphones', width=1650, height=900, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
+    dpg.create_viewport(title='Audio Spatialisation for Headphones Toolset', width=1650, height=900, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
     
     with dpg.window(tag="Primary Window"):
         
