@@ -53,7 +53,8 @@ def main():
     try:
         key = wrg.OpenKey(wrg.HKEY_LOCAL_MACHINE, "Software\\EqualizerAPO")
         value =  wrg.QueryValueEx(key, "InstallPath")[0]
-        e_apo_path=value
+        e_apo_path= pjoin(value, 'config')
+        
     except:
         e_apo_path = None
     #try reading from settings.ini to get path
@@ -68,8 +69,8 @@ def main():
             primary_path = e_apo_path
             primary_ash_path = pjoin(e_apo_path, CN.PROJECT_FOLDER)
         else:
-            primary_path = 'C:\Program Files\EqualizerAPO'
-            primary_ash_path = 'C:\Program Files\EqualizerAPO\ASH-Custom-Set'
+            primary_path = 'C:\Program Files\EqualizerAPO\config'
+            primary_ash_path = 'C:\Program Files\EqualizerAPO\config\ASH-Custom-Set'
     
     #
     # populate room target dictionary for plotting

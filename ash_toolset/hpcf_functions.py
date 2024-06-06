@@ -1211,9 +1211,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
         #hesuvi path
         if 'EqualizerAPO' in primary_path:
-            hesuvi_path = pjoin(primary_path, 'config','HeSuVi')   
+            hesuvi_path = pjoin(primary_path,'HeSuVi')   
         else:
-            hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'config','HeSuVi')   
+            hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')   
         
         #Directories
         brand_folder = hpcf_dict.get('brand')

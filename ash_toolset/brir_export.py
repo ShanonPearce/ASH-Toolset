@@ -47,9 +47,9 @@ def export_brir(brir_arr, hrtf_type, target_rt60, brir_name, primary_path, brir_
     
         #hesuvi path
         if 'EqualizerAPO' in primary_path:
-            hesuvi_path = pjoin(primary_path, 'config','HeSuVi')   
+            hesuvi_path = pjoin(primary_path,'HeSuVi')#pjoin(primary_path, 'config','HeSuVi')      
         else:
-            hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'config','HeSuVi')   
+            hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')  #pjoin(primary_path, CN.PROJECT_FOLDER,'config','HeSuVi')  
     
         #larger reverb times will need additional samples
         if target_rt60 <=800:
