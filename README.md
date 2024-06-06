@@ -67,6 +67,8 @@ This part of the app is used to generate a set of HpCFs for a selected headphone
 5. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
 6. Click the process HpCFs button to export the selected HpCFs to above directory
 
+![hpcf steps](docs/images/hpcf_steps.png)
+
 ### Generate BRIRs for binaural room simulation
 This part of the app is used to generate a set of customised BRIRs and export to WAV files which can then be loaded into audio processing software to apply binaural room simulation.
 1. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
@@ -97,6 +99,8 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs
 8. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
 9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
+
+![brir steps](docs/images/brir_steps.png)
 
 # License
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
