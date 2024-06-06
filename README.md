@@ -1,6 +1,8 @@
 # ASH Toolset
 The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones
 
+![screenshot](docs/images/ash_toolset_sample.png)
+
 ## Features  
 - **Headphone Correction** — Generate Headphone correction filters (HpCFs) in WAV format for IR convolution or for graphic equalisers
 - **Binaural Room Simulation** —  Generate customised Binaural Room Impulse Responses (BRIRs) in WAV format for IR convolution
