@@ -64,7 +64,7 @@ This part of the app is used to generate a set of HpCFs for a selected headphone
    - Graphic EQ Filters: Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
    - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
    - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
-5. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
+5. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
 6. Click the process HpCFs button to export the selected HpCFs to above directory
 
 ![hpcf steps](docs/images/hpcf_steps.png)
@@ -97,7 +97,7 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 Channels, 24 bit depth, 44.1Khz
    - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 Channels, 24 bit depth, 44.1Khz and 48Khz
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs
-8. Select a location to export files to. Files will be saved under ASH-Custom-Set sub directory
+8. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
 9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
 
 ![brir steps](docs/images/brir_steps.png)
