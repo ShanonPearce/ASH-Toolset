@@ -44,6 +44,8 @@ Optional:
 1. Clone the repo
 2. Download the data folder from google drive
 3. Extract data folder to ASH-Toolset root folder
+4. (optional) If using Equalizer APO for the first time, download [Equalizer APO](http://sourceforge.net/projects/equalizerapo) and follow the Equalizer APO [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial). 
+
 
 ## Usage
 
@@ -101,6 +103,16 @@ This part of the app is used to generate a set of customised BRIRs and export to
 9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
 
 ![brir steps](docs/images/brir_steps.png)
+
+### Apply HpCFs and BRIRs in Equalizer APO
+
+1. Set your sound device's default format to 44100Hz under the properties of your playback device. In Windows 10 the playback device settings can be found in Settings -> System -> Sound -> Sound control panel.
+2. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\HpCF-Convolution` folder and select the desired configuration file for headphone correction.
+3. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\BRIR-Convolution` folder and select the desired configuration file for binaural room simulation.
+4. To swap out a HpCF or BRIR, simply load a different configuration file.
+
+![Equalizer APO example](docs/images/e_apo_example.png)
+
 
 # License
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
