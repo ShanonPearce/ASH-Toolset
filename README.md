@@ -9,6 +9,23 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 - **Equalizer APO Compatibility** —  Generates configuration files to load HpCFs and BRIRs in Equalizer APO, an audio processing object for windows.
 - **HeSuVi Compatibility** —  Generates BRIRs and HpCFs in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
 
+## Background
+
+### Binaural Room Impulse Responses
+Binaural room impulse responses (BRIRs) are measurements that capture the spectral filtering properties of the head and ears, as well as the loudspeakers and any room reverberation present. Measurements are typically made in reverberant rooms using dummy heads that are rotated above their torso to capture multiple head orientations for a number of source locations within the room. One key application of BRIRs is the synthesis of spatial audio over headphones. Convolution of an audio signal with a BRIR converts the audio to that which would be heard by the listener if it had been played at the source location. This process can be repeated for all channels in the audio signal and their respective source locations in the room to create spatial surround sound on headphones.
+
+The ASH Toolset can be used to generate BRIRs that can be customised to achieve a desired acoustic simulation over headphones. Distance, reverberation time, listener, headphone type and room target response can be customised to the user's preference.
+
+### Headphone Correction Filters
+
+A significant source of spectral colouration impacting the quality of binaural simulations is the headphones used for binaural reproduction. A common design goal for headphone calibration is the diffuse-field target which minimises spectral colouration of stereo signals on headphones. Binaural measurements that have been diffuse-field calibrated will be compatible with these types of headphones. As the binaural measurements produced by the toolset are diffuse-field calibrated (prior to applying room targets), headphones should also be diffuse-field equalised to ensure compatibility in terms of timbral quality. 
+
+Although diffuse-field calibrated headphones are common, differences in frequency responses across headphones are considerably large. Individual headphone equalisation is therefore recommended to compensate for the unique undesired spectral colouration introduced by the headphones. 
+
+The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and compensate for undesired spectral colouration introduced by the headphones.
+
+
+
 ## Getting Started
 
 ASH Toolset is a python app built with Python, Numpy, Scipy, & DearPyGui.\
