@@ -114,7 +114,7 @@ def main():
     sample_default = 'Sample A' #sample_list_default[0]
     
     
-    default_hpcf_settings = {'headphone': headphone_default, 'hpcf_export': 1, 'fir_export': 1, 'fir_stereo_export': 1, 'geq_export': 1, 'geq_31_export': 1, 'geq_32_export': 0, 'hesuvi_export': 1, 'eapo_export': 1}
+    default_hpcf_settings = {'headphone': headphone_default, 'hpcf_export': 1, 'fir_export': 1, 'fir_stereo_export': 1, 'geq_export': 1, 'geq_31_export': 1, 'geq_103_export': 0, 'hesuvi_export': 1, 'eapo_export': 1}
     
     hrtf_default = 1
     direct_gain_default = 4.0
@@ -354,14 +354,14 @@ def main():
         fir_stereo_export = current_dict.get('fir_stereo_export')
         geq_export = current_dict.get('geq_export')
         geq_31_export = current_dict.get('geq_31_export')
-        geq_32_export = current_dict.get('geq_32_export')
+        geq_103_export = current_dict.get('geq_103_export')
         hesuvi_export = current_dict.get('hesuvi_export')
         eapo_export = current_dict.get('eapo_export')
         hpcf_export = current_dict.get('hpcf_export')
         
         if hpcf_export == 1:
             hpcf_functions.hpcf_to_file_bulk(conn, primary_path=output_path, headphone=headphone, fir_export = fir_export, fir_stereo_export = fir_stereo_export, geq_export = geq_export, 
-                                             geq_31_export = geq_31_export, geq_32_export = geq_32_export, hesuvi_export = hesuvi_export, eapo_export=eapo_export, gui_logger=logz, report_progress=1)
+                                             geq_31_export = geq_31_export, geq_103_export = geq_103_export, hesuvi_export = hesuvi_export, eapo_export=eapo_export, gui_logger=logz, report_progress=1)
    
     #
     ## GUI Functions - BRIRs

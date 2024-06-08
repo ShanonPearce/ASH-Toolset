@@ -83,7 +83,7 @@ def create_hpcf_row(conn, hpcf_data, brand, headphone, sample, gui_logger=None):
     """
     Create a new hpcf row
     :param conn: Connection object
-    :param hpcf_data: tuple containing brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_32,created_on
+    :param hpcf_data: tuple containing brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on
     :param brand: string, headphone brand
     :param headphone: string, name of headphone
     :param sample: string, name of sample
@@ -92,7 +92,7 @@ def create_hpcf_row(conn, hpcf_data, brand, headphone, sample, gui_logger=None):
     """
     
     try:
-        sql = ''' INSERT INTO hpcf_table(brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_32,created_on)
+        sql = ''' INSERT INTO hpcf_table(brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on)
                   VALUES(?,?,?,?,?,?,?,?,?) '''
         cur = conn.cursor()
         cur.execute(sql, hpcf_data)
@@ -213,7 +213,7 @@ def get_hpcf_samples(conn, headphone):
     """  
     try:
         headphone_tuple = (headphone,)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_32,created_on from hpcf_table where headphone =?'
+        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =?'
         cur = conn.cursor()
         cur.execute(sql, headphone_tuple)
         rows = cur.fetchall()
@@ -236,7 +236,7 @@ def get_hpcf_samples_dicts(conn, headphone):
         
     try:
         headphone_tuple = (headphone,)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_32,created_on from hpcf_table where headphone =?'
+        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =?'
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(sql, headphone_tuple)
@@ -258,7 +258,7 @@ def get_hpcf_sample(conn, hpcf_id):
     """ 
     try:
         headphone_tuple = (hpcf_id,)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_32,created_on from hpcf_table where id =?'
+        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where id =?'
         cur = conn.cursor()
         cur.execute(sql, headphone_tuple)
         rows = cur.fetchall()
@@ -280,7 +280,7 @@ def get_hpcf_headphone_sample_dict(conn, headphone, sample):
     """
     try:
         headphone_tuple = (headphone, sample)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_32,created_on from hpcf_table where headphone =? AND sample =?'
+        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =? AND sample =?'
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(sql, headphone_tuple)
@@ -313,7 +313,7 @@ def replace_hpcf_filter_data(conn, hpcf_data, headphone, sample, gui_logger=None
         headphone_data_l.append(sample)
         headphone_data_t = tuple(headphone_data_l)
         
-        sql = 'UPDATE hpcf_table SET fir = ?, graphic_eq = ?, graphic_eq_31 = ?, graphic_eq_32 = ?, created_on = ? WHERE headphone = ? AND sample = ?'
+        sql = 'UPDATE hpcf_table SET fir = ?, graphic_eq = ?, graphic_eq_31 = ?, graphic_eq_103 = ?, created_on = ? WHERE headphone = ? AND sample = ?'
         cur = conn.cursor()
         cur.execute(sql, headphone_data_t)
         #conn.commit()
@@ -749,6 +749,8 @@ def hpcf_retrieve_set_geq_freqs(f_set=1):
             csv_fname = pjoin(CN.DATA_DIR_RAW, 'wavelet_geq_freqs.csv')
         elif f_set == 2:
             csv_fname = pjoin(CN.DATA_DIR_RAW, '31_band_geq_freqs.csv')
+        elif f_set == 3:
+            csv_fname = pjoin(CN.DATA_DIR_RAW, 'hesuvi_geq_freqs.csv')    
         else:
             csv_fname = pjoin(CN.DATA_DIR_RAW, 'wavelet_geq_freqs.csv')
         geq_set_f = []
@@ -1084,6 +1086,8 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
         geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
         #retrieve geq frequency list as an array - 31 bands
         geq_set_f_31 = hpcf_retrieve_set_geq_freqs(f_set=2)
+        #retrieve geq frequency list as an array - 103 bands
+        geq_set_f_103 = hpcf_retrieve_set_geq_freqs(f_set=3)
     
         now_datetime = datetime.now()
         # # create a database connection
@@ -1097,8 +1101,8 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
                                     sample_id INT,
                                     fir text,
                                     graphic_eq text,
-                                    graphic_eq_32 text,
                                     graphic_eq_31 text,
+                                    graphic_eq_103 text,
                                     created_on text
                                 );"""
     
@@ -1148,9 +1152,12 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
                     #get graphic eq filter 31 band
                     geq_31_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
                     
-                    #get graphic eq 32 band filter
-                    geq_32_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=1,sample_rate=samplerate)
+                    #obsolete
+                    ##get graphic eq 32 band filter
+                    #geq_32_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=1,sample_rate=samplerate)
                     
+                    #get graphic eq 103 band filter
+                    geq_103_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
                     
                     
 
@@ -1159,7 +1166,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
      
                     #create hpcf tuple for this hpcf
                     # tasks
-                    hpcf_to_insert = (brand_str, headphone_str, sample_str, sample_id, fir_json_str, geq_str, geq_31_str, geq_32_str, created_on)
+                    hpcf_to_insert = (brand_str, headphone_str, sample_str, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
                     
                     # create entry
                     create_hpcf_row(conn, hpcf_to_insert, brand_str, headphone_str, sample_str, gui_logger=gui_logger)
@@ -1190,17 +1197,17 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
 
 
 
-def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_32_export = 0, hesuvi_export = 1, geq_json = 1, eapo_export=1, gui_logger=None):
+def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, geq_json = 1, eapo_export=1, gui_logger=None):
     """
     Function exports filter to a wav or txt file
-    To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 32 Band
+    To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 103 Band
     :param hpcf_dict: dictionary of hpcf data from database
     :param primary_path: string, output directory
     :param fir_export: int, 1 = export mono fir files
     :param fir_stereo_export: int, 1 = export stereo fir files
     :param geq_export: int, 1 = export graphic eq (full band) files
     :param geq_31_export: int, 1 = export graphic eq (31 band) files
-    :param geq_32_export: int, 1 = export graphic eq (32 band) files
+    :param geq_103_export: int, 1 = export graphic eq (103 band) files
     :param hesuvi_export: int, 1 = export hesuvi files
     :param eapo_export: int, 1 = export equalizer apo config files for hpcf fir convolution
     :param geq_json: int, 1 = geq is a JSON string to be converted, 0 = dont convert geq string
@@ -1226,7 +1233,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         out_file_dir_st_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs_Stereo',brand_folder)
         out_file_dir_geq = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ',brand_folder)
         out_file_dir_geq_31 = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ_31_band',brand_folder)
-        out_file_dir_geq_32 = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ_32_band',brand_folder)
+        out_file_dir_geq_103 = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'graphic_eq_103_band',brand_folder)
         
         #full hpcf name
         hpcf_name = headphone + ' ' + sample
@@ -1356,20 +1363,20 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
                 gui_logger.log_info(log_string)
         
         #
-        #save Graphic EQ 32 band to txt file
+        #save Graphic EQ 103 band to txt file
         #
-        hpcf_geq_32 = hpcf_dict.get('graphic_eq_32')
+        hpcf_geq_103 = hpcf_dict.get('graphic_eq_103')
 
-        out_file_path = pjoin(out_file_dir_geq_32, hpcf_name_geq)
+        out_file_path = pjoin(out_file_dir_geq_103, hpcf_name_geq)
         
-        if geq_32_export == 1:
+        if geq_103_export == 1:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
         
             #if geq string type is JSON string, convert to GEQ string
             if geq_json == 1:
-                dictionary = json.loads(hpcf_geq_32)
+                dictionary = json.loads(hpcf_geq_103)
                 # split dictionary into keys and values
                 keys = list(dictionary.keys())
                 values = list(dictionary.values())
@@ -1380,12 +1387,12 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
                         geq_string =geq_string + keys[m] + ' ' + str(values[m])
                         if m < list_length-1:
                             geq_string = geq_string + '; '
-                hpcf_geq_32 = geq_string
+                hpcf_geq_103 = geq_string
             
             #save as a file    
             with open(out_file_path, 'w') as f:
-                f.write(hpcf_geq_32)
-            log_string = 'HpCF (Graphic EQ 32 band): '+ hpcf_name +' saved to: ' + str(out_file_dir_geq_32)
+                f.write(hpcf_geq_103)
+            log_string = 'HpCF (Graphic EQ 103 band): '+ hpcf_name +' saved to: ' + str(out_file_dir_geq_103)
             if CN.LOG_INFO == 1:
                 logging.info(log_string)
             if CN.LOG_GUI == 1 and gui_logger != None:
@@ -1401,8 +1408,23 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
             
+            #if geq string type is JSON string, convert to GEQ string
+            if geq_json == 1:
+                dictionary = json.loads(hpcf_geq_103)
+                # split dictionary into keys and values
+                keys = list(dictionary.keys())
+                values = list(dictionary.values())
+                list_length = len(values)
+                #convert to a string
+                geq_string = 'GraphicEQ: '
+                for m in range(list_length):
+                        geq_string =geq_string + str(int(float(keys[m]))) + ' ' + str(values[m])
+                        if m < list_length-1:
+                            geq_string = geq_string + '; '
+                hpcf_geq_103 = geq_string
+            
             with open(out_file_path, 'w') as f:
-                f.write(hpcf_geq)
+                f.write(hpcf_geq_103)#f.write(hpcf_geq)
             log_string = 'HpCF (HeSuVi GEQ): ' + hpcf_name + ' saved to: ' + str(out_file_folder)
             if CN.LOG_INFO == 1:
                 logging.info(log_string)
@@ -1418,7 +1440,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_32_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=0, gui_logger=None):
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=0, gui_logger=None):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1427,7 +1449,7 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_st
     :param fir_stereo_export: int, 1 = export stereo fir files
     :param geq_export: int, 1 = export graphic eq (full band) files
     :param geq_31_export: int, 1 = export graphic eq (31 band) files
-    :param geq_32_export: int, 1 = export graphic eq (32 band) files
+    :param geq_103_export: int, 1 = export graphic eq (103 band) files
     :param hesuvi_export: int, 1 = export hesuvi files
     :param eapo_export: int, 1 = export equalizer apo config files for hpcf fir convolution
     :param report_progress: int, 1 = report progress to dearpygui progress bar
@@ -1454,7 +1476,7 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_st
             #for s in sample_list:
                 sample_dict = dict(s)
                 hpcf_to_file(sample_dict, primary_path=primary_path, fir_export=fir_export, fir_stereo_export=fir_stereo_export, geq_export=geq_export, 
-                             geq_31_export=geq_31_export, geq_32_export=geq_32_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger)
+                             geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger)
 
                 if report_progress == 1:
                     progress = ((index+1)/num_samples)
@@ -1483,6 +1505,8 @@ def hpcf_generate_averages(conn, gui_logger=None):
         geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
         #retrieve geq frequency list as an array - 31 bands
         geq_set_f_31 = hpcf_retrieve_set_geq_freqs(f_set=2)
+        #retrieve geq frequency list as an array - 103 bands
+        geq_set_f_103 = hpcf_retrieve_set_geq_freqs(f_set=3)
         
         now_datetime = datetime.now()
         
@@ -1589,15 +1613,18 @@ def hpcf_generate_averages(conn, gui_logger=None):
                 #get graphic eq filter 31 band
                 geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_31)
                 
-                #get graphic eq 32 band filter
-                geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=1,sample_rate=CN.SAMP_FREQ)
+                ##get graphic eq 32 band filter
+                #geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=1,sample_rate=CN.SAMP_FREQ)
+                
+                #get graphic eq filter 103 band
+                geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_103)
 
                 #last modified text
                 created_on = now_datetime
 
                 #case for updating existing average
                 if update_average == 1:
-                    hpcf_data = (fir_json_str,geq_str,geq_31_str,geq_32_str,created_on)
+                    hpcf_data = (fir_json_str,geq_str,geq_31_str,geq_103_str,created_on)
                     replace_hpcf_filter_data(conn,hpcf_data,h,'Average', gui_logger=gui_logger)
                 
                 
@@ -1606,7 +1633,7 @@ def hpcf_generate_averages(conn, gui_logger=None):
                     #get brand
                     brand = get_brand(conn, h)
                     #create tuple
-                    hpcf_to_insert = (brand, h, 'Average', 0, fir_json_str, geq_str, geq_31_str, geq_32_str, created_on)
+                    hpcf_to_insert = (brand, h, 'Average', 0, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
                     
                     # create entry
                     create_hpcf_row(conn, hpcf_to_insert, brand, h, 'Average', gui_logger=gui_logger)
@@ -1667,13 +1694,7 @@ def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_
             plot_tile = hpcf_name + ' Grahpic EQ frequency response'
             hf.plot_geq(geq_dict=geq_dictionary, title_name=plot_tile, y_lim_adjust = 1, save_plot=save_to_file, plot_path=out_file_dir_plot)
             
-            
-            #get GEQ 32
-            hpcf_geq_32 = hpcf_dict.get('graphic_eq_32')
-            geq_dictionary = json.loads(hpcf_geq_32)
-            #run plot
-            plot_tile = hpcf_name + ' Grahpic EQ 32 band frequency response'
-            hf.plot_geq(geq_dict=geq_dictionary, title_name=plot_tile, y_lim_adjust = 1, save_plot=save_to_file, plot_path=out_file_dir_plot)
+  
         
        
     except Exception as ex:
@@ -1764,6 +1785,8 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
         #retrieve geq frequency list as an array - 31 bands
         geq_set_f_31 = hpcf_retrieve_set_geq_freqs(f_set=2)
+        #retrieve geq frequency list as an array - 103 bands
+        geq_set_f_103 = hpcf_retrieve_set_geq_freqs(f_set=3)
         
         #create array for new x axis for interpolation
         freq_max = int(CN.SAMP_FREQ/2)
@@ -1985,9 +2008,11 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                 #get graphic eq filter 31 band
                 geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
                 
-                #get graphic eq 32 band filter
-                geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=1,sample_rate=samplerate)
-                    
+                ##get graphic eq 32 band filter
+                #geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=1,sample_rate=samplerate)
+                   
+                #get graphic eq filter 31 band
+                geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
 
                 #calculate sample id
                 sample_id = largest_id+1
@@ -1998,7 +2023,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
  
                 #create hpcf tuple for this hpcf
                 # tasks
-                hpcf_to_insert = (brand, headphone, sample_name, sample_id, fir_json_str, geq_str, geq_31_str, geq_32_str, created_on)
+                hpcf_to_insert = (brand, headphone, sample_name, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
                 
                 # create entry
                 create_hpcf_row(conn, hpcf_to_insert, brand, headphone, sample_name)
