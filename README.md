@@ -107,12 +107,24 @@ This part of the app is used to generate a set of customised BRIRs and export to
 ### Apply HpCFs and BRIRs in Equalizer APO
 
 1. Set your sound device's default format to 44100Hz under the properties of your playback device. In Windows 10 the playback device settings can be found in Settings -> System -> Sound -> Sound control panel.
-2. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\HpCF-Convolution` folder and select the desired configuration file for headphone correction.
-3. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\BRIR-Convolution` folder and select the desired configuration file for binaural room simulation.
-4. To swap out a HpCF or BRIR, simply load a different configuration file.
+2. HpCFs and BRIRs will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. Move the ASH-Custom-Set folder to this location if it was saved elsewhere.
+3. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\HpCF-Convolution` folder and select the desired configuration file for headphone correction.
+4. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\BRIR-Convolution` folder and select the desired configuration file for binaural room simulation.
+5. To swap out a HpCF or BRIR, simply load a different configuration file.
 
 ![Equalizer APO example](docs/images/e_apo_example.png)
 
+### Apply HpCFs and BRIRs in HeSuVi
+
+As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be applied using HeSuVi.
+
+1. If using HeSuVi for the first time, download [HeSuVi](https://sourceforge.net/projects/hesuvi/) and follow the installation and usage steps outlined in the [HeSuVi Wiki](https://sourceforge.net/p/hesuvi/wiki/Help/).
+2. Open or restart HeSuVi
+3. The BRIRs can be selected in the `Virtualisation` tab. The rooms can be found under the `Common HRIRs` section at the top of the list.
+4. The HpCFs can be selected in the `Equalizer` tab. The HpCFs can be found under `_HpCFs` at the bottom of the list.
+
+![HeSuVi HPCF example](docs/images/hesuvi_hpcf_example.png)
+![HeSuVi BRIR example](docs/images/hesuvi_brir_example.png)
 
 # License
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
