@@ -113,7 +113,7 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - rtings Target
 7. Select which files to include in the export
    - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz
-   - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 Channels, 24 bit depth, 44.1Khz
+   - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 Channels (LL LR RL RR), 24 bit depth, 44.1Khz
    - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 Channels, 24 bit depth, 44.1Khz and 48Khz
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs
 8. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
@@ -142,6 +142,31 @@ As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be a
 
 ![HeSuVi HPCF example](docs/images/hesuvi_hpcf_example.png)
 ![HeSuVi BRIR example](docs/images/hesuvi_brir_example.png)
+
+### File naming and Structure
+Outputs are saved within the ASH-Custom-Set child folder under the selected directory. This will be in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. HeSuVi files however will be saved within the HeSuVi folder (e.g. C:\Program Files\EqualizerAPO\config\HeSuVi) if the selected output directory is the Equalizer APO config directory.
+
+**BRIRs**
+- BRIRs are saved within the ASH-Custom-Set\BRIRs folder.
+- A folder is created for each set of BRIRs and is named as per the selected parameters.
+    - The naming convention for the folder is "(Listener)_(Reverb_Time)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)".
+- A WAV file is created for a range of source directions around the listener. Each WAV file corresponds to a unique direction.
+    - The naming convention for the BRIR WAV files is "BRIR_E(Elevation)_A(Azimuth).wav".
+    - Positive elevation angles correspond to points above the listener while negative angles correspond to points below the listener. An elevation of 0 corresponds to a point at the same level as the listener.
+    - Positive azimuth angles correspond to points to the right of the listener while negative angles correspond to points to the left of the listener. An azimuth of -90 corresponds to a point directly to the left of the listener while an azimuth of 90 corresponds to a point directly to the right of the listener.
+- A true stereo WAV file is also located in each folder with naming "BRIR_True_Stereo.wav"
+
+**HpCFs**
+- HpCFs are saved within the ASH-Custom-Set\HpCFs folder
+- A folder is created for each filter type and for each headphone brand that has an exported filter
+- The filters are named as per the headphone name
+
+**Equalizer APO Configurations**
+- Equalizer APO configurations are saved within the ASH-Custom-Set\E-APO-Configs folder
+- Folders follow the same naming as the BRIRs and HpCFs
+- A set of BRIR convolution configuration files are created for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
+- A set of HpCF convolution configuration files are created for each HpCF that was exported
+
 
 # License
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
