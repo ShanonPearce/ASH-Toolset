@@ -4,7 +4,7 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 ![screenshot](docs/images/ash_toolset_sample.png)
 
 ## Features  
-- **Headphone Correction** — Generate Headphone correction filters (HpCFs) in WAV format for IR convolution or for graphic equalisers
+- **Headphone Correction** — Generate Headphone correction filters (HpCFs) in WAV format for IR convolution or configurations for graphic equalisers
 - **Binaural Room Simulation** —  Generate customised Binaural Room Impulse Responses (BRIRs) in WAV format for IR convolution
 - **Equalizer APO Compatibility** —  Generates configuration files to load HpCFs and BRIRs in Equalizer APO, an audio processing object for windows.
 - **HeSuVi Compatibility** —  Generates BRIRs and HpCFs in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
