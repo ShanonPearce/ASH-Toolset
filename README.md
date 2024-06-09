@@ -29,7 +29,7 @@ The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for
 ## Getting Started
 
 ASH Toolset is a python app built with Python, Numpy, Scipy, & DearPyGui.\
-Developed on Python 3.11.\
+Developed on Python 3.11.7.\
 Tested on Windows 10 and Windows 11.
 
 ### Prerequisites
