@@ -1,15 +1,24 @@
+### Table of Contents
+1. [Features](#Features)
+2. [Background](#Background)
+3. [Getting Started](#Getting-Started)
+4. [Usage](#Usage)
+5. [License](#License)
+6. [Contact](#Contact)
+7. [Acknowledgments](#Acknowledgments)
+
 # ASH Toolset
 The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones
 
 ![screenshot](docs/images/ash_toolset_sample.png)
 
-## Features  
+## Features <a name="Features"></a> 
 - **Headphone Correction** — Generate Headphone correction filters (HpCFs) in WAV format for IR convolution or configurations for graphic equalisers
 - **Binaural Room Simulation** —  Generate customised Binaural Room Impulse Responses (BRIRs) in WAV format for IR convolution
 - **Equalizer APO Compatibility** —  Generates configuration files to load HpCFs and BRIRs in Equalizer APO, an audio processing object for windows.
 - **HeSuVi Compatibility** —  Generates BRIRs and HpCFs in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
 
-## Background
+## Background <a name="Background"></a> 
 
 ### Binaural Room Impulse Responses
 Binaural room impulse responses (BRIRs) are measurements that capture the spectral filtering properties of the head and ears, as well as the loudspeakers and any room reverberation present. Measurements are typically made in reverberant rooms using dummy heads that are rotated above their torso to capture multiple head orientations for a number of source locations within the room. One key application of BRIRs is the synthesis of spatial audio over headphones. Convolution of an audio signal with a BRIR converts the audio to that which would be heard by the listener if it had been played at the source location. This process can be repeated for all channels in the audio signal and their respective source locations in the room to create spatial surround sound on headphones.
@@ -26,7 +35,7 @@ The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for
 
 
 
-## Getting Started
+## Getting Started <a name="Getting-Started"></a> 
 
 ASH Toolset is a python app built with Python, Numpy, Scipy, & DearPyGui.\
 Developed on Python 3.11.7.\
@@ -65,7 +74,7 @@ Optional:
 4. (optional) If using Equalizer APO for the first time, download [Equalizer APO](http://sourceforge.net/projects/equalizerapo) and follow the Equalizer APO [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial). 
 
 
-## Usage
+## Usage <a name="Usage"></a> 
 
 Run the ash_toolset.py using python to launch the GUI
 ```sh
@@ -169,16 +178,16 @@ Outputs are saved within the ASH-Custom-Set child folder under the selected dire
 - A set of HpCF convolution configuration files are created for each HpCF that was exported
 
 
-# License
+## License <a name="License"></a> 
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
 
-## Contact
+## Contact <a name="Contact"></a> 
 
 Shanon Pearce - srpearce55@gmail.com
 
 Project Link: [https://github.com/ShanonPearce/ASH-Toolset](https://github.com/ShanonPearce/ASH-Toolset)
 
-## Acknowledgments
+## Acknowledgments <a name="Acknowledgments"></a> 
 
 ### Libraries
 * [DearPyGui](https://github.com/hoffstadt/DearPyGui/tree/master)
