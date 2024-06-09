@@ -1,3 +1,5 @@
+**A Windows distribution of this project is available here: [https://sourceforge.net/projects/ash-toolset/](https://sourceforge.net/projects/ash-toolset/)**
+
 ### Table of Contents
 1. [Features](#Features)
 2. [Background](#Background)
