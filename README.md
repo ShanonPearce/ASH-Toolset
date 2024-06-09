@@ -27,11 +27,11 @@ The ASH Toolset can be used to generate BRIRs that can be customised to achieve 
 
 ### Headphone Correction Filters
 
-A significant source of spectral colouration impacting the quality of binaural simulations is the headphones used for binaural reproduction. A common design goal for headphone calibration is the diffuse-field target which minimises spectral colouration of stereo signals on headphones. Binaural measurements that have been diffuse-field calibrated will be compatible with these types of headphones. As the binaural measurements produced by the toolset are diffuse-field calibrated (prior to applying room targets), headphones should also be diffuse-field equalised to ensure compatibility in terms of timbral quality. 
+A significant source of spectral colouration impacting the quality of binaural simulations is the headphones used for binaural reproduction. A common design goal for headphone calibration is the diffuse-field target which minimises spectral colouration of stereo signals on headphones. Binaural measurements that have been diffuse-field calibrated will be compatible with these types of headphones. As the binaural responses produced by the toolset are diffuse-field calibrated (prior to applying room targets), headphones should also be diffuse-field equalised to ensure compatibility in terms of timbral quality. 
 
-Although diffuse-field calibrated headphones are common, differences in frequency responses across headphones are considerably large. Individual headphone equalisation is therefore recommended to compensate for the unique undesired spectral colouration introduced by the headphones. 
+Although diffuse-field calibrated headphones are common, differences in frequency responses across headphones are considerably large. Individual headphone equalisation is therefore recommended to compensate for the unique and undesired spectral colouration introduced by the listener's headphones.  
 
-The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and compensate for undesired spectral colouration introduced by the headphones.
+The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
 
 
 
@@ -130,6 +130,10 @@ This part of the app is used to generate a set of customised BRIRs and export to
 9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
 
 ![brir steps](docs/images/brir_steps.png)
+
+### Using the BRIRs and HpCFs
+
+The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of BRIRs and a HpCF. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
 ### Apply HpCFs and BRIRs in Equalizer APO
 
