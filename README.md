@@ -141,6 +141,10 @@ This part of the app is used to generate a set of customised BRIRs and export to
 
 ![Equalizer APO example](docs/images/e_apo_example.png)
 
+**7.1 Surround Virtualisation**
+
+If your audio device does not support a 7.1 surround channel configuration, a virtual audio device such as [VB-Audio Virtual Cable](https://www.vb-audio.com/Cable/index.htm) or [Voicemeeter](https://www.vb-audio.com/Voicemeeter/index.htm) can be used for audio processing in place of your regular audio playback device. Equalizer APO can be installed on the virtual audio device which can be configured for 7.1 audio, and the output of the virtual audio device can be sent to your regular audio playback device.
+
 ### Apply HpCFs and BRIRs in HeSuVi
 
 As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be applied using HeSuVi.
@@ -152,6 +156,8 @@ As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be a
 
 ![HeSuVi HPCF example](docs/images/hesuvi_hpcf_example.png)
 ![HeSuVi BRIR example](docs/images/hesuvi_brir_example.png)
+
+
 
 ### File naming and Structure
 Outputs are saved within the ASH-Custom-Set child folder under the selected directory. This will be in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. HeSuVi files however will be saved within the HeSuVi folder (e.g. C:\Program Files\EqualizerAPO\config\HeSuVi) if the selected output directory is the Equalizer APO config directory.
