@@ -165,12 +165,12 @@ Outputs are saved within the ASH-Custom-Set child folder under the selected dire
 **BRIRs**
 - BRIRs are saved within the ASH-Custom-Set\BRIRs folder.
 - A folder is created for each set of BRIRs and is named as per the selected parameters.
-    - The naming convention for the folder is "(Listener)_(Reverb_Time)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)".
+    - The naming convention for the folder is `(Listener)_(Reverb_Time)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)`.
 - A WAV file is created for a range of source directions around the listener. Each WAV file corresponds to a unique direction.
-    - The naming convention for the BRIR WAV files is "BRIR_E(Elevation)_A(Azimuth).wav".
+    - The naming convention for the BRIR WAV files is `BRIR_E(Elevation)_A(Azimuth).wav`.
     - Positive elevation angles correspond to points above the listener while negative angles correspond to points below the listener. An elevation of 0 corresponds to a point at the same level as the listener.
     - Positive azimuth angles correspond to points to the right of the listener while negative angles correspond to points to the left of the listener. An azimuth of -90 corresponds to a point directly to the left of the listener while an azimuth of 90 corresponds to a point directly to the right of the listener.
-- A true stereo WAV file is also located in each folder with naming "BRIR_True_Stereo.wav"
+- A true stereo WAV file is also located in each folder with naming `BRIR_True_Stereo.wav`
 
 **HpCFs**
 - HpCFs are saved within the ASH-Custom-Set\HpCFs folder
