@@ -89,23 +89,25 @@ python C:\sample-location\ASH-Toolset\ash_toolset.py
 This part of the app is used to generate a set of HpCFs for a selected headphone and export to files which can then be loaded into audio processing software to apply headphone correction.
 1. Select a headphone brand to filter down on the headphone list
 2. Select a specific headphone
-3. One or more samples will be available for the specified headphone. Select one to preview the filter response. Note that all samples will be exported for the selected headphone.
+3. (optional) One or more samples will be available for the specified headphone. Select one to preview the filter response. Note that all samples will be exported for the selected headphone.
 4. Select which files to include in the export
-   - FIR Filters: Minimum phase WAV FIRs for convolution. 1 Channel, 24 bit depth, 44.1Khz
-   - stereo FIR Filters: Minimum phase WAV FIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz
-   - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with FIR filters
-   - Graphic EQ Filters: Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
+   - FIR Filters: Minimum phase WAV FIRs for convolution. 1 channel at specified sample rate and bit depth.
+   - stereo FIR Filters: Minimum phase WAV FIRs for convolution. 2 channels at specified sample rate and bit depth.
+   - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with HpCF FIR filters
+   - Graphic EQ Filters (127 bands): Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
    - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
    - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
 5. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
-6. Click the process HpCFs button to export the selected HpCFs to above directory
+6. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz.
+7. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+8. Click the process HpCFs button to export the selected HpCFs to above directory
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
 ### Generate BRIRs for binaural room simulation
 This part of the app is used to generate a set of customised BRIRs and export to WAV files which can then be loaded into audio processing software to apply binaural room simulation.
 1. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-2. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in more late reflections and larger perceived space.
+2. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in more late reflections and larger perceived room size.
 3. Select Dummy Head / Head & Torso Simulator from available options:
    - KU_100
    - KEMAR_Large
@@ -115,23 +117,25 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - HMSII.2
    - KEMAR
    - B&K_4128C
-5. Select Headphone Type from options:
+4. Select Headphone Type from options:
    - In-Ear Headphones
    - Over-Ear/On-Ear Headphones
-6. Select Room Target from available options:
+5. Select Room Target from below options.  Flat is recommended if using headphone correction from other sources such as AutoEq.
    - Flat
    - ASH Target
    - Harman Target
    - HATS Target
    - Toole Target
    - rtings Target
-7. Select which files to include in the export
-   - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz
-   - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 Channels (LL LR RL RR), 24 bit depth, 44.1Khz
-   - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 Channels, 24 bit depth, 44.1Khz and 48Khz
+6. Select which files to include in the export
+   - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 channels at specified sample rate and bit depth
+   - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 channels (LL LR RL RR) at specified sample rate and bit depth
+   - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs
-8. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
-9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
+7. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
+8. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz.
+9. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+10. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
 
 ![brir steps](docs/images/brir_steps.png)
 
@@ -141,7 +145,7 @@ The outputs can be used to create spatial surround sound on headphones by convol
 
 ### Apply HpCFs and BRIRs in Equalizer APO
 
-1. Set your sound device's default format to 44100Hz under the properties of your playback device. In Windows 10 the playback device settings can be found in Settings -> System -> Sound -> Sound control panel.
+1. In the Windows sound settings, set the default format of the output sound device to the sample rate of the generated HpCFs and BRIRs. In Windows 11 the playback device settings can be found in Settings -> System -> Sound -> (your output device) -> Properties. The sample rate of the sound device must match the sample rate of the filters.
 2. HpCFs and BRIRs will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. Move the ASH-Custom-Set folder to this location if it was saved elsewhere.
 3. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\HpCF-Convolution` folder and select the desired configuration file for headphone correction.
 4. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\BRIR-Convolution` folder and select the desired configuration file for binaural room simulation.
