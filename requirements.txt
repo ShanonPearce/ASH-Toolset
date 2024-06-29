@@ -10,3 +10,4 @@ pyfar==0.6.5
 scipy==1.11.4
 soundfile==0.12.1
 thefuzz==0.22.1
+resampy==0.4.3
