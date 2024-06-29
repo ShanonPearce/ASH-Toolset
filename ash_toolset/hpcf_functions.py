@@ -125,7 +125,7 @@ def get_all_headphone_list(conn):
         cur.close()
         if rows:
             rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return rows_list
+            return sorted(rows_list, key=str.casefold) #sort list before returning
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None     
@@ -143,11 +143,59 @@ def get_brand_list(conn):
         cur.close()
         if rows:
             rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return rows_list
+            return sorted(rows_list, key=str.casefold) #sort list before returning
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None     
     
+def search_brand_list(conn,search_str=None):
+    """
+    Function retrieves list of brands from database
+    """
+    try:
+        if search_str == None or not search_str:
+            return []
+        else:
+            brand_tuple = ('%'+search_str+'%',)
+            sql = "select DISTINCT brand from hpcf_table where brand like ?"
+            cur = conn.cursor()
+            cur.execute(sql, brand_tuple)
+ 
+            rows = cur.fetchall()
+            cur.close()
+            if rows:
+                rows_list = [i[0] for i in rows]#convert from list of tuples to list
+                return sorted(rows_list, key=str.casefold) #sort list before returning
+            
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info = e)
+        return None     
+ 
+def search_headphone_list(conn,search_str=None):
+    """
+    Function retrieves list of brands from database
+    """
+    try:
+
+        if search_str == None or not search_str:
+            return []
+        else:
+            brand_tuple = ('%'+search_str+'%',)
+            sql = "select DISTINCT headphone from hpcf_table where headphone like ?"
+            cur = conn.cursor()
+            cur.execute(sql, brand_tuple)
+ 
+            rows = cur.fetchall()
+            cur.close()
+            if rows:
+                rows_list = [i[0] for i in rows]#convert from list of tuples to list
+                return sorted(rows_list, key=str.casefold) #sort list before returning
+ 
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info = e)
+        return None     
+        
+       
 
 def get_headphone_list(conn, brand):
     """
@@ -162,7 +210,7 @@ def get_headphone_list(conn, brand):
         cur.close()
         if rows:
             rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return rows_list
+            return sorted(rows_list, key=str.casefold) #sort list before returning
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None     
@@ -294,6 +342,28 @@ def get_hpcf_headphone_sample_dict(conn, headphone, sample):
         logging.error("Error occurred", exc_info = e)
         return None      
     
+def get_hpcf_date_range_dicts(conn, date_str='2024-06-21'):
+    """
+    Function retrieves filter data for a specified headphone and sample from database 
+    Returns dict like object
+    use conn.row_factory = sqlite3.Row, but the results are not directly dictionaries. One has to add an additional "cast" to dict
+    """
+    try:
+        headphone_tuple = (date_str,)
+        sql = 'select brand,headphone,sample,created_on from hpcf_table where date(created_on) >= date(?)'
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(sql, headphone_tuple)
+        rows = cur.fetchall()
+        cur.close()
+        if rows:
+            return rows
+        else:
+            return None
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info = e)
+        return None      
+    
 
 def replace_hpcf_filter_data(conn, hpcf_data, headphone, sample, gui_logger=None):
     """
@@ -345,16 +415,18 @@ def delete_headphone(conn, headphone, gui_logger=None):
         conn.commit()
         cur.close()
         
+        #log results
+        log_string = 'HpCFs deleted from database for: ' + str(headphone)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None      
 
-    #log results
-    log_string = 'HpCFs deleted from database for: ' + str(headphone)
-    if CN.LOG_INFO == 1:
-        logging.info(log_string)
-    if CN.LOG_GUI == 1 and gui_logger != None:
-        gui_logger.log_info(log_string)
+    
 
   
 def delete_headphone_sample(conn, headphone, sample, gui_logger=None):
@@ -370,16 +442,18 @@ def delete_headphone_sample(conn, headphone, sample, gui_logger=None):
         conn.commit()
         cur.close()
         
+        #log results
+        log_string = 'HpCFs deleted from database for: ' + str(headphone) + ' ' + str(sample)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None   
 
-    #log results
-    log_string = 'HpCFs deleted from database for: ' + str(headphone) + ' ' + str(sample)
-    if CN.LOG_INFO == 1:
-        logging.info(log_string)
-    if CN.LOG_GUI == 1 and gui_logger != None:
-        gui_logger.log_info(log_string)
+    
 
 
 
@@ -817,7 +891,7 @@ def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=44100, geq_freq_arr = np.
 
     try:
         #set variables
-        geq_params = 32#32 params unless filter type is 1
+        geq_params = 32#32 params unless geq_mode is 2
         samp_freq=sample_rate
         sampling_ratio = samp_freq/(CN.N_FFT-1)
         
@@ -918,11 +992,13 @@ def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=44100, geq_freq_arr = np.
             # if first iteration, include 1 low freq and 1 high freq in the peaks
             if m == 0:
                 try:
+                    #update array used for peq
                     local_min_max_fb_p_sort_p[CN.PARAMS_PER_ITER-2,0]=30
                     local_min_max_fb_p_sort_p[CN.PARAMS_PER_ITER-2,1]=0.1
                     local_min_max_fb_p_sort_p[CN.PARAMS_PER_ITER-1,0]=31000
                     local_min_max_fb_p_sort_p[CN.PARAMS_PER_ITER-1,1]=0.1
                     
+                    #update array used for geq params from peaks
                     new_entries = np.array([30,0.1])
                     new_entries_mat = new_entries[np.newaxis, :]
                     local_min_max_fb_p_sort_p_g = np.append(local_min_max_fb_p_sort_p_g,new_entries_mat,0)
@@ -1197,7 +1273,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
 
 
 
-def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, geq_json = 1, eapo_export=1, gui_logger=None):
+def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, geq_json = 1, eapo_export=1, gui_logger=None, samp_freq=44100, bit_depth='PCM_24'):
     """
     Function exports filter to a wav or txt file
     To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 103 Band
@@ -1231,9 +1307,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         #output directories
         out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs',brand_folder)
         out_file_dir_st_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs_Stereo',brand_folder)
-        out_file_dir_geq = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ',brand_folder)
+        out_file_dir_geq = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ_127_band',brand_folder)
         out_file_dir_geq_31 = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ_31_band',brand_folder)
-        out_file_dir_geq_103 = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'graphic_eq_103_band',brand_folder)
+        out_file_dir_geq_103 = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Graphic_EQ_103_band',brand_folder)
         
         #full hpcf name
         hpcf_name = headphone + ' ' + sample
@@ -1249,14 +1325,21 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         hpcf_fir_list = json.loads(hpcf_fir_json) 
         hpcf_fir = np.array(hpcf_fir_list)
         
+        #resample if samp_freq is not 44100
+        if samp_freq != 44100:
+            hpcf_fir = hf.resample_signal(hpcf_fir, new_rate = samp_freq)
+        
         out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
         
         if fir_export == 1:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
+            
+            
 
-            hf.write2wav(out_file_path, hpcf_fir, prevent_clipping=1)
+            hf.write2wav(file_name=out_file_path, data=hpcf_fir, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
+            
             log_string = 'HpCF (WAV FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_wav)
             if CN.LOG_INFO == 1:
                 logging.info(log_string)
@@ -1273,8 +1356,8 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         #
         output_wav_s = np.empty((CN.HPCF_FIR_LENGTH, 2))
         
-        output_wav_s[:,0] = hpcf_fir[:]
-        output_wav_s[:,1] = hpcf_fir[:]
+        output_wav_s[0:CN.HPCF_FIR_LENGTH,0] = hpcf_fir[0:CN.HPCF_FIR_LENGTH]
+        output_wav_s[0:CN.HPCF_FIR_LENGTH,1] = hpcf_fir[0:CN.HPCF_FIR_LENGTH]
 
         out_file_path = pjoin(out_file_dir_st_wav, hpcf_name_wav)
         
@@ -1283,7 +1366,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
 
-            hf.write2wav(out_file_path, output_wav_s, prevent_clipping=1)
+            hf.write2wav(file_name=out_file_path, data=output_wav_s, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
+            
+            
             log_string = 'HpCF (WAV Stereo FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_st_wav)
             if CN.LOG_INFO == 1:
                 logging.info(log_string)
@@ -1440,7 +1525,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=0, gui_logger=None):
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=0, gui_logger=None, samp_freq=44100, bit_depth='PCM_24'):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1476,7 +1561,7 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_st
             #for s in sample_list:
                 sample_dict = dict(s)
                 hpcf_to_file(sample_dict, primary_path=primary_path, fir_export=fir_export, fir_stereo_export=fir_stereo_export, geq_export=geq_export, 
-                             geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger)
+                             geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger, samp_freq=samp_freq, bit_depth=bit_depth)
 
                 if report_progress == 1:
                     progress = ((index+1)/num_samples)
@@ -1704,12 +1789,17 @@ def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_
 
 
 
-def generate_hp_summary_sheet(conn, measurement_folder_name, gui_logger=None):
+def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set = 0, gui_logger=None):
     """
     Function generates a csv summary sheet of headphone measurements within a folder
     """
     
     try:
+        
+        if in_ear_set == 1:
+            hp_folder = 'in_ear'
+        else:
+            hp_folder = 'over_ear'   
         
         #delimiters
         delimiter_l = ' L.txt'
@@ -1719,38 +1809,79 @@ def generate_hp_summary_sheet(conn, measurement_folder_name, gui_logger=None):
         headphone_list = get_all_headphone_list(conn)
         
         #directories
-        measurement_directory = pjoin(CN.DATA_DIR_RAW_HP_MEASRUEMENTS, measurement_folder_name)
+        measurement_directory = pjoin(CN.DATA_DIR_RAW_HP_MEASRUEMENTS, hp_folder, measurement_folder_name)
         
         output_directory = CN.DATA_DIR_RAW_HP_MEASRUEMENTS
         out_file_name = measurement_folder_name + '_summary.csv'
         output_file = pjoin(output_directory, out_file_name)
         
+        #
+        #read metadata from csv. Expects metadata.csv in the specific measurement folder
+        #
+        metadata_file_name = 'metadata.csv'
+        metadata_file = pjoin(measurement_directory, metadata_file_name)
+        models_list = []
+        with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+            reader = DictReader(inputfile)
+            for row in reader:#rows 2 and onward
+                #store each row as a dictionary
+                #append to list of dictionaries
+                model = row.get('Models')
+                models_list.append(model)  
+        
+        
+        #logging.info(str(models_list))
+        
         #list all names in path
         dir_list = os.listdir(measurement_directory)
-        
-        
+
         #for each txt file in folder
         with open(output_file, 'w', newline='') as file:
             writer = csv.writer(file)
             #headings
-            writer.writerow(['file_name', 'extracted_name', 'suggested_brand', 'suggested_name','chosen_brand','chosen_name'])
+            writer.writerow(['file_name', 'extracted_name', 'original_name', 'suggested_brand', 'suggested_name', 'suggested_name_alternate','chosen_brand','chosen_name','include'])
             #write row for each input file
             for txt_file in dir_list:
                 
                 file_name = txt_file
                 
-                name_before_l = file_name.split(delimiter_l)[0]
-                name_before_l_r = name_before_l.split(delimiter_r)[0]
-                extracted_name = name_before_l_r
-                
-                #calculate a suggested name based on closest match in database
-                suggested_name = difflib.get_close_matches(name_before_l_r,headphone_list,n=1)[0]
-                
-                #grab the brand for the suggested name
-                suggested_brand = get_brand(conn, suggested_name)
-                
-                #write new row to file
-                writer.writerow([file_name, extracted_name, suggested_brand, suggested_name, '', ''])
+                if 'txt' in file_name:
+                    
+                    include_hp = 'Y'
+
+                    name_before_l = file_name.split(delimiter_l)[0]
+                    name_before_l_r = name_before_l.split(delimiter_r)[0]
+                    extracted_name = name_before_l_r
+
+                    
+                    #find full name from model list
+                    original_name_matches = hf.get_close_matches_fuzz(name_before_l_r,models_list)
+                    
+                    if original_name_matches == None or not original_name_matches:
+                        original_name=extracted_name
+                        include_hp='N'
+                    else:
+                        original_name = original_name_matches[0][0]
+  
+                    #calculate a suggested name based on closest match in database
+                    suggested_name_matches = hf.get_close_matches_fuzz(original_name,headphone_list)
+                    
+                    if suggested_name_matches == None or not suggested_name_matches:
+                        suggested_name=''
+                        suggested_name_alt ='' 
+                    else:
+                        suggested_name = suggested_name_matches[0][0]
+                        if len(suggested_name_matches) > 1:
+                            suggested_name_alt = suggested_name_matches[1][0]
+                        else:
+                            suggested_name_alt ='' 
+                        
+      
+                    #grab the brand for the suggested name
+                    suggested_brand = get_brand(conn, suggested_name)
+                    
+                    #write new row to file
+                    writer.writerow([file_name, extracted_name, original_name, suggested_brand, suggested_name,suggested_name_alt, '', '',include_hp])
                 
         #log results
         log_string = 'Summary sheet saved: ' + output_file
@@ -1770,10 +1901,16 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
     
     try:
         
+        if in_ear_set == 1:
+            hp_folder = 'in_ear'
+        else:
+            hp_folder = 'over_ear'   
+        
         now_datetime = datetime.now()
         
+        #directories
         data_raw_directory = CN.DATA_DIR_RAW_HP_MEASRUEMENTS
-        measurement_directory = pjoin(CN.DATA_DIR_RAW_HP_MEASRUEMENTS, measurement_folder_name)
+        measurement_directory = pjoin(CN.DATA_DIR_RAW_HP_MEASRUEMENTS, hp_folder, measurement_folder_name)
         
         #impulse
         impulse=np.zeros(CN.N_FFT)
@@ -1811,7 +1948,6 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         left_and_right_set = 0
         left_meas_count = 0
         right_meas_count = 0
-        measurement_count = 0
         
         #
         #read metadata from csv
@@ -1823,16 +1959,16 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
             reader = DictReader(inputfile)
             for row in reader:#rows 2 and onward
                 #store each row as a dictionary
+
                 #append to list of dictionaries
                 metadata_dict_list.append(row)  
                 
                 #check if set contains left and right samples
                 file_name = row.get('file_name')
-                if 'L.txt' in file_name or 'l.txt' in file_name:
+                if 'L.txt' in file_name or 'l.txt' in file_name or 'l1.txt' in file_name or 'L1.txt' in file_name:
                     left_meas_count = left_meas_count+1
-                if 'R.txt' in file_name or 'r.txt' in file_name:
+                if 'R.txt' in file_name or 'r.txt' in file_name or 'r1.txt' in file_name or 'R1.txt' in file_name:
                     right_meas_count = right_meas_count+1
-                measurement_count = measurement_count+1
                 
         #check if set contains left and right samples
         if left_meas_count > 0 and right_meas_count > 0:
@@ -1848,11 +1984,20 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
             for filename in sorted(files):
                 for hpcf_dict in hpcf_data_dict_list:
                     file_name_hpcf = hpcf_dict.get('file_name')
+                    
+                    #logging.info(filename)
+                    
                     if file_name_hpcf == filename:
                         #read txt file and store data into array
                         txt_fname = pjoin(root, filename)
-                        data = np.loadtxt(txt_fname, comments='*')
-                        
+                        try:
+                            data = np.loadtxt(txt_fname, comments='*')
+                        except:
+                            try:
+                                data = np.loadtxt(txt_fname, comments='*', delimiter=';')
+                            except:
+                                data = np.loadtxt(txt_fname, comments='*', delimiter=',')
+                 
                         #1-D data interpolation
                         data_x = data[:,0]
                         data_y = data[:,1]
@@ -1879,8 +2024,9 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
             for hpcf_dict_l in hpcf_data_dict_list:
                 extract_name = hpcf_dict_l.get('extracted_name')
                 file_name_l = hpcf_dict_l.get('file_name')
+       
                 #continue if this is a L measurement
-                if 'L.txt' in file_name_l or 'l.txt' in file_name_l:
+                if 'L.txt' in file_name_l or 'l.txt' in file_name or 'l1.txt' in file_name_l or 'L1.txt' in file_name_l:
                     #grab response for L measurement
                     resp_db_l = hpcf_dict_l.get('meas_resp_db_intrp')
                     #find R measurement
@@ -1888,7 +2034,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                         extract_name_r = hpcf_dict_r.get('extracted_name')
                         file_name_r = hpcf_dict_r.get('file_name')
                         #continue if this is a R measurement
-                        if ('R.txt' in file_name_r or 'r.txt' in file_name_r) and (extract_name_r == extract_name):
+                        if ('R.txt' in file_name_r or 'r.txt' in file_name_r or 'r1.txt' in file_name or 'R1.txt' in file_name) and (extract_name_r == extract_name):
                             #grab response for R measurement
                             resp_db_r = hpcf_dict_r.get('meas_resp_db_intrp')
                     #calculate average response
@@ -1926,122 +2072,167 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         else:
             hpcf_target_db_comp = hpcf_target_db.copy()
             
+        #apply smoothing
+        #convert to mag
+        hpcf_target_mag = hf.db2mag(hpcf_target_db_comp)
+        #level ends of spectrum
+        hpcf_target_mag = hf.level_spectrum_ends(hpcf_target_mag, 50, 19000, smooth_win = 10)#
+        #smoothing
+        hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 1670, 30, 150)
+        hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 12000, 30, 750)
+        hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 30000, 30, 30)  
+        
+        #back to db
+        hpcf_target_db_comp=hf.mag2db(hpcf_target_mag)
+            
         #
         #calculate HpCFs
         #
         for hpcf_dict in hpcf_data_dict_list_c:
             
-            #get metadata
-            brand = hpcf_dict.get('chosen_brand')
-            headphone = hpcf_dict.get('chosen_name')
-            
-            #get db response
-            resp_db = hpcf_dict.get('meas_resp_db_intrp')
-            #subtract from target
-            hpcf_db = np.subtract(hpcf_target_db_comp,resp_db)
-            
-            #
-            #convert to time domain (FIR)
-            #
-            #convert to mag
-            hpcf_fft_out_mag = hf.db2mag(hpcf_db)
-            
-            #level ends of spectrum
-            hpcf_fft_out_mag = hf.level_spectrum_ends(hpcf_fft_out_mag, 40, 19000, smooth_win = 10)#150
-
-            #smoothing
-            hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 30000, 20, 1600)
-            
-            #normalise to -6db in low frequencies
-            hpcf_fft_out_mag = np.divide(hpcf_fft_out_mag,np.mean(hpcf_fft_out_mag[60:300]))
-            hpcf_fft_out_mag = hpcf_fft_out_mag*0.5
-            
-            #create min phase FIR
-            hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=1000)
-            
-            #store in cropped array
-            hpcf_out_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
-            hpcf_out_fir_array[:] = np.copy(hpcf_out_fir_full[0:CN.HPCF_FIR_LENGTH])
-            
-
-            
-            #
-            #check for duplicate FIR
-            #
-            #get list of hpcfs for the selected headphone
-            #get samples for specified headphone
-            hpcfs_headphone = get_hpcf_samples_dicts(conn, headphone)
-            #check fir data and compare with new fir data
-            duplicate_found=0
-            #find largest ID
-            largest_id = 0
-            for s in hpcfs_headphone:
-                sample_dict = dict(s)
-                hpcf_fir_json = sample_dict.get('fir')
-                hpcf_fir_list = json.loads(hpcf_fir_json) 
-                hpcf_fir = np.array(hpcf_fir_list)
-                if np.array_equal(hpcf_fir, hpcf_out_fir_array):
-                    duplicate_found=1;
-                sample_id = sample_dict['sample_id']
-                if sample_id > largest_id:
-                    largest_id = sample_id
+            #check if this row should be included
+            include_file = hpcf_dict.get('include')
+            if include_file == 'Y':
+                #get metadata
+                brand = hpcf_dict.get('chosen_brand')
+                headphone = hpcf_dict.get('chosen_name')
+                
+                #get db response
+                resp_db = hpcf_dict.get('meas_resp_db_intrp')
+                #subtract from target
+                hpcf_db = np.subtract(hpcf_target_db_comp,resp_db)
+                
+                #
+                #convert to time domain (FIR)
+                #
+                #convert to mag
+                hpcf_fft_out_mag = hf.db2mag(hpcf_db)
+  
+                #level ends of spectrum
+                hpcf_fft_out_mag = hf.level_spectrum_ends(hpcf_fft_out_mag, 50, 19000, smooth_win = 10)#
+  
+                #smoothing
+                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 1670, 30, 150)
+                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 8000, 30, 500)
+                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 11000, 30, 1000)
+                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 30000, 30, 30)
+                
+                
+                
+                #normalise to -6db in low frequencies
+                hpcf_fft_out_mag = np.divide(hpcf_fft_out_mag,np.mean(hpcf_fft_out_mag[60:300]))
+                hpcf_fft_out_mag = hpcf_fft_out_mag*0.5
+                
+                #create min phase FIR
+                hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=1000)
+                
+                #store in cropped array
+                hpcf_out_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
+                hpcf_out_fir_array[:] = np.copy(hpcf_out_fir_full[0:CN.HPCF_FIR_LENGTH])
+                
+    
+                
+                #
+                #check for duplicate FIR
+                #
+                #get list of hpcfs for the selected headphone
+                #get samples for specified headphone
+                hpcfs_headphone = get_hpcf_samples_dicts(conn, headphone)
+                #check fir data and compare with new fir data
+                duplicate_found=0
+                #find largest ID
+                largest_id = 0
+                if hpcfs_headphone and hpcfs_headphone != None:
+                    for s in hpcfs_headphone:
+                        sample_dict = dict(s)
+                        hpcf_fir_json = sample_dict.get('fir')
+                        hpcf_fir_list = json.loads(hpcf_fir_json) 
+                        hpcf_fir = np.array(hpcf_fir_list)
+                        if np.array_equal(hpcf_fir, hpcf_out_fir_array):
+                            duplicate_found=1;
+                        sample_id = sample_dict['sample_id']
+                        if sample_id > largest_id:
+                            largest_id = sample_id
+                        
+                if duplicate_found == 1:
+                    log_string = 'Duplicate HpCF generated. Not inserted into DB. Brand: ' + brand + ' Headphone: ' + headphone
+                    if CN.LOG_INFO == 1:
+                        logging.info(log_string)
+                    if CN.LOG_GUI == 1 and gui_logger != None:
+                        gui_logger.log_info(log_string)
+                
+                #add each HPCF to database if not duplicate
+                else:
                     
-            if duplicate_found == 1:
-                log_string = 'Duplicate HpCF generated. Not inserted into DB. Brand: ' + brand + ' Headphone: ' + headphone
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
-            
-            #add each HPCF to database if not duplicate
-            else:
-                
-                # convert from array to list
-                fir_list = hpcf_out_fir_array.tolist()
-                # convert from list to Json
-                fir_json_str = json.dumps(fir_list)
-                
-                
-                #get graphic eq filter 127 band
-                geq_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_127)
-                
-                #get graphic eq filter 31 band
-                geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
-                
-                ##get graphic eq 32 band filter
-                #geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=1,sample_rate=samplerate)
-                   
-                #get graphic eq filter 31 band
-                geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
-
-                #calculate sample id
-                sample_id = largest_id+1
-                #calculate sample
-                sample_name = hpcf_sample_id_to_name(sample_id)
-                #last modified text
-                created_on = now_datetime
- 
-                #create hpcf tuple for this hpcf
-                # tasks
-                hpcf_to_insert = (brand, headphone, sample_name, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
-                
-                # create entry
-                create_hpcf_row(conn, hpcf_to_insert, brand, headphone, sample_name)
-   
-                log_string = 'HpCF generated and inserted into DB. Brand: ' + brand + ' Headphone: ' + headphone + ' Sample: ' + sample_name + ' Sample id: ' + str(sample_id)
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                    # convert from array to list
+                    fir_list = hpcf_out_fir_array.tolist()
+                    # convert from list to Json
+                    fir_json_str = json.dumps(fir_list)
+                    
+                    
+                    #get graphic eq filter 127 band
+                    geq_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_127)
+                    
+                    #get graphic eq filter 31 band
+                    geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
+                    
+                    ##get graphic eq 32 band filter
+                    #geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=1,sample_rate=samplerate)
+                       
+                    #get graphic eq filter 31 band
+                    geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
+    
+                    #calculate sample id
+                    sample_id = largest_id+1
+                    #calculate sample
+                    sample_name = hpcf_sample_id_to_name(sample_id)
+                    #last modified text
+                    created_on = now_datetime
+     
+                    #create hpcf tuple for this hpcf
+                    # tasks
+                    hpcf_to_insert = (brand, headphone, sample_name, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
+                    
+                    log_string = 'HpCF generated. Brand: ' + brand + ' Headphone: ' + headphone + ' Sample: ' + sample_name + ' Sample id: ' + str(sample_id)
+                    if CN.LOG_INFO == 1:
+                        logging.info(log_string)
+                    if CN.LOG_GUI == 1 and gui_logger != None:
+                        gui_logger.log_info(log_string)
+                    
+                    if sample_id > 26:
+                        log_string = 'HpCF not inserted into dB due to sample ID exceeding max sample ID (26) for this headphone'
+                        if CN.LOG_INFO == 1:
+                            logging.info(log_string)
+                        if CN.LOG_GUI == 1 and gui_logger != None:
+                            gui_logger.log_info(log_string)
+                    elif headphone == '' or headphone == None or brand == '' or brand == None:
+                        log_string = 'HpCF not inserted into dB due to missing brand or headphone name'
+                        if CN.LOG_INFO == 1:
+                            logging.info(log_string)
+                        if CN.LOG_GUI == 1 and gui_logger != None:
+                            gui_logger.log_info(log_string)
+                    else:
+                        # create entry
+                        create_hpcf_row(conn, hpcf_to_insert, brand, headphone, sample_name)
+       
+                    
         
         conn.commit()
-        
+        log_string = 'Finished processing measurements'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
         
         
     except Error as e:
         logging.error("Error occurred", exc_info = e)
         
-        
+        log_string = 'Failed to generate new HpCFs'
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        return False
         
         
 
@@ -2137,3 +2328,283 @@ def downlod_latest_database(conn, gui_logger=None):
         return False
             
             
+            
+            
+            
+
+def hpcf_generate_variants(conn, gui_logger=None):
+    """
+    Function hpcf_generate_variants
+        searches DB for HpCFs with multiple frequency response variants then generates averages for each variant and inserts into database
+    """
+    
+    try:
+
+        log_string = 'Searching HpCF database for variants'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+
+        #retrieve geq frequency list as an array - 127 bands
+        geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
+        #retrieve geq frequency list as an array - 31 bands
+        geq_set_f_31 = hpcf_retrieve_set_geq_freqs(f_set=2)
+        #retrieve geq frequency list as an array - 103 bands
+        geq_set_f_103 = hpcf_retrieve_set_geq_freqs(f_set=3)
+        #impulse
+        impulse=np.zeros(CN.N_FFT)
+        impulse[0]=1
+        fr_flat_mag = np.abs(np.fft.fft(impulse))
+        fr_flat = hf.mag2db(fr_flat_mag)
+        
+        now_datetime = datetime.now()
+ 
+        #get list of all headphones in the DB
+        headphone_list = get_all_headphone_list(conn)
+        
+        #check one brand for testing
+        #headphone_list=get_headphone_list(conn, brand='Beyerdynamic')
+        
+        #for each headphone, grab all samples
+        for h in headphone_list:
+
+            sample_list = get_hpcf_samples_dicts(conn, h)
+            #loop through samples to get number of samples
+            num_samples=0
+            for s in sample_list:
+                sample_dict = dict(s)
+                #get number of samples
+                sample_id = sample_dict['sample_id']
+                if sample_id > num_samples:
+                    num_samples = sample_id
+
+            #continue if there are more than 1 samples for this headphone
+            if num_samples > 1:
+
+                #create new dict list for condensed set
+                hpcf_variant_dict_list = []
+                hpcf_data_dict_list = []
+
+                #loop through each sample filter and identify variants
+                for s in sample_list:
+                    sample_dict = dict(s)
+                    sample_id = sample_dict['sample_id']
+                    #only consider samples that are non averages
+                    if sample_id > 0:
+ 
+                        sample_fir_json = sample_dict['fir']
+                        sample_fir_list = json.loads(sample_fir_json) 
+                        sample_fir = np.array(sample_fir_list)
+                        
+                        #get frequency response of current sample
+                        #zero pad
+                        data_pad=np.zeros(65536)
+                        data_pad[0:(CN.HPCF_FIR_LENGTH-1)]=sample_fir[0:(CN.HPCF_FIR_LENGTH-1)]
+                        hpcf_current = data_pad
+                        hpcf_current_fft = np.fft.fft(hpcf_current)
+                        hpcf_current_mag_fft=np.abs(hpcf_current_fft)
+                        hpcf_current_db_fft = hf.mag2db(hpcf_current_mag_fft)
+                        db_response_curr = hpcf_current_db_fft
+
+                        #reset variant to 0
+                        variant=0
+                        max_variant=1
+                        max_diff_list = []
+                        
+                        #sample 1 will aways be variant 1
+                        if sample_id == 1:
+                            variant=1
+                        else:    
+                            #objective: find a previous sample where no significant differences exist in response
+                            #loop through all previous samples
+                            for p in hpcf_data_dict_list:
+                                db_response_prev = p['db_response']
+                                variant_prev = p['variant']
+                                #find the largest variant ID
+                                if variant_prev>max_variant:
+                                    max_variant=variant_prev
+        
+                                #subtract db response of prev sample from current sample
+                                db_response_diff = np.subtract(db_response_curr,db_response_prev)
+                                
+                                #keep only frequencies below a cutoff
+                                lf_cutoff = 200
+                                hf_cutoff = 13500
+                                lf_cutoff_fb = round(lf_cutoff*65536/44100)
+                                hf_cutoff_fb = round(hf_cutoff*65536/44100)
+                                db_response_diff_c=np.zeros(65536)
+                                db_response_diff_c[lf_cutoff_fb:hf_cutoff_fb] = db_response_diff[lf_cutoff_fb:hf_cutoff_fb]
+             
+                                max_diff = np.max(np.abs(db_response_diff_c))
+                                
+                                #if largest peak is less than x dB, consider this a similar shape and same variant
+                                if max_diff < 10:
+                                    diff_dict = {'variant': variant_prev, 'max_diff': max_diff}
+                                    max_diff_list.append(diff_dict)
+                                    
+                                #if multiple similar samples were found, pick the one with smallest difference
+                                smallest_diff=100
+                                for p in max_diff_list:
+                                    max_diff = p['max_diff']
+                                    variant_prev = p['variant']
+                                    if max_diff < smallest_diff:
+                                        smallest_diff=max_diff
+                                        variant=variant_prev
+       
+                            #a similar sample was not found. Create new variant
+                            if variant == 0:
+                                variant = max_variant+1
+                                                 
+                        variant_dict = {'sample_id': sample_id, 'variant': variant}
+                        data_dict = {'sample_id': sample_id, 'variant': variant, 'db_response':db_response_curr}
+                        #add to new dict list
+                        hpcf_variant_dict_list.append(variant_dict)    
+                        hpcf_data_dict_list.append(data_dict)    
+ 
+                #finished compiling variant data into dict list for this headphone
+                variant_array = np.zeros(30)
+                
+                #loop through variant dict list to get sample count of each variant
+                for v in hpcf_variant_dict_list:
+                    # json_string = json.dumps(v)
+                    # log_string = 'Headphone: ' + h + ' Results: ' + json_string
+                    # if CN.LOG_INFO == 1:
+                    #     logging.info(log_string)
+                    # if CN.LOG_GUI == 1 and gui_logger != None:
+                    #     gui_logger.log_info(log_string)
+                    
+                    variant = v['variant']
+                    #increase count
+                    variant_array[variant]=variant_array[variant]+1
+ 
+                num_val_variants=0
+                min_var_count=2
+                min_val_variants=2
+
+                #loop through variant array to determine how many valid variants exist
+                for v in variant_array:
+                    #v is count of variants, index is variant
+                    if v >= min_var_count:
+                        num_val_variants=num_val_variants+1
+                
+                #only proceed if there are at least 2 valid variants
+                if num_val_variants >= min_val_variants:
+                    #for each valid variant
+                    for idx, v in enumerate(variant_array):
+                        #v is count of variants, index is variant
+                        if v >= min_var_count:
+
+                            #loop through samples to generate new average hpcf
+                            num_samples_avg = 0
+                            hpcf_fft_avg_db = fr_flat.copy()
+            
+                            #generate average spectrum of each relevant sample filter
+                            for s in sample_list:
+                                sample_dict = dict(s)
+                                sample_id = sample_dict['sample_id']
+                                sample_variant=0
+                                #only consider samples that are non averages
+                                if sample_id > 0:
+                                    #grab variant for this sample
+                                    for v in hpcf_variant_dict_list:
+                                        s_id=v['sample_id']
+                                        if s_id == sample_id:
+                                            sample_variant = v['variant']
+                                    #proceed if this sample belongs to this variant
+                                    if sample_variant == idx:
+                                        sample_fir_json = sample_dict['fir']
+                                        sample_fir_list = json.loads(sample_fir_json) 
+                                        sample_fir = np.array(sample_fir_list)
+                                        #zero pad
+                                        data_pad=np.zeros(65536)
+                                        data_pad[0:(CN.HPCF_FIR_LENGTH-1)]=sample_fir[0:(CN.HPCF_FIR_LENGTH-1)]
+                                        hpcf_current = data_pad
+                                        hpcf_current_fft = np.fft.fft(hpcf_current)
+                                        hpcf_current_mag_fft=np.abs(hpcf_current_fft)
+                                        hpcf_current_db_fft = hf.mag2db(hpcf_current_mag_fft)
+                                        hpcf_fft_avg_db = np.add(hpcf_fft_avg_db,hpcf_current_db_fft)
+                                        num_samples_avg = num_samples_avg+1
+             
+                            #divide by total number of samples
+                            hpcf_fft_avg_db = hpcf_fft_avg_db/num_samples_avg
+                            #convert to mag
+                            hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
+                            #create min phase FIR
+                            hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=1000)
+                            #store in cropped array
+                            hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
+                            hpcf_avg_fir_array[:] = np.copy(hpcf_avg_fir_full[0:CN.HPCF_FIR_LENGTH])
+
+                            ### get fir
+                            # convert from array to list
+                            fir_list = hpcf_avg_fir_array.tolist()
+                            # convert from list to Json
+                            fir_json_str = json.dumps(fir_list)
+                                         
+                            #get graphic eq filter 127 band
+                            geq_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_127)
+                            #get graphic eq filter 31 band
+                            geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_31)
+                            #get graphic eq filter 103 band
+                            geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_103)
+                            #last modified text
+                            created_on = now_datetime
+                    
+                            #average_variant hpcf is now created
+                            #calc new sample name
+                            sample_name_var = 'Average Variant '+str(idx)
+                            #delete existing one if exists
+                            delete_headphone_sample(conn, h, sample_name_var, gui_logger=None)
+                            #insert new hpcf into database
+                            #get brand
+                            brand = get_brand(conn, h)
+                            #create tuple
+                            hpcf_to_insert = (brand, h, sample_name_var, 0, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
+                            # create entry
+                            create_hpcf_row(conn, hpcf_to_insert, brand, h, sample_name_var, gui_logger=gui_logger)
+                            
+                
+        log_string = 'Completed Search'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+                
+        conn.commit()
+        
+    except Error as e:
+        logging.error("Error occurred", exc_info = e)
+
+    
+
+
+def get_recent_hpcfs(conn, date_str ='2024-06-20', gui_logger=None):
+    """
+    Function get_recent_hpcfs
+        searches DB for HpCFs created after a certain date
+    """
+    
+    try:
+
+        #get list of all headphones in the DB
+        hpcf_list = get_hpcf_date_range_dicts(conn, date_str)
+        if hpcf_list == None:
+            log_string = 'No HpCFs found'
+        else:
+            #for each headphone, grab all samples
+            for h in hpcf_list:
+     
+                hpcf_dict = dict(h)
+                
+                json_string = json.dumps(hpcf_dict)
+                
+                log_string = 'New HpCF: ' + json_string
+                if CN.LOG_INFO == 1:
+                    logging.info(log_string)
+                if CN.LOG_GUI == 1 and gui_logger != None:
+                    gui_logger.log_info(log_string)
+
+    
+    except Error as e:
+        logging.error("Error occurred", exc_info = e)

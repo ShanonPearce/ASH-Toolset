@@ -1160,7 +1160,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
         if report_progress == 1:
-            progress = 95/100
+            progress = 90/100
             dpg.set_value("progress_bar_brir", progress)
             dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
 

@@ -15,6 +15,10 @@ import datetime
 from ash_toolset import constants as CN
 from os.path import join as pjoin
 import dearpygui.dearpygui as dpg
+import librosa
+from difflib import SequenceMatcher, _nlargest  # necessary imports of functions used by modified get_close_matches
+from thefuzz import fuzz
+from thefuzz import process
 
 def print_message(message):
     """
@@ -210,7 +214,7 @@ def list_diff(list1,list2):
     return result
   
 # function to write wav file 
-def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0):
+def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_depth='PCM_24'):
     """
     Function takes a time domain signal as an input and writes wav file 
     :param data: numpy array, time domain signal
@@ -231,19 +235,59 @@ def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0):
     
     #new method using PySoundFile 
     #soundfile expects data in frames x channels, or one-dimensional data for mono files. librosa does it the other way around.
-    sf.write(file_name, data, samplerate, 'PCM_24')
+    sf.write(file_name, data, samplerate, bit_depth)
     
     
-def resample_signal(clip, samplerate = 44100, new_rate = 48000):
+def resample_signal(signal, original_rate = 44100, new_rate = 48000):
     """
     function to resample a signal. By default will upsample from 44100Hz to 48000Hz
     """  
     
-     # Resample data
-    number_of_samples = round(len(clip) * float(new_rate) / samplerate)
-    clip = sps.resample(clip, number_of_samples) 
-    return clip
-        
+    #Resample data
+    
+    #V1.0 implementation uses scipy resample method which is low quality
+    # number_of_samples = round(len(signal) * float(new_rate) / original_rate)
+    # resampled_signal = sps.resample(signal, number_of_samples) 
+    
+    #new versions use librosa
+    resampled_signal = librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=0, scale=True )
+    
+    
+    return resampled_signal
+
+    
+       
+
+
+def resample_by_interpolation(signal, input_fs = 44100, output_fs = 48000):
+    """
+    function to resample a signal. By default will upsample from 44100Hz to 48000Hz
+    does not contain a low-pass filter to prevent aliasing when downsampling (i.e. scale < 1).
+    This function is derived from https://github.com/nwhitehead/swmixer/blob/master/swmixer.py, which was released under LGPL. 
+    """  
+    
+    scale = output_fs / input_fs
+    # calculate new length of sample
+    n = round(len(signal) * scale)
+
+    # use linear interpolation
+    # endpoint keyword means than linspace doesn't go all the way to 1.0
+    # If it did, there are some off-by-one errors
+    # e.g. scale=2.0, [1,2,3] should go to [1,1.5,2,2.5,3,3]
+    # but with endpoint=True, we get [1,1.4,1.8,2.2,2.6,3]
+    # Both are OK, but since resampling will often involve
+    # exact ratios (i.e. for 44100 to 22050 or vice versa)
+    # using endpoint=False gets less noise in the resampled sound
+    resampled_signal = np.interp(
+        np.linspace(0.0, 1.0, n, endpoint=False),  # where to interpret
+        np.linspace(0.0, 1.0, len(signal), endpoint=False),  # known positions
+        signal,  # known data points
+    )
+    return resampled_signal    
+
+
+
+
  # ==============================================================================
 # Measure RT60
 # sourced from: https://dsp.stackexchange.com/questions/86316/a-python-code-for-blind-estimation-of-rt60-from-recorded-audio
@@ -534,3 +578,35 @@ def padarray(A, size):
     t = size - len(A)
     return np.pad(A, pad_width=(0, t), mode='constant')
     
+
+def get_close_matches_lower(word, possibilities, n=3, cutoff=0.45):
+    """
+    function to find closest matching string in a list of strings
+    """  
+    if not n >  0:
+        raise ValueError("n must be > 0: %r" % (n,))
+    if not 0.0 <= cutoff <= 1.0:
+        raise ValueError("cutoff must be in [0.0, 1.0]: %r" % (cutoff,))
+    result = []
+    s = SequenceMatcher()
+    s.set_seq2(word)
+    for x in possibilities:
+        s.set_seq1(x.lower())  # lower-case for comparison
+        if s.real_quick_ratio() >= cutoff and \
+           s.quick_ratio() >= cutoff and \
+           s.ratio() >= cutoff:
+            result.append((s.ratio(), x))
+
+    # Move the best scorers to head of list
+    result = _nlargest(n, result)
+    # Strip scores for the best n matches
+    return [x for score, x in result]
+
+def get_close_matches_fuzz(word, possibilities, n=2):
+    """
+    function to find closest matching string in a list of strings
+    """ 
+    
+    result = process.extract(word, possibilities, limit=n, scorer=fuzz.token_set_ratio)
+    
+    return result

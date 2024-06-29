@@ -125,6 +125,7 @@ OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
 HRTF_LIST = ['Neumann KU 100', 'KEMAR Large Pinna', 'KEMAR Normal Pinna', 'B&K Type 4128 HATS', 'DADEC', 'HEAD acoustics HMSII.2', 'KEMAR', 'B&K Type 4128C HATS']
 HRTF_LIST_NUM = ['01: Neumann KU 100', '02: KEMAR Large Pinna', '03: KEMAR Normal Pinna', '04: B&K Type 4128 HATS', '05: DADEC', '06: HEAD acoustics HMSII.2', '07: KEMAR', '08: B&K Type 4128C HATS']
 HRTF_LIST_SHORT = ['KU_100', 'KEMAR_Large', 'KEMAR_Normal', 'B&K_4128', 'DADEC', 'HMSII.2', 'KEMAR', 'B&K_4128C']
+HRTF_GAIN_LIST = ['-12.0 dB', '-12.0 dB', '-13.5 dB', '-10.5 dB', '-10.5 dB', '-10.5 dB', '-9.0 dB', '-9.0 dB']
 HP_COMP_LIST = ['In-Ear Headphones','Over-Ear/On-Ear Headphones']
 HP_COMP_LIST_SHORT = ['In-Ear','Over-Ear&On-Ear']
 
@@ -155,3 +156,8 @@ EAPO_QF_ADJUST = 0.5*0.8
 HPCF_FIR_LENGTH = 1024
 DIRECT_GAIN_MAX=8#6
 DIRECT_GAIN_MIN=-8#-6
+
+SAMPLE_RATE_LIST = ['44.1 kHz', '48 kHz', '96 kHz']
+SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}  
+BIT_DEPTH_LIST = ['24 bit', '32 bit']
+BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  

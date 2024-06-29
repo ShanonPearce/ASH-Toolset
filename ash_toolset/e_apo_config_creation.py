@@ -79,7 +79,7 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
                     f.write('\n')
                     f.write('Channel: ALL')
                     f.write('\n')
-                    f.write('Preamp: -14.5 dB')#also adjust gain
+                    f.write('Preamp: '+ CN.HRTF_GAIN_LIST[hrtf_type-1])#also adjust gain
                     f.write('\n')
                     if CN.CHANNEL_CONFIGS[n][1] == '2.0' or CN.CHANNEL_CONFIGS[n][1] == '2.0W' or CN.CHANNEL_CONFIGS[n][1] == '2.0N':
                         copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R'
