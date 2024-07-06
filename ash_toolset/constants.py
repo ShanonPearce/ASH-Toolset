@@ -56,7 +56,7 @@ ROLL_ROOM = 0
 ROOM_WEIGHTING_DESC=1
 
 #window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
-WINDOW_TYPE=1#2
+WINDOW_TYPE=2#1
 ALIGNMENT_METHOD = 5
 
 TOTAL_CHAN_BRIR = 2
@@ -122,15 +122,24 @@ ELEV_OFFSET_WAV = np.abs(MIN_ELEV_WAV)
 OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
 
 #Strings
-HRTF_LIST = ['Neumann KU 100', 'KEMAR Large Pinna', 'KEMAR Normal Pinna', 'B&K Type 4128 HATS', 'DADEC', 'HEAD acoustics HMSII.2', 'KEMAR', 'B&K Type 4128C HATS']
-HRTF_LIST_NUM = ['01: Neumann KU 100', '02: KEMAR Large Pinna', '03: KEMAR Normal Pinna', '04: B&K Type 4128 HATS', '05: DADEC', '06: HEAD acoustics HMSII.2', '07: KEMAR', '08: B&K Type 4128C HATS']
-HRTF_LIST_SHORT = ['KU_100', 'KEMAR_Large', 'KEMAR_Normal', 'B&K_4128', 'DADEC', 'HMSII.2', 'KEMAR', 'B&K_4128C']
-HRTF_GAIN_LIST = ['-12.0 dB', '-12.0 dB', '-13.5 dB', '-10.5 dB', '-10.5 dB', '-10.5 dB', '-9.0 dB', '-9.0 dB']
-HP_COMP_LIST = ['In-Ear Headphones','Over-Ear/On-Ear Headphones']
-HP_COMP_LIST_SHORT = ['In-Ear','Over-Ear&On-Ear']
+#HRTF_LIST = ['Neumann KU 100', 'KEMAR Large Pinna', 'KEMAR Normal Pinna', 'B&K Type 4128 HATS', 'DADEC', 'HEAD acoustics HMSII.2', 'KEMAR', 'B&K Type 4128C HATS']
+#HRTF_LIST_NUM = ['01: Neumann KU 100', '02: KEMAR Large Pinna', '03: KEMAR Normal Pinna', '04: B&K Type 4128 HATS', '05: DADEC', '06: HEAD acoustics HMSII.2', '07: KEMAR', '08: B&K Type 4128C HATS']
+#HRTF_LIST_SHORT = ['KU_100', 'KEMAR_Large', 'KEMAR_Normal', 'B&K_4128', 'DADEC', 'HMSII.2', 'KEMAR', 'B&K_4128C']
+#HRTF_GAIN_LIST = ['-12.0 dB', '-12.0 dB', '-13.5 dB', '-10.5 dB', '-10.5 dB', '-10.5 dB', '-9.0 dB', '-9.0 dB']
+
+# HP_COMP_LIST = ['In-Ear Headphones','Over-Ear/On-Ear Headphones']
+# HP_COMP_LIST_SHORT = ['In-Ear','Over-Ear&On-Ear']
+
+HRTF_LIST_NUM = ['01: Neumann KU 100 (SADIE)', '02: Neumann KU 100 (TH Köln)', '03: FABIAN HATS', '04: B&K Type 4128', '05: B&K Type 4128C (MMHR-HRIR)', '06: DADEC (MMHR-HRIR)', '07: HEAD acoustics HMSII.2 (MMHR-HRIR)', '08: KEMAR (MMHR-HRIR)', '09: KEMAR-N (MIT)', '10: KEMAR-L (MIT)', '11: KEMAR (SADIE)', '12: KEMAR-N (PKU-IOA)', '13: KEMAR-L (PKU-IOA)']
+HRTF_LIST_SHORT = ['KU_100_SADIE', 'KU_100_THK', 'FABIAN', 'B&K_4128', 'B&K_4128C_MMHR', 'DADEC_MMHR', 'HMSII.2_MMHR', 'KEMAR_MMHR', 'KEMAR-N_MIT', 'KEMAR-L_MIT', 'KEMAR_SADIE', 'KEMAR-N_PKU', 'KEMAR-L_PKU']
+HRTF_GAIN_LIST = ['-11.0 dB', '-12.0 dB', '-11.0 dB', '-9.0 dB', '-8.0 dB', '-10.5 dB', '-9.5 dB', '-8.0 dB', '-12.0 dB', '-12.9 dB', '-10.8 dB', '-7.8 dB', '-11.0 dB']
+
+HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
+HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
+
 
 ROOM_TARGET_LIST = ['Flat','ASH Target','Harman Target','HATS Target','Toole Target','rtings Target']
-ROOM_TARGET_LIST_SHORT = ['Flat','ASH_Target','Harman_Target','HATS_Target','Toole_Target','rtings_Target']
+ROOM_TARGET_LIST_SHORT = ['Flat','ASH-Target','Harman-Target','HATS-Target','Toole-Target','rtings-Target']
 ROOM_TARGET_LIST_FIRS = ['Flat','ash_room_target_fir','harman_b_room_target_fir','hats_room_target_fir','toole_trained_room_target_fir','rtings_target_fir']
 
 #BRIR writing

@@ -14,6 +14,8 @@ import time
 import logging
 from ash_toolset import helper_functions as hf
 from ash_toolset import constants as CN
+import shutil
+import os
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -335,3 +337,32 @@ def generate_direction_matrix(hrtf_type):
         logging.error("Error occurred", exc_info = ex)
         
     return direction_matrix
+
+
+def remove_brirs(primary_path, gui_logger=None):
+    """
+    Function deletes BRIRs and E-APO configs stored in a specified directory
+    """
+    out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
+    output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS_BRIR)
+    
+    try:
+        
+        if os.path.exists(out_file_dir_wav) and os.path.exists(output_config_path):
+            shutil.rmtree(out_file_dir_wav)
+            shutil.rmtree(output_config_path)
+            
+            log_string_a = 'Deleted folder and contents: ' + out_file_dir_wav 
+            log_string_b = 'Deleted folder and contents: ' + output_config_path
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_a)
+                logging.info(log_string_b)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string_a)
+                gui_logger.log_info(log_string_b)
+    
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Failed to delete folders: ' + out_file_dir_wav + ' & ' + output_config_path
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)

@@ -30,7 +30,9 @@ import difflib
 from scipy.interpolate import CubicSpline
 import dearpygui.dearpygui as dpg
 import gdown
-        
+import urllib.request
+import shutil
+
 today = str(date.today())
 
 
@@ -2608,3 +2610,79 @@ def get_recent_hpcfs(conn, date_str ='2024-06-20', gui_logger=None):
     
     except Error as e:
         logging.error("Error occurred", exc_info = e)
+
+def check_for_app_update(gui_logger=None):
+    """ 
+    Function finds version of latest app, compares with current version
+    """
+    
+    try:
+        
+        with open(CN.METADATA_FILE) as fp:
+            _info = json.load(fp)
+        __version__ = _info['version']
+        
+        #log results
+        log_string = 'Local ASH Toolset version: ' + str(__version__)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        #get version of online database
+        url = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
+        output = pjoin(CN.DATA_DIR_EXT, 'metadata_latest.json')
+        urllib.request.urlretrieve(url, output)
+   
+        #read json
+        json_fname = output
+        with open(json_fname) as fp:
+            _info = json.load(fp)
+        web_app_version = _info['version']
+        
+        #log results
+        log_string = 'Latest ASH Toolset version available: ' + str(web_app_version)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
+        return True
+    
+    except Error as e:
+        
+        logging.error("Error occurred", exc_info = e)
+        
+        log_string = 'Failed to check app versions'
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        return False
+
+def remove_hpcfs(primary_path, gui_logger=None):
+    """
+    Function deletes HpCFs and E-APO configs stored in a specified directory
+    """
+    out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS)
+    output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS_HPCF)
+    
+    try:
+        
+        if os.path.exists(out_file_dir_wav) and os.path.exists(output_config_path):
+            shutil.rmtree(out_file_dir_wav)
+            shutil.rmtree(output_config_path)
+            
+            log_string_a = 'Deleted folder and contents: ' + out_file_dir_wav 
+            log_string_b = 'Deleted folder and contents: ' + output_config_path
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_a)
+                logging.info(log_string_b)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string_a)
+                gui_logger.log_info(log_string_b)
+    
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Failed to delete folders: ' + out_file_dir_wav + ' & ' + output_config_path
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)

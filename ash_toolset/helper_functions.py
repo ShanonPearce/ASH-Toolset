@@ -20,6 +20,7 @@ from difflib import SequenceMatcher, _nlargest  # necessary imports of functions
 from thefuzz import fuzz
 from thefuzz import process
 
+
 def print_message(message):
     """
     Function to print a message
@@ -610,3 +611,4 @@ def get_close_matches_fuzz(word, possibilities, n=2):
     result = process.extract(word, possibilities, limit=n, scorer=fuzz.token_set_ratio)
     
     return result
+

@@ -415,14 +415,14 @@ def generate_reverberant_brir(gui_logger=None):
         
 
 
-def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna_comp, target_rt60, report_progress=0, gui_logger=None):   
+def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, target_rt60, report_progress=0, gui_logger=None):   
     """
     Function to generate customised BRIR from below parameters
 
     :param hrtf_type: int, select HRTF type: 1 = KU100, 2 = kemar L pinna, 3 = kemar N pinna, 4 = B&K 4128 HATS, 5 = DADEC, 6 = HEAD acoustics HMSII.2, 7 = G.R.A.S.KEMAR (new), 8 = Bruel & Kjaer Type 4128C (BKwHA)
     :param direct_gain_db: float, adjust gain of direct sound in dB
     :param room_target: int, 0 = flat (no room target), 1 = ASH Room target, 2 = Harman target
-    :param apply_pinna_comp: int, 0 = equalised for in ear headphones, 1 = equalised for on-ear + around-ear headphones.
+    :param pinna_comp: int, 0 = equalised for in ear headphones (with additional eq), 1 = in ear headphones (without additional eq), 2 = over/on ear headphones (with additional eq), 3 = over/on ear headphones (without additional eq)
     :param target_rt60: int, value in ms for target reverberation time
     :param report_progress: int, 1 = update progress to progress bar in gui, set to 0 if no gui
     :param gui_logger: gui logger object for dearpygui
@@ -503,14 +503,18 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna
         #
         # load additional headphone eq
         #
+        apply_add_hp_eq = 0
         if CN.APPLY_ADD_HP_EQ > 0:
-            if apply_pinna_comp >= 1:
-                filename = 'diffuse_field_to_ash_over_ear_on_ear_target.wav'
-            elif apply_pinna_comp == 0:
-                filename = 'diffuse_field_to_ash_in_ear_target.wav'
-            wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-            samplerate, data_addit_eq = wavfile.read(wav_fname)
-            data_addit_eq = data_addit_eq / (2.**31)
+            if pinna_comp == 2:
+                filename = 'additional_comp_for_over_&_on_ear_headphones.wav'
+                apply_add_hp_eq = 1
+            elif pinna_comp == 0:
+                filename = 'additional_comp_for_in_ear_headphones.wav'
+                apply_add_hp_eq = 1
+            if apply_add_hp_eq > 0:
+                wav_fname = pjoin(CN.DATA_DIR_INT, filename)
+                samplerate, data_addit_eq = wavfile.read(wav_fname)
+                data_addit_eq = data_addit_eq / (2.**31)
 
 
         log_string = 'Input filters loaded'
@@ -543,9 +547,9 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna
         #variable crossover depending on RT60
         f_crossover_var=CN.F_CROSSOVER
         if target_rt60 < 350:
-            f_crossover_var=155#170
+            f_crossover_var=150#155
         else:
-            f_crossover_var=150#150,155,160
+            f_crossover_var=150#150
 
 
         log_string = 'Low frequency response loaded'
@@ -613,20 +617,26 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna
         #
         ## set HRIR level to 0
         #
-
-        data_fft = np.fft.fft(hf.padarray(hrir_selected[4][0][0][:],CN.N_FFT))
-        mag_fft=np.abs(data_fft)
-        average_mag = np.mean(mag_fft[100:7500])
+        mag_range_a=200
+        mag_range_b=4000
+        avg_mag_sum = 0
+        for azim in range(total_azim_hrir):
+            data_fft = np.fft.fft(hf.padarray(hrir_selected[4][azim][0][:],CN.N_FFT))
+            mag_fft=np.abs(data_fft)
+            avg_mag_azim = np.mean(mag_fft[mag_range_a:mag_range_b])
+            avg_mag_sum=avg_mag_sum+avg_mag_azim
+        avg_mag=avg_mag_sum/total_azim_hrir
+        
         
         polarity=1
-        #invert polarity of HRTF 4 and 5 to align with reference
-        if hrtf_type == 4 or hrtf_type == 5:
+        #invert polarity of HRTF 4 (04: B&K Type 4128) and 6 (06: DADEC (MMHR-HRIR)) to align with reference
+        if hrtf_type == 4 or hrtf_type == 6:
             polarity=-1
         
         for elev in range(total_elev_hrir):
             for azim in range(total_azim_hrir):
                 for chan in range(total_chan_hrir):
-                    hrir_selected[elev][azim][chan][:] = np.divide(hrir_selected[elev][azim][chan][:],average_mag)
+                    hrir_selected[elev][azim][chan][:] = np.divide(hrir_selected[elev][azim][chan][:],avg_mag)
                     hrir_selected[elev][azim][chan][:] = np.multiply(hrir_selected[elev][azim][chan][:],polarity)
         
         if CN.PLOT_ENABLE == 1:
@@ -729,7 +739,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna
             
             sample_hrir = np.copy(hrir_selected[4][0][0][0:total_samples_hrir])
             plot_name = 'HRIR before integration'
-            hf.plot_td(sample_hrir[0:1024],plot_name)
+            hf.plot_td(sample_hrir[0:total_samples_hrir],plot_name)
     
         #
         #add HRIR into output BRIR array
@@ -1136,13 +1146,13 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, apply_pinna
                         if room_target >= 1:
                             brir_eq_b = sp.signal.convolve(brir_eq_b,room_target_fir, 'full', 'auto')
                         #apply pinna compensation
-                        if apply_pinna_comp == 1:
+                        if pinna_comp >= 2:
                             brir_eq_b = sp.signal.convolve(brir_eq_b,pinna_comp_fir, 'full', 'auto')
                         #apply additional eq for sub bass
                         if CN.ENABLE_SUB_INTEGRATION == 1 and CN.APPLY_SUB_EQ == 1:
                             brir_eq_b = sp.signal.convolve(brir_eq_b,sub_eq_fir, 'full', 'auto')
                         #apply additional eq for headphones
-                        if CN.APPLY_ADD_HP_EQ > 0:
+                        if CN.APPLY_ADD_HP_EQ > 0 and apply_add_hp_eq > 0:
                             brir_eq_b = sp.signal.convolve(brir_eq_b,data_addit_eq, 'full', 'auto')
                         brir_out_selection[elev][azim][chan][:] = brir_eq_b[0:CN.N_FFT]
 

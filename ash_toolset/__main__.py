@@ -28,6 +28,7 @@ def main():
     import csv
     import json
     import winreg as wrg
+    import ast
     
     #logging
     logging.basicConfig(
@@ -43,21 +44,52 @@ def main():
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('numba').setLevel(logging.WARNING)
     
-    
+    with open(CN.METADATA_FILE) as fp:
+        _info = json.load(fp)
+    __version__ = _info['version']
     
     #
     #program code
     #
-    sample_freq_default='44.1 kHz'
-    bit_depth_default='24 bit'
-    brir_hp_type_default='Over-Ear/On-Ear Headphones'
-    hrtf_default='01: Neumann KU 100'
-    room_target_default='ASH Target'
+    
+    #default values
+    sample_freq_default=CN.SAMPLE_RATE_LIST[0]
+    bit_depth_default=CN.BIT_DEPTH_LIST[0]
+    brir_hp_type_default='Over/On-Ear Headphones - High Strength'
+    hrtf_default=CN.HRTF_LIST_NUM[0]
+    room_target_default=CN.ROOM_TARGET_LIST[1]
+    rt60_default = 400
+    direct_gain_default=4.0
+    fir_hpcf_exp_default=True
+    fir_st_hpcf_exp_default=True
+    eapo_hpcf_exp_default=True
+    geq_hpcf_exp_default=True
+    geq_31_exp_default=True
+    hesuvi_hpcf_exp_default=True
+    dir_brir_exp_default=True
+    ts_brir_exp_default=True
+    hesuvi_brir_exp_default=True
+    eapo_brir_exp_default=True
+    
+    
+    #loaded values - start with defaults
     sample_freq_loaded=sample_freq_default
     bit_depth_loaded=bit_depth_default
     brir_hp_type_loaded=brir_hp_type_default
     hrtf_loaded=hrtf_default
     room_target_loaded=room_target_default
+    rt60_loaded = rt60_default
+    direct_gain_loaded=direct_gain_default
+    fir_hpcf_exp_loaded=fir_hpcf_exp_default
+    fir_st_hpcf_exp_loaded=fir_st_hpcf_exp_default
+    eapo_hpcf_exp_loaded=eapo_hpcf_exp_default
+    geq_hpcf_exp_loaded=geq_hpcf_exp_default
+    geq_31_exp_loaded=geq_31_exp_default
+    hesuvi_hpcf_exp_loaded=hesuvi_hpcf_exp_default
+    dir_brir_exp_loaded=dir_brir_exp_default
+    ts_brir_exp_loaded=ts_brir_exp_default
+    hesuvi_brir_exp_loaded=hesuvi_brir_exp_default
+    eapo_brir_exp_loaded=eapo_brir_exp_default
     
     #get equalizer APO path
     try:
@@ -72,15 +104,32 @@ def main():
         #load settings
         config = configparser.ConfigParser()
         config.read(CN.SETTINGS_FILE)
-        base_folder_loaded = config['DEFAULT']['path']
-        sample_freq_loaded = config['DEFAULT']['sampling_frequency']
-        bit_depth_loaded = config['DEFAULT']['bit_depth']
-        brir_hp_type_loaded = config['DEFAULT']['brir_headphone_type']
-        hrtf_loaded=config['DEFAULT']['brir_hrtf']
-        room_target_loaded=config['DEFAULT']['brir_room_target']
-        
-        primary_path=base_folder_loaded
-        primary_ash_path=pjoin(base_folder_loaded, CN.PROJECT_FOLDER)
+        version_loaded = config['DEFAULT']['version']
+        if __version__ == version_loaded:
+            
+            sample_freq_loaded = config['DEFAULT']['sampling_frequency']
+            bit_depth_loaded = config['DEFAULT']['bit_depth']
+            brir_hp_type_loaded = config['DEFAULT']['brir_headphone_type']
+            hrtf_loaded=config['DEFAULT']['brir_hrtf']
+            room_target_loaded=config['DEFAULT']['brir_room_target']
+            rt60_loaded=int(config['DEFAULT']['brir_rt60'])
+            direct_gain_loaded=float(config['DEFAULT']['brir_direct_gain'])
+            fir_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['fir_hpcf_exp']) 
+            fir_st_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['fir_st_hpcf_exp'])
+            eapo_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['eapo_hpcf_exp'])
+            geq_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['geq_hpcf_exp'])
+            geq_31_exp_loaded=ast.literal_eval(config['DEFAULT']['geq_31_exp'])
+            hesuvi_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['hesuvi_hpcf_exp'])
+            dir_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['dir_brir_exp'])
+            ts_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['ts_brir_exp'])
+            hesuvi_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['hesuvi_brir_exp'])
+            eapo_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['eapo_brir_exp'])
+            
+            base_folder_loaded = config['DEFAULT']['path']
+            primary_path=base_folder_loaded
+            primary_ash_path=pjoin(base_folder_loaded, CN.PROJECT_FOLDER)
+        else:
+            raise ValueError('Settings not loaded due to version mismatch')
         
     except:
         if e_apo_path is not None:
@@ -132,18 +181,10 @@ def main():
     sample_default = 'Sample A' #sample_list_default[0]
     
     
-    default_hpcf_settings = {'headphone': headphone_default, 'hpcf_export': 1, 'fir_export': 1, 'fir_stereo_export': 1, 'geq_export': 1, 'geq_31_export': 1, 'geq_103_export': 0, 'hesuvi_export': 1, 'eapo_export': 1}
+    default_hpcf_settings = {'headphone': headphone_default, 'hpcf_export': 1, 'fir_export': int(fir_hpcf_exp_loaded), 'fir_stereo_export': int(fir_st_hpcf_exp_loaded), 'geq_export': int(geq_hpcf_exp_loaded), 'geq_31_export': int(geq_31_exp_loaded), 'geq_103_export': 0, 'hesuvi_export': int(hesuvi_hpcf_exp_loaded), 'eapo_export': int(eapo_hpcf_exp_loaded)}
     
-    hrtf_default = 1
-    direct_gain_default = 4.0
-    reverb_gain_default = direct_gain_default*-1
-    room_target_default = 1
-    pinna_comp_default = 1
-    rt60_default = 400
-    default_brir_settings = {'hrtf': hrtf_default, 'direct_gain': direct_gain_default, 'room_target': room_target_default, 'pinna_comp': pinna_comp_default, 'rt60': rt60_default,  
-                             'brir_export': 1, 'brir_directional_export':1, 'brir_ts_export': 1, 'hesuvi_export': 1, 'eapo_export': 1}
-    
-    
+
+  
     
     #
     ## GUI Functions - HPCFs
@@ -389,12 +430,14 @@ def main():
         current_dict = dpg.get_item_user_data("hpcf_tag")
         modified_dict = current_dict.copy()
         #change value in dict
-        if app_data == True:
-            modified_dict.update({'fir_export': 1})
-        elif app_data == False:
-            modified_dict.update({'fir_export': 0})    
+        modified_dict.update({'fir_export': int(app_data)})
+ 
         #update user data
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
+        save_settings()
+        #reset progress
+        dpg.set_value("progress_bar_hpcf", 0)
+        dpg.configure_item("progress_bar_hpcf", overlay = 'Progress')
         
     def export_fir_stereo_toggle(sender, app_data):
         """ 
@@ -405,12 +448,14 @@ def main():
         current_dict = dpg.get_item_user_data("hpcf_tag")
         modified_dict = current_dict.copy()
         #change value in dict
-        if app_data == True:
-            modified_dict.update({'fir_stereo_export': 1})
-        elif app_data == False:
-            modified_dict.update({'fir_stereo_export': 0})    
+        modified_dict.update({'fir_stereo_export': int(app_data)})
+  
         #update user data
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
+        save_settings()
+        #reset progress
+        dpg.set_value("progress_bar_hpcf", 0)
+        dpg.configure_item("progress_bar_hpcf", overlay = 'Progress')
 
     def export_geq_toggle(sender, app_data):
         """ 
@@ -421,12 +466,14 @@ def main():
         current_dict = dpg.get_item_user_data("hpcf_tag")
         modified_dict = current_dict.copy()
         #change value in dict
-        if app_data == True:
-            modified_dict.update({'geq_export': 1})
-        elif app_data == False:
-            modified_dict.update({'geq_export': 0})    
+        modified_dict.update({'geq_export': int(app_data)})
+  
         #update user data
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
+        save_settings()
+        #reset progress
+        dpg.set_value("progress_bar_hpcf", 0)
+        dpg.configure_item("progress_bar_hpcf", overlay = 'Progress')
     
 
     def export_geq_31_toggle(sender, app_data):
@@ -438,12 +485,14 @@ def main():
         current_dict = dpg.get_item_user_data("hpcf_tag")
         modified_dict = current_dict.copy()
         #change value in dict
-        if app_data == True:
-            modified_dict.update({'geq_31_export': 1})
-        elif app_data == False:
-            modified_dict.update({'geq_31_export': 0})    
+        modified_dict.update({'geq_31_export': int(app_data)})
+   
         #update user data
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
+        save_settings()
+        #reset progress
+        dpg.set_value("progress_bar_hpcf", 0)
+        dpg.configure_item("progress_bar_hpcf", overlay = 'Progress')
 
     def export_hesuvi_hpcf_toggle(sender, app_data):
         """ 
@@ -454,12 +503,14 @@ def main():
         current_dict = dpg.get_item_user_data("hpcf_tag")
         modified_dict = current_dict.copy()
         #change value in dict
-        if app_data == True:
-            modified_dict.update({'hesuvi_export': 1})
-        elif app_data == False:
-            modified_dict.update({'hesuvi_export': 0})    
+        modified_dict.update({'hesuvi_export': int(app_data)})
+  
         #update user data
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
+        save_settings()
+        #reset progress
+        dpg.set_value("progress_bar_hpcf", 0)
+        dpg.configure_item("progress_bar_hpcf", overlay = 'Progress')
 
     def export_eapo_hpcf_toggle(sender, app_data):
         """ 
@@ -470,29 +521,15 @@ def main():
         current_dict = dpg.get_item_user_data("hpcf_tag")
         modified_dict = current_dict.copy()
         #change value in dict
-        if app_data == True:
-            modified_dict.update({'eapo_export': 1})
-        elif app_data == False:
-            modified_dict.update({'eapo_export': 0})    
+        modified_dict.update({'eapo_export': int(app_data)})
+  
         #update user data
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
-    
- 
-    def export_hpcf_toggle(sender, app_data):
-        """ 
-        GUI function to update hpcf dictionary based on toggle
-        """
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("hpcf_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        if app_data == True:
-            modified_dict.update({'hpcf_export': 1})
-        elif app_data == False:
-            modified_dict.update({'hpcf_export': 0})    
-        #update user data
-        dpg.configure_item('hpcf_tag',user_data=modified_dict)
+        save_settings()
+        #reset progress
+        dpg.set_value("progress_bar_hpcf", 0)
+        dpg.configure_item("progress_bar_hpcf", overlay = 'Progress')
+
 
     def process_hpcfs(sender, app_data, user_data):
         """ 
@@ -526,90 +563,12 @@ def main():
     ## GUI Functions - BRIRs
     #
     
- 
-    def export_brir_toggle(sender, app_data):
-        """ 
-        GUI function to update brir dictionary based on toggle
-        """
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        if app_data == True:
-            modified_dict.update({'brir_export': 1})
-        elif app_data == False:
-            modified_dict.update({'brir_export': 0})    
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
-    
-    def export_dir_brirs_toggle(sender, app_data):
-        """ 
-        GUI function to update brir dictionary based on toggle
-        """
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        if app_data == True:
-            modified_dict.update({'brir_directional_export': 1})
-        elif app_data == False:
-            modified_dict.update({'brir_directional_export': 0})    
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
- 
-    def export_ts_brirs_toggle(sender, app_data):
-        """ 
-        GUI function to update brir dictionary based on toggle
-        """
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        if app_data == True:
-            modified_dict.update({'brir_ts_export': 1})
-        elif app_data == False:
-            modified_dict.update({'brir_ts_export': 0})    
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
- 
-    def export_eapo_brir_toggle(sender, app_data):
-        """ 
-        GUI function to update brir dictionary based on toggle
-        """
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        if app_data == True:
-            modified_dict.update({'eapo_export': 1})
-        elif app_data == False:
-            modified_dict.update({'eapo_export': 0})    
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
 
-    def export_hesuvi_brir_toggle(sender, app_data):
-        """ 
-        GUI function to update brir dictionary based on toggle
-        """
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        if app_data == True:
-            modified_dict.update({'hesuvi_export': 1})
-        elif app_data == False:
-            modified_dict.update({'hesuvi_export': 0})    
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
+     
 
     def select_room_target(sender, app_data):
         """ 
-        GUI function to update brir dictionary based on input
+        GUI function to update brir based on input
         """
         
         target = app_data
@@ -618,17 +577,7 @@ def main():
         mag_response = target_mag_dict.get(target)
         plot_tile = target + ' frequency response'
         hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
-        
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        room_target_int = CN.ROOM_TARGET_LIST.index(target)
-        #print(room_target_int)
-        modified_dict.update({'room_target': room_target_int})
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
-        
+
         #reset progress bar
         dpg.set_value("progress_bar_brir", 0)
         dpg.configure_item("progress_bar_brir", overlay = 'progress')
@@ -637,62 +586,31 @@ def main():
  
     def update_direct_gain(sender, app_data):
         """ 
-        GUI function to update brir dictionary based on input
+        GUI function to update brir based on input
         """
-        
-        #gain_db = app_data*-1
-        gain_db = app_data
 
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        #print(gain_db)
-        modified_dict.update({'direct_gain': gain_db})
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
-        
         #reset progress bar
         dpg.set_value("progress_bar_brir", 0)
         dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        
+        save_settings()
     
     def update_rt60(sender, app_data):
         """ 
-        GUI function to update brir dictionary based on input
+        GUI function to update brir based on input
         """
-        
-        target_rt60 = app_data
-
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        #print(target_rt60)
-        modified_dict.update({'rt60': target_rt60})
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
-        
+ 
         #reset progress bar
         dpg.set_value("progress_bar_brir", 0)
         dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        
+        save_settings()
     
     def update_hrtf(sender, app_data):
         """ 
-        GUI function to update brir dictionary based on input
+        GUI function to update brir based on input
         """
-        
-        hrtf = app_data
 
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        room_target_int = CN.HRTF_LIST_NUM.index(hrtf)+1
-        #print(room_target_int)
-        modified_dict.update({'hrtf': room_target_int})
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
-        
         #reset progress bar
         dpg.set_value("progress_bar_brir", 0)
         dpg.configure_item("progress_bar_brir", overlay = 'progress')
@@ -701,41 +619,88 @@ def main():
     
     def update_hp_type(sender, app_data):
         """ 
-        GUI function to update brir dictionary based on input
+        GUI function to update brir based on input
         """
-        
-        hp_type = app_data
-
-        #get user data from process hpcf button, contains a dict
-        current_dict = dpg.get_item_user_data("brir_tag")
-        modified_dict = current_dict.copy()
-        #change value in dict
-        pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
-        #print(pinna_comp_int)
-        modified_dict.update({'pinna_comp': pinna_comp_int})
-        #update user data
-        dpg.configure_item('brir_tag',user_data=modified_dict)
-        
+ 
         #reset progress bar
         dpg.set_value("progress_bar_brir", 0)
         dpg.configure_item("progress_bar_brir", overlay = 'progress')
     
         save_settings()
+        
+        
+    def export_brir_toggle(sender, app_data):
+        """ 
+        GUI function to update settings based on toggle
+        """
+        
+        #reset progress bar
+        dpg.set_value("progress_bar_brir", 0)
+        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        
+        save_settings()
+    
  
     def process_brirs(sender, app_data, user_data):
         """ 
         GUI function to process BRIRs
         """
         
+        #create dict with dummy values
+        brir_settings = {'hrtf': 1, 'direct_gain': 4.0, 'room_target': 1, 'pinna_comp': 2, 'rt60': 400,  
+                                 'brir_export': 1, 'brir_directional_export':1, 'brir_ts_export': 1, 'hesuvi_export': 1, 'eapo_export': 1}
+ 
+        app_data = dpg.get_value("dir_brir_toggle")
+        #change value in dict
+        brir_settings.update({'brir_directional_export': int(app_data)})
+            
+        app_data = dpg.get_value("ts_brir_toggle")
+        #change value in dict
+        brir_settings.update({'brir_ts_export': int(app_data)})
         
+        app_data = dpg.get_value("hesuvi_brir_toggle")
+        #change value in dict
+        brir_settings.update({'hesuvi_export': int(app_data)}) 
+        
+        app_data = dpg.get_value("eapo_brir_toggle")
+        #change value in dict
+        brir_settings.update({'eapo_export': int(app_data)})
+        
+        app_data = dpg.get_value("rm_target_list")
+        target = app_data
+        #change value in dict
+        room_target_int = CN.ROOM_TARGET_LIST.index(target)
+        brir_settings.update({'room_target': room_target_int})
+
+        app_data = dpg.get_value("direct_gain")
+        gain_db = app_data
+        brir_settings.update({'direct_gain': gain_db})
+
+        app_data = dpg.get_value("target_rt60")
+        target_rt60 = app_data
+        brir_settings.update({'rt60': target_rt60})
+
+        app_data = dpg.get_value("brir_hrtf")
+        hrtf = app_data
+        #change value in dict
+        hrtf_int = CN.HRTF_LIST_NUM.index(hrtf)+1
+        #print(room_target_int)
+        brir_settings.update({'hrtf': hrtf_int})
+ 
+        app_data = dpg.get_value("brir_hp_type")
+        hp_type = app_data
+        #change value in dict
+        pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
+        brir_settings.update({'pinna_comp': pinna_comp_int})
+
         output_path = dpg.get_value('selected_folder_base')
         
-        current_dict = dpg.get_item_user_data("brir_tag")
+        current_dict = brir_settings
         hrtf_type = current_dict.get('hrtf')
         direct_gain_db = current_dict.get('direct_gain')
         direct_gain_db = round(direct_gain_db,1)#round to nearest .1 dB
         room_target = current_dict.get('room_target')
-        apply_pinna_comp = current_dict.get('pinna_comp')
+        pinna_comp = current_dict.get('pinna_comp')
         target_rt60 = current_dict.get('rt60')
         hesuvi_export = current_dict.get('hesuvi_export')
         eapo_export = current_dict.get('eapo_export')
@@ -754,13 +719,13 @@ def main():
             #Run BRIR integration
             """
             brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, 
-                                                                apply_pinna_comp=apply_pinna_comp, target_rt60=target_rt60, report_progress=1, gui_logger=logz)
+                                                                pinna_comp=pinna_comp, target_rt60=target_rt60, report_progress=1, gui_logger=logz)
             
             """
             #Run BRIR export
             """
             #calculate name
-            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[apply_pinna_comp]
+            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
             brir_export.export_brir(brir_arr=brir_gen, hrtf_type=hrtf_type, target_rt60=target_rt60, brir_name=brir_name, primary_path=output_path, samp_freq=samp_freq_int, bit_depth=bit_depth, 
                                     brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, report_progress=1, gui_logger=logz, direct_gain_db=direct_gain_db)
             
@@ -788,6 +753,13 @@ def main():
         #Run BRIR reverb synthesis
         brir_generation.generate_reverberant_brir(gui_logger=logz)
 
+    def check_app_version(sender, app_data, user_data):
+        """ 
+        GUI function to check app version
+        """
+
+        hpcf_functions.check_for_app_update(gui_logger=logz)
+    
     def check_db_version(sender, app_data, user_data):
         """ 
         GUI function to check db version
@@ -950,16 +922,46 @@ def main():
         hp_type_str = dpg.get_value('brir_hp_type')
         hrtf_str = dpg.get_value('brir_hrtf')
         room_target_str = dpg.get_value('rm_target_list')
+        rt60_str = str(dpg.get_value('target_rt60'))
+        direct_gain_str = str(dpg.get_value('direct_gain'))
+        fir_hpcf_exp_str= str(dpg.get_value('fir_hpcf_toggle'))
+        fir_st_hpcf_exp_str= str(dpg.get_value('fir_st_hpcf_toggle'))
+        eapo_hpcf_exp_str= str(dpg.get_value('eapo_hpcf_toggle'))
+        geq_hpcf_exp_str= str(dpg.get_value('geq_hpcf_toggle'))
+        geq_31_exp_str= str(dpg.get_value('geq_31_hpcf_toggle'))
+        hesuvi_hpcf_exp_str= str(dpg.get_value('hesuvi_hpcf_toggle'))
+        dir_brir_exp_str= str(dpg.get_value('dir_brir_toggle'))
+        ts_brir_exp_str= str(dpg.get_value('ts_brir_toggle'))
+        hesuvi_brir_exp_str= str(dpg.get_value('hesuvi_brir_toggle'))
+        eapo_brir_exp_str= str(dpg.get_value('eapo_brir_toggle'))
+        
+        
         
         try:
             #save folder name to config file
             config = configparser.ConfigParser()
+            
             config['DEFAULT']['path'] = base_folder_selected    # update
             config['DEFAULT']['sampling_frequency'] = samp_freq_str 
             config['DEFAULT']['bit_depth'] = bit_depth_str    # update
             config['DEFAULT']['brir_headphone_type'] = hp_type_str    # update
             config['DEFAULT']['brir_hrtf'] = hrtf_str    # update
             config['DEFAULT']['brir_room_target'] = room_target_str    # update
+            config['DEFAULT']['brir_rt60'] = rt60_str    # update
+            config['DEFAULT']['brir_direct_gain'] = direct_gain_str    # update
+            config['DEFAULT']['version'] = __version__    # update
+            config['DEFAULT']['fir_hpcf_exp'] = fir_hpcf_exp_str
+            config['DEFAULT']['fir_st_hpcf_exp'] = fir_st_hpcf_exp_str
+            config['DEFAULT']['eapo_hpcf_exp'] = eapo_hpcf_exp_str
+            config['DEFAULT']['geq_hpcf_exp'] = geq_hpcf_exp_str
+            config['DEFAULT']['geq_31_exp'] = geq_31_exp_str
+            config['DEFAULT']['hesuvi_hpcf_exp'] = hesuvi_hpcf_exp_str
+            config['DEFAULT']['dir_brir_exp'] = dir_brir_exp_str
+            config['DEFAULT']['ts_brir_exp'] = ts_brir_exp_str
+            config['DEFAULT']['hesuvi_brir_exp'] = hesuvi_brir_exp_str 
+            config['DEFAULT']['eapo_brir_exp'] = eapo_brir_exp_str
+            
+            
             with open(CN.SETTINGS_FILE, 'w') as configfile:    # save
                 config.write(configfile)
         except:
@@ -986,6 +988,19 @@ def main():
         
         hpcf_functions.get_recent_hpcfs(conn, gui_logger=logz)     
         
+    def remove_brirs(sender, app_data, user_data):
+        """ 
+        GUI function to delete generated BRIRs
+        """
+        base_folder_selected=dpg.get_value('selected_folder_base')
+        brir_export.remove_brirs(base_folder_selected, gui_logger=logz)     
+        
+    def remove_hpcfs(sender, app_data, user_data):
+        """ 
+        GUI function to remove generated HpCFs
+        """
+        base_folder_selected=dpg.get_value('selected_folder_base')
+        hpcf_functions.remove_hpcfs(base_folder_selected, gui_logger=logz)     
         
 
     def _hsv_to_rgb(h, s, v):
@@ -1035,7 +1050,7 @@ def main():
         default_font = dpg.add_font(in_file_path, 14)    
     
     
-    dpg.create_viewport(title='Audio Spatialisation for Headphones Toolset', width=1650, height=880, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
+    dpg.create_viewport(title='Audio Spatialisation for Headphones Toolset', width=1650, height=900, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
     
     with dpg.window(tag="Primary Window"):
         
@@ -1068,7 +1083,6 @@ def main():
                 #Section for HpCF Export
                 with dpg.child_window(width=550, height=490):
                     dpg.add_text("Headphone Correction Filters (HpCFs)")
-                    #dpg.add_checkbox(label="Export HpCFs", default_value = True, callback=export_hpcf_toggle)
                     with dpg.child_window(autosize_x=True, height=350):
                         #dpg.add_text("Select Headphone")
                         with dpg.group(horizontal=True):
@@ -1079,101 +1093,99 @@ def main():
                         with dpg.group(horizontal=True, width=0):
                             with dpg.group():
                                 dpg.add_text("Brand")
-                                listbox_1 = dpg.add_listbox(brands_list, width=180, num_items=15, tag='brand_list', callback=update_headphone_list)
+                                listbox_1 = dpg.add_listbox(brands_list, width=165, num_items=15, tag='brand_list', callback=update_headphone_list)
                             with dpg.group():
                                 dpg.add_text("Headphone")
                                 listbox_2 = dpg.add_listbox(hp_list_default, width=220, num_items=15, tag='headphone_list', default_value=headphone_default ,callback=update_sample_list)
                             with dpg.group():
                                 dpg.add_text("Sample")
-                                listbox_3 = dpg.add_listbox(sample_list_default, width=100, num_items=15, default_value=sample_default, tag='sample_list', user_data=headphone_default, callback=plot_sample)
+                                listbox_3 = dpg.add_listbox(sample_list_default, width=115, num_items=15, default_value=sample_default, tag='sample_list', user_data=headphone_default, callback=plot_sample)
                                 with dpg.tooltip("sample_list"):
                                     dpg.add_text("Note: all samples will be exported. Select a sample to preview")
                     with dpg.child_window(autosize_x=True, height=95):
                         dpg.add_text("Select Files to Include in Export")
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="FIR Filters", default_value = True, callback=export_fir_toggle, tag='fir_hpcf_toggle')
+                            dpg.add_checkbox(label="FIR Filters", default_value = fir_hpcf_exp_loaded, callback=export_fir_toggle, tag='fir_hpcf_toggle')
                             with dpg.tooltip("fir_hpcf_toggle"):
                                 dpg.add_text("Min phase WAV FIRs for convolution. 1 Channel, 24 bit depth, 44.1Khz")
-                            dpg.add_checkbox(label="Stereo FIR Filters", default_value = True, callback=export_fir_stereo_toggle, tag='fir_st_hpcf_toggle')
+                            dpg.add_checkbox(label="Stereo FIR Filters", default_value = fir_st_hpcf_exp_loaded, callback=export_fir_stereo_toggle, tag='fir_st_hpcf_toggle')
                             with dpg.tooltip("fir_st_hpcf_toggle"):
                                 dpg.add_text("Min phase WAV FIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz")
-                            dpg.add_checkbox(label="E-APO Configuration Files", default_value = True, callback=export_eapo_hpcf_toggle, tag='eapo_hpcf_toggle')  
+                            dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_hpcf_exp_loaded, callback=export_eapo_hpcf_toggle, tag='eapo_hpcf_toggle')  
                             with dpg.tooltip("eapo_hpcf_toggle"):
                                 dpg.add_text("Equalizer APO configurations to perform convolution with FIR filters")
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="Graphic EQ Filters (127 Bands)", default_value = True, callback=export_geq_toggle, tag='geq_hpcf_toggle')
+                            dpg.add_checkbox(label="Graphic EQ Filters (127 Bands)", default_value = geq_hpcf_exp_loaded, callback=export_geq_toggle, tag='geq_hpcf_toggle')
                             with dpg.tooltip("geq_hpcf_toggle"):
                                 dpg.add_text("Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet")
-                            dpg.add_checkbox(label="Graphic EQ Filters (31 Bands)", default_value = True, callback=export_geq_31_toggle, tag='geq_31_hpcf_toggle')
+                            dpg.add_checkbox(label="Graphic EQ Filters (31 Bands)", default_value = geq_31_exp_loaded, callback=export_geq_31_toggle, tag='geq_31_hpcf_toggle')
                             with dpg.tooltip("geq_31_hpcf_toggle"):
                                 dpg.add_text("Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO")
-                            dpg.add_checkbox(label="HeSuVi Filters", default_value = True, callback=export_hesuvi_hpcf_toggle, tag='hesuvi_hpcf_toggle')
+                            dpg.add_checkbox(label="HeSuVi Filters", default_value = hesuvi_hpcf_exp_loaded, callback=export_hesuvi_hpcf_toggle, tag='hesuvi_hpcf_toggle')
                             with dpg.tooltip("hesuvi_hpcf_toggle"):
                                 dpg.add_text("Graphic EQ configurations with 103 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder")
                 
 
                 #Section for BRIR generation
-                with dpg.child_window(width=460, height=490):
+                with dpg.child_window(width=520, height=490):
                     dpg.add_text("Binaural Room Impulse Responses (BRIRs)")
-                    #dpg.add_checkbox(label="Generate BRIRs", default_value = True, callback=export_brir_toggle)
                     with dpg.child_window(autosize_x=True, height=350):
-                        with dpg.group():
-                            dpg.add_text("Select Gain for Direct Sound (dB)")
-                            dpg.add_input_float(label="Direct Gain (dB)", format="%.02f", tag='direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_default,min_clamped=True, max_clamped=True, callback=update_direct_gain)
-                            with dpg.tooltip("direct_gain"):
-                                dpg.add_text("Higher values will result in lower perceived distance. Lower values result in higher perceived distance")
-                                #dpg.add_text("Higher values will sound closer. Lower values will sound further away")
-                            dpg.add_text("Select Target RT60 Reverberation Time (ms)")
-                            dpg.add_input_int(label="Target RT60 (ms)", tag='target_rt60', default_value=400, min_value=200, max_value=1250, min_clamped=True, max_clamped=True, callback=update_rt60)
-                            with dpg.tooltip("target_rt60"):
-                                dpg.add_text("Select a value between 200ms and 1250ms")
-                            with dpg.group(horizontal=True):
-                                with dpg.group():
-                                    dpg.add_text("Select Dummy Head / Head & Torso Simulator")
-                                    listbox_4 = dpg.add_listbox(CN.HRTF_LIST_NUM, default_value=hrtf_loaded, num_items=11, width=220, callback=update_hrtf, tag='brir_hrtf')
-                                with dpg.group():
-                                    dpg.add_text("Select Headphone Type")
-                                    listbox_5 = dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, width=200, callback=update_hp_type, tag='brir_hp_type')
-                                    dpg.add_text("Select Room Target")
-                                    listbox_6 = dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=room_target_loaded, num_items=6, width=200, tag='rm_target_list', callback=select_room_target)
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Select Gain for Direct Sound (dB)")
+                                dpg.add_input_float(label="Direct Gain (dB)",width=150, format="%.02f", tag='direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded,min_clamped=True, max_clamped=True, callback=update_direct_gain)
+                                with dpg.tooltip("direct_gain"):
+                                    dpg.add_text("Higher values will result in lower perceived distance. Lower values result in higher perceived distance")
+                                    #dpg.add_text("Higher values will sound closer. Lower values will sound further away")
+                                dpg.add_text("Select Target RT60 Reverberation Time (ms)")
+                                dpg.add_input_int(label="Target RT60 (ms)",width=150, tag='target_rt60', default_value=rt60_loaded, min_value=200, max_value=1250, min_clamped=True, max_clamped=True, callback=update_rt60)
+                                with dpg.tooltip("target_rt60"):
+                                    dpg.add_text("Select a value between 200ms and 1250ms")
+                                dpg.add_text("Select Dummy Head / Head & Torso Simulator")
+                                listbox_4 = dpg.add_listbox(CN.HRTF_LIST_NUM, default_value=hrtf_loaded, num_items=11, width=250, callback=update_hrtf, tag='brir_hrtf')
+                            with dpg.group():
+                                dpg.add_text("Select Headphone Compensation")
+                                listbox_5 = dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, num_items=4, width=230, callback=update_hp_type, tag='brir_hp_type')
+                                dpg.add_text("Select Room Target")
+                                listbox_6 = dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=room_target_loaded, num_items=6, width=230, tag='rm_target_list', callback=select_room_target)
                     with dpg.child_window(autosize_x=True, height=95):
                         dpg.add_text("Select Files to Include in Export")
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="Direction Specific WAVs", default_value = True, callback=export_dir_brirs_toggle, tag='dir_brir_toggle')
+                            dpg.add_checkbox(label="Direction Specific WAVs", default_value = dir_brir_exp_loaded,  tag='dir_brir_toggle', callback=export_brir_toggle)
                             with dpg.tooltip("dir_brir_toggle"):
                                 dpg.add_text("Directional WAV BRIRs for convolution. 2 Channels, 24 bit depth, 44.1Khz")
-                            dpg.add_checkbox(label="True Stereo WAVs", default_value = True, callback=export_ts_brirs_toggle, tag='ts_brir_toggle')
+                            dpg.add_checkbox(label="True Stereo WAVs", default_value = ts_brir_exp_loaded,  tag='ts_brir_toggle', callback=export_brir_toggle)
                             with dpg.tooltip("ts_brir_toggle"):
                                 dpg.add_text("True Stereo WAV BRIRs for convolution. 4 Channels, 24 bit depth, 44.1Khz")
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="HeSuVi WAVs", default_value = True, callback=export_hesuvi_brir_toggle, tag='hesuvi_brir_toggle')  
+                            dpg.add_checkbox(label="HeSuVi WAVs", default_value = hesuvi_brir_exp_loaded,  tag='hesuvi_brir_toggle', callback=export_brir_toggle)  
                             with dpg.tooltip("hesuvi_brir_toggle"):
                                 dpg.add_text("HeSuVi compatible WAV BRIRs. 14 Channels, 24 bit depth, 44.1Khz and 48Khz")
-                            dpg.add_checkbox(label="E-APO Configuration Files", default_value = True, callback=export_eapo_brir_toggle, tag='eapo_brir_toggle')
+                            dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_brir_exp_loaded,  tag='eapo_brir_toggle', callback=export_brir_toggle)
                             with dpg.tooltip("eapo_brir_toggle"):
                                 dpg.add_text("Equalizer APO configurations to perform convolution with BRIRs")
                     
                 #Section for plotting
-                with dpg.child_window(width=580, height=490):
+                with dpg.child_window(width=520, height=490):
                     dpg.add_text("Filter Preview")
                     #plotting
-                    with dpg.child_window(width=560, height=450):
-                        dpg.add_text("Select a filter from list to preview")
-                        # create plot
-                        with dpg.plot(label="Magnitude Response Plot", height=410, width=550):
-                            # optionally create legend
-                            dpg.add_plot_legend()
-                    
-                            # REQUIRED: create x and y axes
-                            dpg.add_plot_axis(dpg.mvXAxis, label="Frequency (Hz)", tag="x_axis", log_scale=True)
-                            dpg.set_axis_limits("x_axis", 10, 20000)
-                            dpg.add_plot_axis(dpg.mvYAxis, label="Magnitude (DB)", tag="y_axis")
-                            dpg.set_axis_limits("y_axis", -20, 15)
-                    
-                            # series belong to a y axis
-                            dpg.add_line_series(default_x, default_y, label="Plot", parent="y_axis", tag="series_tag")
-                            #initial plot
-                            hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
+                    dpg.add_separator()
+                    dpg.add_text("Select a filter from list to preview")
+                    # create plot
+                    with dpg.plot(label="Magnitude Response Plot", height=410, width=505):
+                        # optionally create legend
+                        dpg.add_plot_legend()
+                
+                        # REQUIRED: create x and y axes
+                        dpg.add_plot_axis(dpg.mvXAxis, label="Frequency (Hz)", tag="x_axis", log_scale=True)
+                        dpg.set_axis_limits("x_axis", 10, 20000)
+                        dpg.add_plot_axis(dpg.mvYAxis, label="Magnitude (DB)", tag="y_axis")
+                        dpg.set_axis_limits("y_axis", -20, 15)
+                
+                        # series belong to a y axis
+                        dpg.add_line_series(default_x, default_y, label="Plot", parent="y_axis", tag="series_tag")
+                        #initial plot
+                        hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
             #Section for exporting files and logging
             with dpg.group(horizontal=True):
                 #Section for Exporting files
@@ -1192,7 +1204,7 @@ def main():
                     with dpg.group(horizontal=True):
                         with dpg.child_window(width=172):
                             dpg.add_text("WAV Settings")
-                            dpg.add_text("Select Sampling Rate")
+                            dpg.add_text("Select Sample Rate")
                             dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=False, tag= "wav_sample_rate", default_value=sample_freq_loaded, callback=update_sample_rate )
                             dpg.add_text("Select Bit Depth")
                             dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "wav_bit_depth", default_value=bit_depth_loaded, callback=update_bit_depth)
@@ -1208,7 +1220,6 @@ def main():
                             dpg.add_text("BRIRs")
                             dpg.add_button(label="Click Here to Process BRIRs",user_data="",tag="brir_tag", callback=process_brirs)
                             dpg.bind_item_theme(dpg.last_item(), "__theme_a")
-                            dpg.configure_item('brir_tag',user_data=default_brir_settings)
                             with dpg.tooltip("brir_tag"):
                                 dpg.add_text("This will generate the customised BRIRs and export to above directory. It may take a minute to process")
                             dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=27, width=320, overlay="progress", tag="progress_bar_brir")
@@ -1219,8 +1230,34 @@ def main():
                 with dpg.child_window(width=1048, height=305, tag="console_window"):
                     dpg.add_text("Log")
                 
-                
+           
             with dpg.collapsing_header(label="Additional Tools"):
+                with dpg.group(horizontal=True):
+                    #Section for database
+                    with dpg.child_window(width=200, height=120):
+                        dpg.add_text("Check for App Updates")
+                        dpg.add_button(label="Click Here to Check Versions",user_data="",tag="app_version_tag", callback=check_app_version)
+                        with dpg.tooltip("app_version_tag"):
+                            dpg.add_text("This will display version of local app and latest available version in the log")
+                    with dpg.child_window(width=200, height=120):
+                        dpg.add_text("Check for HpCF Database Updates")
+                        dpg.add_button(label="Click Here to Check Versions",user_data="",tag="hpcf_db_version_tag", callback=check_db_version)
+                        with dpg.tooltip("hpcf_db_version_tag"):
+                            dpg.add_text("This will display version of local HpcF database and latest version in the log")
+                        dpg.add_text("Download latest HpCF Database")
+                        dpg.add_button(label="Click Here to Download",user_data="",tag="hpcf_db_download_tag", callback=download_latest_db)
+                        with dpg.tooltip("hpcf_db_download_tag"):
+                            dpg.add_text("This will download latest version of HpcF database and replace local version")
+                    with dpg.child_window(width=250, height=120):
+                        dpg.add_text("Remove BRIRs from output directory")
+                        dpg.add_button(label="Click Here to Remove BRIRs",user_data="",tag="remove_brirs_tag", callback=remove_brirs)
+                        with dpg.tooltip("remove_brirs_tag"):
+                            dpg.add_text("Warning: this will delete all BRIRs and E-APO configs that have been generated and stored in above directory")
+                        dpg.add_text("Remove HpCFs from output directory")
+                        dpg.add_button(label="Click Here to Remove HpCFs",user_data="",tag="remove_hpcfs_tag", callback=remove_hpcfs)
+                        with dpg.tooltip("remove_hpcfs_tag"):
+                            dpg.add_text("Warning: this will delete all HpCFs and E-APO configs that have been generated and stored in above directory")
+            with dpg.collapsing_header(label="Developer Tools"):
                 with dpg.group(horizontal=True):
                     with dpg.group():
                         #Section for BRIRs
@@ -1231,14 +1268,6 @@ def main():
                                 dpg.add_text("This will regenerate the reverberation data used to generate BRIRs. Requires brir_dataset_compensated in data\interim folder. It may take some time to process")
                         #Section for database
                         with dpg.child_window(width=400, height=180):
-                            dpg.add_text("Check for HpCF Database Updates")
-                            dpg.add_button(label="Click Here to Check Versions",user_data="",tag="hpcf_db_version_tag", callback=check_db_version)
-                            with dpg.tooltip("hpcf_db_version_tag"):
-                                dpg.add_text("This will display version of local HpcF database and latest version in the log")
-                            dpg.add_text("Download latest HpCF Database")
-                            dpg.add_button(label="Click Here to Download",user_data="",tag="hpcf_db_download_tag", callback=download_latest_db)
-                            with dpg.tooltip("hpcf_db_download_tag"):
-                                dpg.add_text("This will download latest version of HpcF database and replace local version")
                             dpg.add_text("Rebuild HpCF Database from WAVs")
                             dpg.add_button(label="Click Here to Rebuild",user_data="",tag="hpcf_db_create", callback=create_db_from_wav)
                             with dpg.tooltip("hpcf_db_create"):
@@ -1321,9 +1350,7 @@ def main():
     
     #section to log tool version on startup
     #log results
-    with open(CN.METADATA_FILE) as fp:
-        _info = json.load(fp)
-    __version__ = _info['version']
+    
     log_string = 'Audio Spatialisation for Headphones Toolset. Version: ' + __version__
     logz.log_info(log_string)
     
