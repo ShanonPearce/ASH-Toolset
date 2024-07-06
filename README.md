@@ -87,10 +87,10 @@ python C:\sample-location\ASH-Toolset\ash_toolset.py
 
 ### Generate HpCFs for headphone correction
 This part of the app is used to generate a set of HpCFs for a selected headphone and export to files which can then be loaded into audio processing software to apply headphone correction.
-1. Select a headphone brand to filter down on the headphone list
-2. Select a specific headphone
+1. Select a headphone brand to filter down on the headphone list.
+2. Select a specific headphone.
 3. (optional) One or more samples will be available for the specified headphone. Select one to preview the filter response. Note that all samples will be exported for the selected headphone.
-4. Select which files to include in the export
+4. Select which files to include in the export.
    - FIR Filters: Minimum phase WAV FIRs for convolution. 1 channel at specified sample rate and bit depth.
    - stereo FIR Filters: Minimum phase WAV FIRs for convolution. 2 channels at specified sample rate and bit depth.
    - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with HpCF FIR filters
@@ -100,7 +100,7 @@ This part of the app is used to generate a set of HpCFs for a selected headphone
 5. Select a location to export files to. Default location is in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set), which is the recommended location if using Equalizer APO. HeSuVi files will be saved in the EqualizerAPO\config\HeSuVi directory.
 6. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz.
 7. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-8. Click the process HpCFs button to export the selected HpCFs to above directory
+8. Click the process HpCFs button to export the selected HpCFs to above directory.
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
@@ -122,7 +122,7 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - KEMAR (SADIE)
    - KEMAR-N (PKU-IOA)
    - KEMAR-L (PKU-IOA)
-4. Select Headphone Compensation from below options depending on headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+4. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
    - In-Ear Headphones, high strength
    - In-Ear Headphones, low strength
    - Over-Ear/On-Ear Headphones, high strength
@@ -134,7 +134,7 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - HATS Target
    - Toole Target
    - rtings Target
-6. Select which files to include in the export
+6. Select which files to include in the export.
    - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 channels at specified sample rate and bit depth
    - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 channels (LL LR RL RR) at specified sample rate and bit depth
    - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz
