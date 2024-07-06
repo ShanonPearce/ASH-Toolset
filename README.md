@@ -107,19 +107,26 @@ This part of the app is used to generate a set of HpCFs for a selected headphone
 ### Generate BRIRs for binaural room simulation
 This part of the app is used to generate a set of customised BRIRs and export to WAV files which can then be loaded into audio processing software to apply binaural room simulation.
 1. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-2. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in more late reflections and larger perceived room size.
+2. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in stronger late reflections and larger perceived room size.
 3. Select Dummy Head / Head & Torso Simulator from available options:
-   - KU_100
-   - KEMAR_Large
-   - KEMAR_Normal
-   - B&K_4128
-   - DADEC
-   - HMSII.2
-   - KEMAR
-   - B&K_4128C
-4. Select Headphone Type from options:
-   - In-Ear Headphones
-   - Over-Ear/On-Ear Headphones
+   - Neumann KU 100 (SADIE)
+   - Neumann KU 100 (TH Köln)
+   - FABIAN HATS
+   - B&K Type 4128
+   - B&K Type 4128C (MMHR-HRIR)
+   - DADEC (MMHR-HRIR)
+   - HEAD acoustics HMSII.2 (MMHR-HRIR)
+   - KEMAR (MMHR-HRIR)
+   - KEMAR-N (MIT)
+   - KEMAR-L (MIT)
+   - KEMAR (SADIE)
+   - KEMAR-N (PKU-IOA)
+   - KEMAR-L (PKU-IOA)
+4. Select Headphone Compensation from below options depending on headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+   - In-Ear Headphones, high strength
+   - In-Ear Headphones, low strength
+   - Over-Ear/On-Ear Headphones, high strength
+   - Over-Ear/On-Ear Headphones, low strength
 5. Select Room Target from below options.  Flat is recommended if using headphone correction from other sources such as AutoEq.
    - Flat
    - ASH Target
