@@ -152,7 +152,7 @@ def get_brand_list(conn):
     
 def search_brand_list(conn,search_str=None):
     """
-    Function retrieves list of brands from database
+    Function retrieves list of brands from database based on search string
     """
     try:
         if search_str == None or not search_str:
@@ -175,7 +175,7 @@ def search_brand_list(conn,search_str=None):
  
 def search_headphone_list(conn,search_str=None):
     """
-    Function retrieves list of brands from database
+    Function retrieves list of headphones from database based on search string
     """
     try:
 
@@ -884,7 +884,7 @@ def hpcf_sample_id_to_name(sample_id):
 def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=44100, geq_freq_arr = np.array([]), output_string_type = 2):
     """
     Function takes an FIR as an input and returns EQ filter. Supports Graphic EQ Full, Graphic EQ
-    :param fir_array: numpy array 1d, contains time domain FIR filter
+    :param fir_array: numpy array 1d, contains time domain FIR filter at 44100Hz
     :param geq_mode: int, 1 = graphic eq 32 bands based on prominent peaks, 2 = graphic eq with variable bands (hesuvi, wavelet, 31 band etc.)
     :param sample_rate: int, sample frequency in Hz
     :param geq_freq_arr: numpy array, contains list of frequencies that form filter
@@ -2663,26 +2663,66 @@ def remove_hpcfs(primary_path, gui_logger=None):
     """
     Function deletes HpCFs and E-APO configs stored in a specified directory
     """
-    out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS)
+    out_file_dir_hpcf = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS)
     output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS_HPCF)
     
     try:
         
-        if os.path.exists(out_file_dir_wav) and os.path.exists(output_config_path):
-            shutil.rmtree(out_file_dir_wav)
-            shutil.rmtree(output_config_path)
-            
-            log_string_a = 'Deleted folder and contents: ' + out_file_dir_wav 
-            log_string_b = 'Deleted folder and contents: ' + output_config_path
+        if os.path.exists(out_file_dir_hpcf):
+            shutil.rmtree(out_file_dir_hpcf)
+            log_string_a = 'Deleted folder and contents: ' + out_file_dir_hpcf 
             if CN.LOG_INFO == 1:
                 logging.info(log_string_a)
-                logging.info(log_string_b)
             if CN.LOG_GUI == 1 and gui_logger != None:
                 gui_logger.log_info(log_string_a)
-                gui_logger.log_info(log_string_b)
+                
+        if os.path.exists(output_config_path):
+            shutil.rmtree(output_config_path)
+            log_string_b = 'Deleted folder and contents: ' + output_config_path
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_b)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string_b)    
+                
+                
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
-        log_string = 'Failed to delete folders: ' + out_file_dir_wav + ' & ' + output_config_path
+        log_string = 'Failed to delete folders: ' + out_file_dir_hpcf + ' & ' + output_config_path
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
+    """
+    Function deletes HpCFs stored in a specified directory
+    """
+    out_file_dir_hpcf = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS)
+    original_hp_name =  headphone.replace(" ", "_")
+    
+    #delimiters
+    delimiter_a = '_Sample'
+    delimiter_b = '_Average'
+    
+    try:
+ 
+        for root, dirs, file in os.walk(out_file_dir_hpcf):
+            for filename in file:
+                
+                name_before_a = filename.split(delimiter_a)[0]
+                name_before_sample = name_before_a.split(delimiter_b)[0]
+                if original_hp_name in filename and name_before_sample == original_hp_name:
+                    file_path=os.path.join(root, filename)
+                    os.remove(file_path) # delete file based on their name
+                    log_string_a = 'Deleted file: ' + file_path 
+                    if CN.LOG_INFO == 1:
+                        logging.info(log_string_a)
+                    if CN.LOG_GUI == 1 and gui_logger != None:
+                        gui_logger.log_info(log_string_a)
+        
+ 
+  
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Failed to delete folder: ' + out_file_dir_hpcf
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)

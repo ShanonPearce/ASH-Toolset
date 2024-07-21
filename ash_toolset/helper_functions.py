@@ -46,7 +46,7 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
     :param y_lim_adjust: int, 1 = adjust y axis to 30db range, 0 = no adjustment 
     :param save_plot: int, 1 = save plot to file, 0 = dont save plot
     :param plot_path: string, path to save plot 
-    :param normalise: int, 1 = normalise low frequencies to 0db
+    :param normalise: int, 0 = dont normalise, 1 = normalise low frequencies to 0db
     :param plot_type: int, 0 = matplotlib, 1 = dearpygui
     :return: None
     """

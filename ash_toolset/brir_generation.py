@@ -531,10 +531,10 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         # load sub bass BRIR (FIR)
         #
         
-        #load smaller variant if target RT60 is low
+        #deprecated: load smaller variant if target RT60 is low
         selected_sub_brir = ''
         if target_rt60 < 350:
-            selected_sub_brir= 'ash_sub_brir_small'
+            selected_sub_brir= 'ash_sub_brir'#'ash_sub_brir_small'
         else:
             selected_sub_brir= 'ash_sub_brir'
                 
@@ -547,9 +547,9 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         #variable crossover depending on RT60
         f_crossover_var=CN.F_CROSSOVER
         if target_rt60 < 350:
-            f_crossover_var=150#155
+            f_crossover_var=145#145
         else:
-            f_crossover_var=150#150
+            f_crossover_var=145#145
 
 
         log_string = 'Low frequency response loaded'

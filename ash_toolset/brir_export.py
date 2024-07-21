@@ -16,6 +16,7 @@ from ash_toolset import helper_functions as hf
 from ash_toolset import constants as CN
 import shutil
 import os
+from math import sqrt
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -316,7 +317,7 @@ def generate_direction_matrix(hrtf_type):
         else:
             elev_out_range = {-45,-30,-15,0,15,30,45}  
         
-        azim_horiz_range = {20,25,35,40,340,335,325,320}
+        azim_horiz_range = {5,20,25,35,40,355,340,335,325,320}
         
          
         
@@ -326,7 +327,7 @@ def generate_direction_matrix(hrtf_type):
             elev_deg = int(CN.MIN_ELEV + elev*CN.NEAREST_ELEV)
             for azim in range(CN.OUTPUT_AZIMS):
                 azim_deg = int(azim*CN.NEAREST_AZ_HRIR)
-                if (elev_deg in elev_out_range and azim_deg%CN.NEAREST_AZ_WAV == 0) or (hrtf_type != 4 and (elev_deg == 0 or elev_deg == -15 or elev_deg == 15) and (azim_deg in azim_horiz_range)):  
+                if (elev_deg in elev_out_range and azim_deg%CN.NEAREST_AZ_WAV == 0) or (hrtf_type != 4 and (elev_deg >= -30 and elev_deg <= 30) and (azim_deg in azim_horiz_range)):  
                     
                     #populate matrix with 1 if direction applicable
                     direction_matrix[elev][azim][0][0] = 1
@@ -339,6 +340,55 @@ def generate_direction_matrix(hrtf_type):
     return direction_matrix
 
 
+def find_nearest_direction(hrtf_type, target_elevation, target_azimuth):
+    """
+    Function returns a int containing nearest available azimuth and elevation angle for a specified hrtf and azimuth and elevation
+    """
+    
+    try:
+        
+        target_elevation = int(target_elevation)
+        target_azimuth = int(target_azimuth)
+        
+        #limited elevation range for HRTF type 4
+        if hrtf_type == 4:
+            elev_out_range = {-30,0,30}
+        else:
+            elev_out_range = {-45,-30,-15,0,15,30,45}  
+        
+        azim_horiz_range = {5,20,25,35,40,355,340,335,325,320}
+        
+         
+        nearest_distance = 1000.0 #start with large number
+        nearest_elevation = target_elevation
+        nearest_azimuth = target_azimuth
+
+        #write stereo wav for each elev and az
+        for elev in range(CN.OUTPUT_ELEVS):
+            elev_deg = int(CN.MIN_ELEV + elev*CN.NEAREST_ELEV)
+            for azim in range(CN.OUTPUT_AZIMS):
+                azim_deg = int(azim*CN.NEAREST_AZ_HRIR)
+                azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
+                if (elev_deg in elev_out_range and azim_deg%CN.NEAREST_AZ_WAV == 0) or (hrtf_type != 4 and (elev_deg >= -30 and elev_deg <= 30) and (azim_deg in azim_horiz_range)):  
+                    current_distance = sqrt(abs(elev_deg-target_elevation)**2 + abs(azim_deg_wav-target_azimuth)**2)
+                    #store this direction if it is closer than previous
+                    if current_distance < nearest_distance:
+                        nearest_distance=current_distance
+                        nearest_elevation=elev_deg
+                        nearest_azimuth=azim_deg_wav
+                    
+        out_dict = {'nearest_elevation': nearest_elevation, 'nearest_azimuth': nearest_azimuth, 'nearest_distance': nearest_distance}
+        
+        return out_dict
+        
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        
+
+
+
+
+
 def remove_brirs(primary_path, gui_logger=None):
     """
     Function deletes BRIRs and E-APO configs stored in a specified directory
@@ -348,21 +398,55 @@ def remove_brirs(primary_path, gui_logger=None):
     
     try:
         
-        if os.path.exists(out_file_dir_wav) and os.path.exists(output_config_path):
+        if os.path.exists(out_file_dir_wav):
             shutil.rmtree(out_file_dir_wav)
-            shutil.rmtree(output_config_path)
-            
             log_string_a = 'Deleted folder and contents: ' + out_file_dir_wav 
-            log_string_b = 'Deleted folder and contents: ' + output_config_path
             if CN.LOG_INFO == 1:
                 logging.info(log_string_a)
-                logging.info(log_string_b)
             if CN.LOG_GUI == 1 and gui_logger != None:
                 gui_logger.log_info(log_string_a)
+                
+        if os.path.exists(output_config_path):
+            shutil.rmtree(output_config_path)
+            log_string_b = 'Deleted folder and contents: ' + output_config_path
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_b)
+            if CN.LOG_GUI == 1 and gui_logger != None:
                 gui_logger.log_info(log_string_b)
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folders: ' + out_file_dir_wav + ' & ' + output_config_path
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+            
+def remove_select_brirs(primary_path, brir_set, gui_logger=None):
+    """
+    Function deletes BRIRs in a specified directory
+    """
+    out_file_dir_brirs = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
+    original_set_name =  brir_set.replace(" ", "_")
+
+    try:
+        
+        for root, dirs, file in os.walk(out_file_dir_brirs):
+            for dir in dirs:
+                if original_set_name in dir:
+                    folder_path=os.path.join(root, dir)
+                    shutil.rmtree(folder_path)
+                    #os.rmdir(folder_path)
+                    log_string_a = 'Deleted folder and conents: ' + folder_path 
+                    if CN.LOG_INFO == 1:
+                        logging.info(log_string_a)
+                    if CN.LOG_GUI == 1 and gui_logger != None:
+                        gui_logger.log_info(log_string_a)
+            
+                
+
+    
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Failed to delete folder: ' + out_file_dir_brirs
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)

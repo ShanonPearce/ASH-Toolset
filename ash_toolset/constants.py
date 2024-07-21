@@ -29,7 +29,7 @@ DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
 #crossover frequency for low frequency BRIR integration
 ENABLE_SUB_INTEGRATION = 1
 F_CROSSOVER = 145#160 default,120 good with 7 order, 155
-APPLY_SUB_EQ = 1
+APPLY_SUB_EQ = 0#1
 
 #apply any room target
 APPLY_ROOM_TARGET = 1
@@ -133,6 +133,7 @@ OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
 HRTF_LIST_NUM = ['01: Neumann KU 100 (SADIE)', '02: Neumann KU 100 (TH Köln)', '03: FABIAN HATS', '04: B&K Type 4128', '05: B&K Type 4128C (MMHR-HRIR)', '06: DADEC (MMHR-HRIR)', '07: HEAD acoustics HMSII.2 (MMHR-HRIR)', '08: KEMAR (MMHR-HRIR)', '09: KEMAR-N (MIT)', '10: KEMAR-L (MIT)', '11: KEMAR (SADIE)', '12: KEMAR-N (PKU-IOA)', '13: KEMAR-L (PKU-IOA)']
 HRTF_LIST_SHORT = ['KU_100_SADIE', 'KU_100_THK', 'FABIAN', 'B&K_4128', 'B&K_4128C_MMHR', 'DADEC_MMHR', 'HMSII.2_MMHR', 'KEMAR_MMHR', 'KEMAR-N_MIT', 'KEMAR-L_MIT', 'KEMAR_SADIE', 'KEMAR-N_PKU', 'KEMAR-L_PKU']
 HRTF_GAIN_LIST = ['-11.0 dB', '-12.0 dB', '-11.0 dB', '-9.0 dB', '-8.0 dB', '-10.5 dB', '-9.5 dB', '-8.0 dB', '-12.0 dB', '-12.9 dB', '-10.8 dB', '-7.8 dB', '-11.0 dB']
+HRTF_GAIN_LIST_NUM = [-11.0, -12.0, -11.0, -9.0, -8.0,-10.5,-9.5,-8.0,-12.0,-12.9,-10.8,-7.8,-11.0]
 
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
@@ -152,7 +153,24 @@ NUM_OUT_CHANNELS_TS = 4
 #Equalizer APO constants
 AZIM_DICT = {'WIDE_BL':'-135','WIDE_BR':'135','NARROW_BL':'-150','NARROW_BR':'150','WIDEST_BL':'-120','WIDEST_BR':'120','SL':'-90','SR':'90','FL':'-30','FR':'30','FC':'0','WIDE_FL':'-35','WIDE_FR':'35','NARROW_FL':'-25','NARROW_FR':'25'}
 CHANNEL_CONFIGS = [['2.0_Stereo','2.0','2.0 Stereo'],['2.0_Stereo_Narrow','2.0N','2.0 Stereo (narrow placement)'],['2.0_Stereo_Wide','2.0W','2.0 Stereo (wide placement)'],['7.1_Surround_Narrow_Back','7.1N','7.1 surround (narrow back placement)'],['7.1_Surround_Wide_Back','7.1W','7.1 surround (wide back placement)'],['5.1_Surround','5.1','5.1 surround']]
+AUDIO_CHANNELS = ['2.0 Stereo','5.1 Surround','7.1 Surround','7.1 Downmix to Stereo']
 NUM_SPEAK_CONFIGS = len(CHANNEL_CONFIGS)
+ELEV_ANGLES_WAV_BK = [-30,0,30]
+ELEV_ANGLES_WAV = [45,30,15,0,-15,-30,-45]#[-45,-30,-15,0,15,30,45]
+AZ_ANGLES_FL_WAV = [-90,-75,-60,-45,-40,-35,-30,-25,-20,-15,0]
+AZ_ANGLES_FR_WAV = [90,75,60,45,40,35,30,25,20,15,0]
+AZ_ANGLES_C_WAV = [-5,5,0]
+AZ_ANGLES_SL_WAV = [-120,-105,-90,-75,-60]
+AZ_ANGLES_SR_WAV = [120,105,90,75,60]
+AZ_ANGLES_RL_WAV = [180,-165,-150,-135,-120,-105,-90]
+AZ_ANGLES_RR_WAV = [180,165,150,135,120,105,90]
+AZ_ANGLES_FL_WAV.reverse()
+AZ_ANGLES_FR_WAV.reverse()
+AZ_ANGLES_C_WAV.reverse()
+AZ_ANGLES_SL_WAV.reverse()
+AZ_ANGLES_SR_WAV.reverse()
+AZ_ANGLES_RL_WAV.reverse()
+AZ_ANGLES_RR_WAV.reverse()
 
 #hpcf related
 NUM_ITER = 8 #4
