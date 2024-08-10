@@ -18,8 +18,8 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 
 ## Features <a name="Features"></a> 
 - **Headphone Correction** — Generate Headphone correction filters (HpCFs) in WAV format for IR convolution or configurations for graphic equalisers
-- **Binaural Room Simulation** —  Generate customised Binaural Room Impulse Responses (BRIRs) in WAV format for IR convolution
-- **Equalizer APO Compatibility** —  Generates configuration files to load HpCFs and BRIRs in Equalizer APO, an audio processing object for windows.
+- **Binaural Room Simulation** —  Generate customised Binaural Room Impulse Responses (BRIRs) in WAV format for IR convolution or SOFA format.
+- **Equalizer APO Integration** —  Auto configures Equalizer APO to apply created filters and perform headphone correction and binaural room simulation.
 - **HeSuVi Compatibility** —  Generates BRIRs and HpCFs in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
 
 ## Background <a name="Background"></a> 
@@ -49,16 +49,21 @@ Tested on Windows 10 and Windows 11.
 
 Python libraries:
   ```sh
-  pip install dearpygui
-  pip install dearpygui_ext
-  pip install dearpygui-extend
-  pip install mat73
-  pip install matplotlib
-  pip install numpy
-  pip install pyfar
-  pip install scipy
-  pip install soundfile
-  pip install gdown
+  pip install dearpygui==1.9.1
+  pip install dearpygui_ext==0.9.5
+  pip install dearpygui-extend==0.1.3
+  pip install mat73==0.63
+  pip install matplotlib==3.7.0
+  pip install numpy==2.0.1
+  pip install pyfar==0.6.5
+  pip install scipy==1.11.4
+  pip install soundfile==0.12.1
+  pip install gdown==5.2.0
+  pip install librosa==0.10.2.post1
+  pip install thefuzz==0.22.1
+  pip install SOFASonix==1.0.7
+  pip install opencv_python==4.10.0.84
+  pip install onnxruntime_directml==1.18.1
   ```
 Data files:
 
@@ -86,7 +91,7 @@ python C:\sample-location\ASH-Toolset\ash_toolset.py
 ```
 
 ### Generate HpCFs for headphone correction
-This part of the app is used to generate a set of HpCFs for a selected headphone and export to files which can then be loaded into audio processing software to apply headphone correction.
+This part of the app is used to generate a set of HpCFs for a selected headphone and export to filter files which can then be loaded into audio processing software to apply headphone correction.
 1. Select a headphone brand to filter down on the headphone list.
 2. Select a specific headphone.
 3. (optional) One or more samples will be available for the specified headphone. Select one to preview the filter response. Note that all samples will be exported for the selected headphone.
@@ -104,10 +109,20 @@ This part of the app is used to generate a set of HpCFs for a selected headphone
 ![hpcf steps](docs/images/hpcf_steps.png)
 
 ### Generate BRIRs for binaural room simulation
-This part of the app is used to generate a set of customised BRIRs and export to WAV files which can then be loaded into audio processing software to apply binaural room simulation.
+This part of the app is used to generate a set of customised BRIRs and export to WAV files or SOFA files which can then be loaded into audio processing software to apply binaural room simulation.
 1. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in stronger late reflections and larger perceived room size.
 2. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-3. Select Dummy Head / Head & Torso Simulator from available options:
+3. Select spatial resolution from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size.
+   - Low: Elevation angles ranging from -30 to 30 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
+   - Medium: Elevation angles ranging from -45 to 45 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
+   - High: Elevation angles ranging from -50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps. Azimuth angles ranging from 0 to 360 degrees in 5 degree steps.
+   - Max: Elevation angles ranging from -40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps. Azimuth angles ranging from 0 to 360 degrees in 2 degree steps.
+4. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+   - In-Ear Headphones, high strength
+   - In-Ear Headphones, low strength
+   - Over-Ear/On-Ear Headphones, high strength
+   - Over-Ear/On-Ear Headphones, low strength
+5. Select Dummy Head / Head & Torso Simulator from available options:
    - Neumann KU 100 (SADIE)
    - Neumann KU 100 (TH Köln)
    - FABIAN HATS
@@ -121,26 +136,22 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - KEMAR (SADIE)
    - KEMAR-N (PKU-IOA)
    - KEMAR-L (PKU-IOA)
-4. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
-   - In-Ear Headphones, high strength
-   - In-Ear Headphones, low strength
-   - Over-Ear/On-Ear Headphones, high strength
-   - Over-Ear/On-Ear Headphones, low strength
-5. Select Room Target from below options.  Flat is recommended if using headphone correction from other sources such as AutoEq.
+6. Select Room Target from below options.  Flat is recommended if using headphone correction from other sources such as AutoEq.
    - Flat
    - ASH Target
    - Harman Target
    - HATS Target
    - Toole Target
    - rtings Target
-6. Select which files to include in the export.
+7. Select which files to include in the export.
    - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 channels at specified sample rate and bit depth. This is file type is required for the app to auto-configure 'config.txt' in Equalizer APO.
    - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 channels (LL LR RL RR) at specified sample rate and bit depth
    - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
-7. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
-8. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-9. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
+   - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format.
+8. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
+9. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+10. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
 
 ![brir steps](docs/images/brir_steps.png)
 
@@ -189,17 +200,18 @@ As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be a
 
 
 ### File naming and Structure
-Outputs (excluding HeSuVi files) are saved within the `ASH-Custom-Set` child folder under the output directory. This will be in the Equalizer APO config directory (e.g. `C:\Program Files\EqualizerAPO\config\ASH-Custom-Set`) by default. HeSuVi files will be saved within the HeSuVi folder (e.g. `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default. If required, the output directory can be changed in the 'Additional Tools & Settings' section of the app. The `EqualizerAPO\config` directory should be selected if using Equalizer APO to ensure the filters and configurations can be read by Equalizer APO. 
+Outputs (excluding HeSuVi files) are saved within the `ASH-Custom-Set` child folder under the output directory. This will be in the Equalizer APO config directory (e.g. `C:\Program Files\EqualizerAPO\config\ASH-Custom-Set`) by default. HeSuVi files will be saved within the HeSuVi folder (e.g. `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default. If required, the output directory can be changed using the directory selector. The `EqualizerAPO\config` directory should be selected if using Equalizer APO to ensure the filters and configurations can be read by Equalizer APO. 
 
 **BRIRs**
 - BRIRs are saved within the ASH-Custom-Set\BRIRs folder.
-- A folder is created for each set of BRIRs and is named as per the selected parameters.
+- A folder is created for each set of WAV BRIRs and is named as per the selected parameters.
     - The naming convention for the folder is `(Listener)_(Reverb_Time)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)`.
 - A WAV file is created for a range of source directions around the listener. Each WAV file corresponds to a unique direction.
     - The naming convention for the BRIR WAV files is `BRIR_E(Elevation)_A(Azimuth).wav`.
     - Positive elevation angles correspond to points above the listener while negative angles correspond to points below the listener. An elevation of 0 corresponds to a point at the same level as the listener.
     - Positive azimuth angles correspond to points to the right of the listener while negative angles correspond to points to the left of the listener. An azimuth of -90 corresponds to a point directly to the left of the listener while an azimuth of 90 corresponds to a point directly to the right of the listener.
 - A true stereo WAV file is also located in each folder with naming `BRIR_True_Stereo.wav`
+- SOFA files are located under the SOFA folder
 
 **HpCFs**
 - HpCFs are saved within the ASH-Custom-Set\HpCFs folder
