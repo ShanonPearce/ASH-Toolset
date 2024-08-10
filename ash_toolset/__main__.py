@@ -20,7 +20,7 @@ def main():
     from ash_toolset import constants as CN
     from ash_toolset import hpcf_functions
     from ash_toolset import helper_functions as hf
-    from ash_toolset import head_pose
+    
     import mat73
     import dearpygui.dearpygui as dpg
     import dearpygui_extend as dpge
@@ -35,6 +35,9 @@ def main():
     from time import time
     from time import sleep
     import threading
+    
+    if CN.SHOW_DEV_TOOLS == True:
+        from ash_toolset import head_pose
     
     #logging
     logging.basicConfig(
@@ -3078,7 +3081,8 @@ def main():
                 #section for logging
                 with dpg.child_window(width=1130, height=280, tag="console_window"):
                     dpg.add_text("Log")
-        with dpg.collapsing_header(label="Developer Tools"):
+                    
+        with dpg.collapsing_header(label="Developer Tools",show=CN.SHOW_DEV_TOOLS):
             with dpg.group(horizontal=True):
                 with dpg.group():
                     #section for head pose tracking
