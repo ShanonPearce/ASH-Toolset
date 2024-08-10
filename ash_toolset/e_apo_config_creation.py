@@ -248,7 +248,7 @@ def write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path):
 
 
         
-def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, gui_logger=None):
+def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, spatial_res=1, gui_logger=None):
     """
     Function creates equalizer APO configuration file to perform relevant convolution commands. This file needs to be loaded into config.txt
     :param primary_path: string, base path to save files to
@@ -327,13 +327,13 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
             hrtf_type=4
         else:
             hrtf_type=1#default to 1
-        nearest_dir_dict_fl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fl , target_azimuth=azim_fl)
-        nearest_dir_dict_fr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fr , target_azimuth=azim_fr)
-        nearest_dir_dict_c = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_c , target_azimuth=azim_c)
-        nearest_dir_dict_sl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sl , target_azimuth=azim_sl)
-        nearest_dir_dict_sr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sr , target_azimuth=azim_sr)
-        nearest_dir_dict_rl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rl , target_azimuth=azim_rl)
-        nearest_dir_dict_rr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rr , target_azimuth=azim_rr)
+        nearest_dir_dict_fl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fl , target_azimuth=azim_fl, spatial_res=spatial_res)
+        nearest_dir_dict_fr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fr , target_azimuth=azim_fr, spatial_res=spatial_res)
+        nearest_dir_dict_c = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_c , target_azimuth=azim_c, spatial_res=spatial_res)
+        nearest_dir_dict_sl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sl , target_azimuth=azim_sl, spatial_res=spatial_res)
+        nearest_dir_dict_sr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sr , target_azimuth=azim_sr, spatial_res=spatial_res)
+        nearest_dir_dict_rl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rl , target_azimuth=azim_rl, spatial_res=spatial_res)
+        nearest_dir_dict_rr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rr , target_azimuth=azim_rr, spatial_res=spatial_res)
         elev_fl=nearest_dir_dict_fl.get('nearest_elevation')
         elev_fr=nearest_dir_dict_fr.get('nearest_elevation')
         elev_c=nearest_dir_dict_c.get('nearest_elevation')
@@ -421,9 +421,16 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
             #find HATS from file name
             #find gain to apply based on HATS
             brir_gain=0
-            for idx, x in enumerate(CN.HRTF_LIST_SHORT):
+            if spatial_res == 3:
+                hrtf_list=CN.HRTF_LIST_FULL_RES_SHORT
+                gain_list=CN.HRTF_GAIN_LIST_FULL_RES_NUM
+            else:
+                hrtf_list=CN.HRTF_LIST_SHORT
+                gain_list=CN.HRTF_GAIN_LIST_NUM
+            for idx, x in enumerate(hrtf_list):
                 if x in brir_set_formatted:
-                    brir_gain = CN.HRTF_GAIN_LIST_NUM[idx]*-1
+                    brir_gain = gain_list[idx]*-1
+                    
             max_level_db = max_level_db + brir_gain + additional_gain
         if enable_hpcf_conv == False and enable_brir_conv == False:
             max_level_db=max_level_db+additional_gain*2
@@ -633,10 +640,10 @@ def include_ash_e_apo_config(primary_path, enabled=False):
                     
                     
             else:
-                raise ValueError('file not found: '+ str(e_apo_config_path))
+                raise ValueError('config.txt not modified. file not found: '+ str(e_apo_config_path))
     
         else:
-            raise ValueError('file not found: '+ str(custom_file))
+            raise ValueError('config.txt not modified. file not found: '+ str(custom_file))
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)   
@@ -671,6 +678,64 @@ def get_exported_brir_list(primary_path):
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)   
         return []
+    
+def get_spatial_res_from_dir(primary_path, brir_set):
+    """
+    Function reads BRIR folders in output directory and returns int containing estimated spatial resolution.
+    :param primary_path: string, base path to save files to
+    :return: None
+    """  
+    
+    spatial_res=1#default value
+    
+    try:
+
+        #brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
+        
+        #find file names for desired brirs
+        brir_set_formatted = brir_set.replace(" ", "_")
+        brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
+        
+        #logging.info('brirs_path: ' + str(brirs_path))
+        
+        spatial_res_low=0
+        spatial_res_med=0 
+        spatial_res_high=0 
+        spatial_res_full=0
+        
+        #find specific directions to flag spatial res
+        
+        for root, dirs, files in os.walk(brirs_path):
+            for filename in files:
+                if '_E-50_' in filename:
+                    spatial_res_high=1 
+                if '_E-45_' in filename:
+                    spatial_res_med=1 
+                if '_E-30_' in filename:
+                    spatial_res_low=1 
+                if '_E-2_' in filename:
+                    spatial_res_full=1     
+                    
+        
+        if spatial_res_full == 1:
+            spatial_res=3
+        elif spatial_res_high == 1:
+            spatial_res=2
+        elif spatial_res_med == 1:
+            spatial_res=1
+        elif spatial_res_low == 1:
+            spatial_res=0
+            
+        #logging.info('dir_list: ' + str(directory_list))
+    
+        return spatial_res
+    
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)   
+        return spatial_res
+    
+    
+    
     
 def get_exported_hp_list(primary_path):
     """

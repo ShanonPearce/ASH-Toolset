@@ -37,13 +37,18 @@ APPLY_ADD_HP_EQ = 1
 
 NEAREST_AZ_BRIR = 15
 NEAREST_AZ_HRIR = 5
+NEAREST_AZ_REVERB = 5
 NEAREST_ELEV=15
 N_FFT = 65536
 SAMP_FREQ = 44100
 FS=SAMP_FREQ
 MIN_ELEV=-60
 MAX_ELEV=60
-
+TOTAL_CHAN_BRIR = 2
+OUTPUT_AZIMS = int(360/NEAREST_AZ_HRIR)
+INTERIM_ELEVS = 1
+OUTPUT_ELEVS = int((MAX_ELEV-MIN_ELEV)/NEAREST_ELEV +1)
+N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
 ELEV_OFFSET = np.abs(MIN_ELEV)
 
 #apply room sorting based on size
@@ -58,13 +63,6 @@ ROOM_WEIGHTING_DESC=1
 #window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
 WINDOW_TYPE=2#1
 ALIGNMENT_METHOD = 5
-
-TOTAL_CHAN_BRIR = 2
-
-OUTPUT_AZIMS = int(360/NEAREST_AZ_HRIR)
-INTERIM_ELEVS = 1
-OUTPUT_ELEVS = int((MAX_ELEV-MIN_ELEV)/NEAREST_ELEV +1)
-N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
 
 #contants for TD alignment of BRIRs
 T_SHIFT_INTERVAL = 50
@@ -91,12 +89,16 @@ SCRIPT_DIR_PATH = Path(__file__).resolve().parent #using Pathlib
 SCRIPT_DIRECTORY = path.dirname(path.abspath(sys.argv[0]))#old method using os.path
 DATA_DIR_INT = pjoin(BASE_DIR_OS, 'data','interim')
 DATA_DIR_EXT = pjoin(BASE_DIR_OS, 'data','external')
+DATA_DIR_SOFA = pjoin(BASE_DIR_OS, 'data','external','SOFA')
+DATA_DIR_SOFA_USER = pjoin(BASE_DIR_OS, 'data','external','SOFA','user')
+DATA_DIR_ASSETS = pjoin(BASE_DIR_OS, 'data','external','assets')
 DATA_DIR_RAW = pjoin(BASE_DIR_OS, 'data','raw')
 DATA_DIR_RAW_HP_MEASRUEMENTS = pjoin(BASE_DIR_OS, 'data','raw','headphone_measurements')
 DATA_DIR_ROOT = pjoin(BASE_DIR_OS, 'data')
 DATA_DIR_OUTPUT = pjoin(BASE_DIR_OS, 'data','processed')
 PROJECT_FOLDER = 'ASH-Custom-Set'    
 PROJECT_FOLDER_BRIRS = pjoin(PROJECT_FOLDER, 'BRIRs')  
+PROJECT_FOLDER_BRIRS_SOFA = pjoin(PROJECT_FOLDER, 'BRIRs', 'SOFA')  
 PROJECT_FOLDER_CONFIGS = pjoin(PROJECT_FOLDER, 'E-APO-Configs') 
 PROJECT_FOLDER_CONFIGS_BRIR = pjoin(PROJECT_FOLDER, 'E-APO-Configs','BRIR-Convolution') 
 PROJECT_FOLDER_CONFIGS_HPCF = pjoin(PROJECT_FOLDER, 'E-APO-Configs','HpCF-Convolution') 
@@ -135,6 +137,11 @@ HRTF_LIST_SHORT = ['KU_100_SADIE', 'KU_100_THK', 'FABIAN', 'B&K_4128', 'B&K_4128
 HRTF_GAIN_LIST = ['-11.0 dB', '-12.0 dB', '-11.0 dB', '-9.0 dB', '-8.0 dB', '-10.5 dB', '-9.5 dB', '-8.0 dB', '-12.0 dB', '-12.9 dB', '-10.8 dB', '-7.8 dB', '-11.0 dB']
 HRTF_GAIN_LIST_NUM = [-11.0, -12.0, -11.0, -9.0, -8.0,-10.5,-9.5,-8.0,-12.0,-12.9,-10.8,-7.8,-11.0]
 
+HRTF_LIST_FULL_RES_NUM = ['01: Neumann KU 100 (TH Köln)', '02: FABIAN HATS']
+HRTF_LIST_FULL_RES_SHORT = ['KU_100_THK', 'FABIAN']
+HRTF_GAIN_LIST_FULL_RES_NUM = [-12.0, -11.0]
+
+
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
 
@@ -151,12 +158,17 @@ NUM_OUT_CHANNELS_TS = 4
 
 
 #Equalizer APO constants
+BRIR_EXPORT_ENABLE = 1
 AZIM_DICT = {'WIDE_BL':'-135','WIDE_BR':'135','NARROW_BL':'-150','NARROW_BR':'150','WIDEST_BL':'-120','WIDEST_BR':'120','SL':'-90','SR':'90','FL':'-30','FR':'30','FC':'0','WIDE_FL':'-35','WIDE_FR':'35','NARROW_FL':'-25','NARROW_FR':'25'}
 CHANNEL_CONFIGS = [['2.0_Stereo','2.0','2.0 Stereo'],['2.0_Stereo_Narrow','2.0N','2.0 Stereo (narrow placement)'],['2.0_Stereo_Wide','2.0W','2.0 Stereo (wide placement)'],['7.1_Surround_Narrow_Back','7.1N','7.1 surround (narrow back placement)'],['7.1_Surround_Wide_Back','7.1W','7.1 surround (wide back placement)'],['5.1_Surround','5.1','5.1 surround']]
 AUDIO_CHANNELS = ['2.0 Stereo','5.1 Surround','7.1 Surround','7.1 Downmix to Stereo']
 NUM_SPEAK_CONFIGS = len(CHANNEL_CONFIGS)
 ELEV_ANGLES_WAV_BK = [-30,0,30]
 ELEV_ANGLES_WAV = [45,30,15,0,-15,-30,-45]#[-45,-30,-15,0,15,30,45]
+ELEV_ANGLES_WAV_LOW = [30,15,0,-15,-30]
+ELEV_ANGLES_WAV_MED = [45,30,15,0,-15,-30,-45]
+ELEV_ANGLES_WAV_HI = [45,30,20,15,10,5,0,-5,-10,-15,-20,-30,-45]
+ELEV_ANGLES_WAV_MAX = [40,30,20,15,10,5,0,-5,-10,-15,-20,-30,-40]
 AZ_ANGLES_FL_WAV = [-90,-75,-60,-45,-40,-35,-30,-25,-20,-15,0]
 AZ_ANGLES_FR_WAV = [90,75,60,45,40,35,30,25,20,15,0]
 AZ_ANGLES_C_WAV = [-5,5,0]
@@ -171,6 +183,27 @@ AZ_ANGLES_SL_WAV.reverse()
 AZ_ANGLES_SR_WAV.reverse()
 AZ_ANGLES_RL_WAV.reverse()
 AZ_ANGLES_RR_WAV.reverse()
+AZIM_HORIZ_RANGE = {5,20,25,35,40,355,340,335,325,320}
+
+#spatial resolution
+SPATIAL_RES_LIST = ['Low','Medium','High','Max']
+NUM_SPATIAL_RES = len(SPATIAL_RES_LIST)
+SPATIAL_RES_ELEV_MIN=[-60, -60, -60, -40 ]#as per hrir dataset
+SPATIAL_RES_ELEV_MAX=[60, 60, 60, 60 ]#as per hrir dataset
+SPATIAL_RES_ELEV_MIN_OUT=[-30, -45, -50, -40 ]#reduced set
+SPATIAL_RES_ELEV_MAX_OUT=[30, 45, 50, 40 ]#reduced set
+SPATIAL_RES_ELEV_NEAREST=[5, 5, 5, 2]#as per hrir dataset
+SPATIAL_RES_AZIM_NEAREST=[5, 5, 5, 2]#as per hrir dataset
+SPATIAL_RES_ELEV_NEAREST_PR=[15, 15, 5, 2]#reduced set
+SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#reduced set
+
+#Head tracking related
+THREAD_FPS = 10
+THREAD_FPS_MIN=3
+THREAD_FPS_MAX=30
+PROVIDERS_CUDA=['CUDAExecutionProvider', 'CPUExecutionProvider']
+PROVIDERS_DML=['DmlExecutionProvider', 'CPUExecutionProvider']
+TRACK_SENSITIVITY = 4
 
 #hpcf related
 NUM_ITER = 8 #4
@@ -188,3 +221,6 @@ SAMPLE_RATE_LIST = ['44.1 kHz', '48 kHz', '96 kHz']
 SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}  
 BIT_DEPTH_LIST = ['24 bit', '32 bit']
 BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  
+
+HEAD_TRACK_RUNNING = False
+PROCESS_BRIRS_RUNNING = False

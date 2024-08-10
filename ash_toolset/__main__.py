@@ -20,6 +20,7 @@ def main():
     from ash_toolset import constants as CN
     from ash_toolset import hpcf_functions
     from ash_toolset import helper_functions as hf
+    from ash_toolset import head_pose
     import mat73
     import dearpygui.dearpygui as dpg
     import dearpygui_extend as dpge
@@ -31,6 +32,9 @@ def main():
     import ast
     import ctypes
     import math
+    from time import time
+    from time import sleep
+    import threading
     
     #logging
     logging.basicConfig(
@@ -53,14 +57,14 @@ def main():
     #
     #program code
     #
-    
-    
+
     
     #default values
     sample_freq_default=CN.SAMPLE_RATE_LIST[0]
     bit_depth_default=CN.BIT_DEPTH_LIST[0]
     brir_hp_type_default='Over/On-Ear Headphones - High Strength'
     hrtf_default=CN.HRTF_LIST_NUM[0]
+    spatial_res_default=CN.SPATIAL_RES_LIST[1]
     room_target_default=CN.ROOM_TARGET_LIST[1]
     rt60_default = 400
     direct_gain_default=3.0
@@ -74,8 +78,9 @@ def main():
     ts_brir_exp_default=False
     hesuvi_brir_exp_default=False
     eapo_brir_exp_default=False
-    autosize_win_default=False
-    gui_win_width_default=1660
+    sofa_brir_exp_default=False
+    autosize_win_default=True
+    gui_win_width_default=1738#1660
     gui_win_height_default=1039#1034
     audio_channels_default=CN.AUDIO_CHANNELS[0]
     show_filter_sect_default=True
@@ -97,12 +102,22 @@ def main():
     e_apo_hp_selected_default=''
     e_apo_sample_selected_default=''
     e_apo_brir_selected_default=''
+    #head tracking
+    enable_head_track_default=False
+    show_head_track_default=False
+    camera_index_default=0
+    camera_fps_default=20
+    reference_pitch_default='0'
+    reference_yaw_default='0'
+    reference_roll_default='180'
+    
     
     #loaded values - start with defaults
     sample_freq_loaded=sample_freq_default
     bit_depth_loaded=bit_depth_default
     brir_hp_type_loaded=brir_hp_type_default
     hrtf_loaded=hrtf_default
+    spatial_res_loaded=spatial_res_default
     room_target_loaded=room_target_default
     rt60_loaded = rt60_default
     direct_gain_loaded=direct_gain_default
@@ -116,6 +131,7 @@ def main():
     ts_brir_exp_loaded=ts_brir_exp_default
     hesuvi_brir_exp_loaded=hesuvi_brir_exp_default
     eapo_brir_exp_loaded=eapo_brir_exp_default
+    sofa_brir_exp_loaded=sofa_brir_exp_default
     autosize_win_loaded = autosize_win_default
     audio_channels_loaded=audio_channels_default
     show_filter_sect_loaded=show_filter_sect_default
@@ -155,6 +171,14 @@ def main():
     e_apo_hp_selected_loaded = e_apo_hp_selected_default
     e_apo_sample_selected_loaded = e_apo_sample_selected_default
     e_apo_brir_selected_loaded = e_apo_brir_selected_default
+    #head tracking
+    enable_head_track_loaded=enable_head_track_default
+    show_head_track_loaded=show_head_track_default
+    camera_index_loaded=camera_index_default
+    camera_fps_loaded=camera_fps_default
+    reference_pitch_loaded=reference_pitch_default
+    reference_yaw_loaded=reference_yaw_default
+    reference_roll_loaded=reference_roll_default
     
     
     #code to get gui width based on windows resolution
@@ -196,6 +220,7 @@ def main():
             bit_depth_loaded = config['DEFAULT']['bit_depth']
             brir_hp_type_loaded = config['DEFAULT']['brir_headphone_type']
             hrtf_loaded=config['DEFAULT']['brir_hrtf']
+            spatial_res_loaded=config['DEFAULT']['spatial_resolution']
             room_target_loaded=config['DEFAULT']['brir_room_target']
             rt60_loaded=int(config['DEFAULT']['brir_rt60'])
             direct_gain_loaded=float(config['DEFAULT']['brir_direct_gain'])
@@ -209,6 +234,7 @@ def main():
             ts_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['ts_brir_exp'])
             hesuvi_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['hesuvi_brir_exp'])
             eapo_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['eapo_brir_exp'])
+            sofa_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['sofa_brir_exp'])
             autosize_win_loaded=ast.literal_eval(config['DEFAULT']['autosize_win'])
             show_filter_sect_loaded=ast.literal_eval(config['DEFAULT']['show_filter_section'])
             show_eapo_sect_loaded=ast.literal_eval(config['DEFAULT']['show_eapo_section'])
@@ -253,6 +279,14 @@ def main():
             e_apo_sample_selected_loaded = config['DEFAULT']['sample_selected']
             e_apo_brir_selected_loaded = config['DEFAULT']['brir_set_selected']
             audio_channels_loaded=config['DEFAULT']['channel_config']
+            #head tracking
+            show_head_track_loaded=ast.literal_eval(config['DEFAULT']['show_head_track'])#disabled on load
+            camera_index_loaded=int(config['DEFAULT']['camera_index'])
+            camera_fps_loaded=int(config['DEFAULT']['camera_fps'])
+            reference_pitch_loaded=config['DEFAULT']['reference_pitch']
+            reference_yaw_loaded=config['DEFAULT']['reference_yaw']
+            reference_roll_loaded=config['DEFAULT']['reference_roll']
+            
             
         else:
             raise ValueError('Settings not loaded due to version mismatch')
@@ -271,9 +305,46 @@ def main():
             if gui_win_height_loaded > 732:
                 gui_win_height_loaded=732
         elif show_filter_sect_loaded == False and show_eapo_sect_loaded == True:
-            if gui_win_height_loaded > 405:
-                gui_win_height_loaded=405
+            if gui_win_height_loaded > 417:
+                gui_win_height_loaded=417
+            if show_head_track_loaded == False:
+                gui_win_width_loaded=1550
             
+    #adjust hrtf list based on loaded spatial resolution
+    #also adjust file export selection
+    dir_brir_exp_show=True
+    ts_brir_exp_show=True
+    hesuvi_brir_exp_show=True
+    eapo_brir_exp_show=True
+    sofa_brir_exp_show=True
+    dir_brir_tooltip_show=True
+    ts_brir_tooltip_show=True
+    hesuvi_brir_tooltip_show=True
+    eapo_brir_tooltip_show=True
+    sofa_brir_tooltip_show=True
+    if spatial_res_loaded == 'Max':
+        hrtf_list_loaded = CN.HRTF_LIST_FULL_RES_NUM
+        ts_brir_exp_loaded=False
+        hesuvi_brir_exp_loaded=False
+        eapo_brir_exp_loaded=False
+        ts_brir_exp_show=False
+        hesuvi_brir_exp_show=False
+        eapo_brir_exp_show=False
+        ts_brir_tooltip_show=False
+        hesuvi_brir_tooltip_show=False
+        eapo_brir_tooltip_show=False
+    elif spatial_res_loaded == 'Medium' or spatial_res_loaded == 'Low':
+        hrtf_list_loaded = CN.HRTF_LIST_NUM
+        sofa_brir_exp_loaded=False
+        sofa_brir_exp_show=False
+        sofa_brir_tooltip_show=False
+    else:
+        hrtf_list_loaded = CN.HRTF_LIST_NUM
+    
+    
+    #thread variables
+    head_track_lock = threading.Lock()
+
     
     #
     # populate room target dictionary for plotting
@@ -293,9 +364,7 @@ def main():
             room_target_fir[0:4096] = room_target_mat[target]
             data_fft = np.fft.fft(room_target_fir)
             room_target_mag=np.abs(data_fft)
-            
             room_target_name=CN.ROOM_TARGET_LIST[idx]
-    
             target_mag_dict.update({room_target_name: room_target_mag})
  
     #
@@ -315,6 +384,7 @@ def main():
     #
     # Equalizer APO related code
     #
+    #exported brir lists
     brir_list_out_default = e_apo_config_creation.get_exported_brir_list(primary_path)
     if e_apo_brir_selected_loaded and e_apo_brir_selected_loaded != '' and e_apo_brir_selected_loaded in brir_list_out_default:#apply loaded brir set
         brir_out_default=e_apo_brir_selected_loaded
@@ -322,7 +392,15 @@ def main():
         brir_out_default = brir_list_out_default[0]
     else:
         brir_out_default=''
-        
+    
+    #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
+    if brir_out_default and brir_out_default != None:
+        spatial_res_sel = e_apo_config_creation.get_spatial_res_from_dir(primary_path=primary_path, brir_set=brir_out_default)
+        elevation_list_sel = hf.get_elevation_list(spatial_res_sel)
+    else:
+        elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
+    
+    #exported headphone and sample lists
     hp_list_out_default = e_apo_config_creation.get_exported_hp_list(primary_path)
     if e_apo_hp_selected_loaded and e_apo_hp_selected_loaded != '' and e_apo_hp_selected_loaded in hp_list_out_default:#apply loaded headphone
         headphone_out_default=e_apo_hp_selected_loaded
@@ -349,6 +427,9 @@ def main():
     #
     ## GUI Functions - HPCFs
     #
+    
+    
+        
     
     def filter_brand_list(sender, app_data):
         """ 
@@ -732,14 +813,71 @@ def main():
                     
             
         #finally rewrite config file
-        e_apo_config_write()
+        e_apo_config_acquire()
         
     #
     ## GUI Functions - BRIRs
     #
     
+    def select_spatial_resolution(sender, app_data):
+        """ 
+        GUI function to update spatial resolution based on input
+        """
+        
+        #update hrtf list based on spatial resolution
+        #also update file format selection based on spatial resolution
+        #set some to false and hide irrelevant options
+        if app_data == 'Max':
+            dpg.configure_item('brir_hrtf',items=CN.HRTF_LIST_FULL_RES_NUM)
+            
+            dpg.set_value("ts_brir_toggle", False)
+            dpg.set_value("hesuvi_brir_toggle", False)
+            dpg.set_value("eapo_brir_toggle", False)
+            
+            dpg.configure_item("ts_brir_toggle", show=False)
+            dpg.configure_item("hesuvi_brir_toggle", show=False)
+            dpg.configure_item("eapo_brir_toggle", show=False)
+            dpg.configure_item("sofa_brir_toggle", show=True)
+ 
+            dpg.configure_item("ts_brir_tooltip", show=False)
+            dpg.configure_item("hesuvi_brir_tooltip", show=False)
+            dpg.configure_item("eapo_brir_tooltip", show=False)
+            dpg.configure_item("sofa_brir_tooltip", show=True)
+            
+        elif app_data == 'High':
+            dpg.configure_item('brir_hrtf',items=CN.HRTF_LIST_NUM)  
 
-     
+            dpg.configure_item("ts_brir_toggle", show=True)
+            dpg.configure_item("hesuvi_brir_toggle", show=True)
+            dpg.configure_item("eapo_brir_toggle", show=True)
+            dpg.configure_item("sofa_brir_toggle", show=True)
+ 
+            dpg.configure_item("ts_brir_tooltip", show=True)
+            dpg.configure_item("hesuvi_brir_tooltip", show=True)
+            dpg.configure_item("eapo_brir_tooltip", show=True)
+            dpg.configure_item("sofa_brir_tooltip", show=True)
+            
+        else:
+            dpg.configure_item('brir_hrtf',items=CN.HRTF_LIST_NUM)  
+
+            dpg.set_value("sofa_brir_toggle", False)
+
+            dpg.configure_item("ts_brir_toggle", show=True)
+            dpg.configure_item("hesuvi_brir_toggle", show=True)
+            dpg.configure_item("eapo_brir_toggle", show=True)
+            dpg.configure_item("sofa_brir_toggle", show=False)
+
+            dpg.configure_item("ts_brir_tooltip", show=True)
+            dpg.configure_item("hesuvi_brir_tooltip", show=True)
+            dpg.configure_item("eapo_brir_tooltip", show=True)
+            dpg.configure_item("sofa_brir_tooltip", show=False)
+        
+        
+        #reset progress bar
+        reset_progress()
+        
+        save_settings()
+        
 
     def select_room_target(sender, app_data):
         """ 
@@ -754,8 +892,7 @@ def main():
         hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
 
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
  
@@ -767,8 +904,7 @@ def main():
         dpg.set_value("direct_gain_slider", d_gain)
 
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
     
@@ -781,8 +917,7 @@ def main():
         dpg.set_value("direct_gain", d_gain)
 
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
     
@@ -795,8 +930,7 @@ def main():
         dpg.set_value("target_rt60_slider", rt60)
  
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
         
@@ -809,8 +943,7 @@ def main():
         dpg.set_value("target_rt60", rt60)
  
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
         
@@ -821,8 +954,7 @@ def main():
         """
 
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
     
@@ -832,8 +964,7 @@ def main():
         """
  
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
     
         save_settings()
         
@@ -844,99 +975,105 @@ def main():
         """
         
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         save_settings()
     
- 
-    def process_brirs(sender, app_data, user_data):
+    def start_process_brirs(sender, app_data, user_data):
+        """ 
+        GUI function to start or stop head tracking thread
+        """
+        #thread bool
+        process_brirs_running=dpg.get_item_user_data("brir_tag")
+        
+        if process_brirs_running == False:
+
+            #set thread running flag
+            process_brirs_running = True
+            #update user data
+            dpg.configure_item('brir_tag',user_data=process_brirs_running)
+            
+            #start thread
+            thread = threading.Thread(target=process_brirs, args=(), daemon=True)
+            thread.start()
+            
+            
+
+    
+    def process_brirs(sender=None, app_data=None, user_data=None):
         """ 
         GUI function to process BRIRs
         """
-        
-        #create dict with dummy values
-        brir_settings = {'hrtf': 1, 'direct_gain': 4.0, 'room_target': 1, 'pinna_comp': 2, 'rt60': 400,  
-                                 'brir_export': 1, 'brir_directional_export':1, 'brir_ts_export': 1, 'hesuvi_export': 1, 'eapo_export': 1}
- 
+
+
         app_data = dpg.get_value("dir_brir_toggle")
-        #change value in dict
-        brir_settings.update({'brir_directional_export': int(app_data)})
+        brir_directional_export = int(app_data)
             
         app_data = dpg.get_value("ts_brir_toggle")
-        #change value in dict
-        brir_settings.update({'brir_ts_export': int(app_data)})
+        brir_ts_export = int(app_data)
         
         app_data = dpg.get_value("hesuvi_brir_toggle")
-        #change value in dict
-        brir_settings.update({'hesuvi_export': int(app_data)}) 
+        hesuvi_export = int(app_data)
         
         app_data = dpg.get_value("eapo_brir_toggle")
-        #change value in dict
-        brir_settings.update({'eapo_export': int(app_data)})
+        eapo_export = int(app_data)
         
-        app_data = dpg.get_value("rm_target_list")
-        target = app_data
-        #change value in dict
+        app_data = dpg.get_value("sofa_brir_toggle")
+        sofa_export = int(app_data)
+        
+        target = dpg.get_value("rm_target_list")
         room_target_int = CN.ROOM_TARGET_LIST.index(target)
-        brir_settings.update({'room_target': room_target_int})
+        room_target = room_target_int
 
-        app_data = dpg.get_value("direct_gain")
-        gain_db = app_data
-        brir_settings.update({'direct_gain': gain_db})
+        direct_gain_db = dpg.get_value("direct_gain")
+        direct_gain_db = round(direct_gain_db,1)#round to nearest .1 dB
 
-        app_data = dpg.get_value("target_rt60")
-        target_rt60 = app_data
-        brir_settings.update({'rt60': target_rt60})
+        target_rt60 = dpg.get_value("target_rt60")
 
-        app_data = dpg.get_value("brir_hrtf")
-        hrtf = app_data
-        #change value in dict
-        hrtf_int = CN.HRTF_LIST_NUM.index(hrtf)+1
-        #print(room_target_int)
-        brir_settings.update({'hrtf': hrtf_int})
- 
-        app_data = dpg.get_value("brir_hp_type")
-        hp_type = app_data
-        #change value in dict
+        hp_type = dpg.get_value("brir_hp_type")
         pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
-        brir_settings.update({'pinna_comp': pinna_comp_int})
+        pinna_comp = pinna_comp_int
 
         output_path = dpg.get_value('selected_folder_base')
-        
-        current_dict = brir_settings
-        hrtf_type = current_dict.get('hrtf')
-        direct_gain_db = current_dict.get('direct_gain')
-        direct_gain_db = round(direct_gain_db,1)#round to nearest .1 dB
-        room_target = current_dict.get('room_target')
-        pinna_comp = current_dict.get('pinna_comp')
-        target_rt60 = current_dict.get('rt60')
-        hesuvi_export = current_dict.get('hesuvi_export')
-        eapo_export = current_dict.get('eapo_export')
-        brir_set_export = current_dict.get('brir_export')
-        brir_ts_export = current_dict.get('brir_ts_export')
-        brir_directional_export = current_dict.get('brir_directional_export')
+   
+        brir_set_export = CN.BRIR_EXPORT_ENABLE
         
         samp_freq_str = dpg.get_value('wav_sample_rate')
         samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str)
         bit_depth_str = dpg.get_value('wav_bit_depth')
         bit_depth = CN.BIT_DEPTH_DICT.get(bit_depth_str)
         
+        spat_res = dpg.get_value("brir_spat_res")
+        spat_res_int = CN.SPATIAL_RES_LIST.index(spat_res)
+        
+        hrtf = dpg.get_value("brir_hrtf")
+        if spat_res == 'Max':
+            hrtf_type = CN.HRTF_LIST_FULL_RES_NUM.index(hrtf)+1
+        else:
+            hrtf_type = CN.HRTF_LIST_NUM.index(hrtf)+1
+ 
+        
         if brir_set_export == 1:
         
             """
             #Run BRIR integration
             """
-            brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, 
+            brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, 
                                                                 pinna_comp=pinna_comp, target_rt60=target_rt60, report_progress=1, gui_logger=logz)
             
             """
             #Run BRIR export
             """
             #calculate name
-            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
-            brir_export.export_brir(brir_arr=brir_gen, hrtf_type=hrtf_type, target_rt60=target_rt60, brir_name=brir_name, primary_path=output_path, samp_freq=samp_freq_int, bit_depth=bit_depth, 
-                                    brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, report_progress=1, gui_logger=logz, direct_gain_db=direct_gain_db)
+            #depends on spatial resolution
+            if spat_res == 'Max':
+                brir_name = CN.HRTF_LIST_FULL_RES_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
+            else:    
+                brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
+    
+            brir_export.export_brir(brir_arr=brir_gen, hrtf_type=hrtf_type, target_rt60=target_rt60, brir_name=brir_name, primary_path=output_path, samp_freq=samp_freq_int, 
+                                    bit_depth=bit_depth, brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, 
+                                    report_progress=1, gui_logger=logz, direct_gain_db=direct_gain_db, spatial_res=spat_res_int, sofa_export=sofa_export)
             
             #set progress to 100 as export is complete (assume E-APO export time is negligible)
             progress = 100/100
@@ -946,6 +1083,10 @@ def main():
             #update BRIR list in E-APO section
             brir_list_out_latest = e_apo_config_creation.get_exported_brir_list(output_path)
             dpg.configure_item('e_apo_load_brir_set',items=brir_list_out_latest)
+            
+            #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
+            brir_out_sel=dpg.get_value('e_apo_load_brir_set')
+            update_elevations_list(brir_out_sel)
         
         if eapo_export == 1:
             """
@@ -954,8 +1095,12 @@ def main():
             e_apo_config_creation.write_e_apo_configs_brirs(brir_name=brir_name, primary_path=output_path, hrtf_type=hrtf_type)
             
         #finally rewrite config file
-        e_apo_config_write()
+        e_apo_config_acquire()
         
+        #also reset thread running flag
+        process_brirs_running = False
+        #update user data
+        dpg.configure_item('brir_tag',user_data=process_brirs_running)
         
     #
     ## GUI Functions - Additional DEV tools
@@ -1136,6 +1281,8 @@ def main():
         
         dpg.set_value("brir_hp_type", brir_hp_type_default)
         dpg.set_value("brir_hrtf", hrtf_default)
+        dpg.set_value("brir_spat_res", spatial_res_default)
+        dpg.configure_item('brir_hrtf',items=CN.HRTF_LIST_NUM)
         dpg.set_value("rm_target_list", room_target_default)
         dpg.set_value("target_rt60", rt60_default)
         dpg.set_value("target_rt60_slider", rt60_default)
@@ -1153,7 +1300,7 @@ def main():
         dpg.set_value("ts_brir_toggle", ts_brir_exp_default)
         dpg.set_value("hesuvi_brir_toggle", hesuvi_brir_exp_default)
         dpg.set_value("eapo_brir_toggle", eapo_brir_exp_default)
- 
+        dpg.set_value("sofa_brir_toggle", sofa_brir_exp_default)
     
         #get user data from process hpcf button, contains a dict
         current_dict = dpg.get_item_user_data("hpcf_tag")
@@ -1169,8 +1316,7 @@ def main():
         dpg.configure_item('hpcf_tag',user_data=modified_dict)
         
         #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = 'progress')
+        reset_progress()
         
         #reset output directory
         if e_apo_path is not None:
@@ -1181,6 +1327,14 @@ def main():
             primary_ash_path = 'C:\Program Files\EqualizerAPO\config\ASH-Custom-Set'
         dpg.set_value('selected_folder_base', primary_path)
         dpg.set_value('selected_folder_ash', primary_ash_path)
+        
+        dpg.set_value("reference_pitch",reference_pitch_default)
+        dpg.set_value("reference_yaw", reference_yaw_default)
+        dpg.set_value("reference_roll", reference_roll_default) 
+        dpg.set_value("camera_fps_tag", camera_fps_default)
+        dpg.set_value("camera_index_tag", camera_index_default)
+        
+        reset_channel_config()
         
         save_settings()
         
@@ -1193,6 +1347,7 @@ def main():
         bit_depth_str = dpg.get_value('wav_bit_depth')
         hp_type_str = dpg.get_value('brir_hp_type')
         hrtf_str = dpg.get_value('brir_hrtf')
+        brir_spat_res_str = dpg.get_value('brir_spat_res')
         room_target_str = dpg.get_value('rm_target_list')
         rt60_str = str(dpg.get_value('target_rt60'))
         direct_gain_str = str(dpg.get_value('direct_gain'))
@@ -1206,6 +1361,7 @@ def main():
         ts_brir_exp_str= str(dpg.get_value('ts_brir_toggle'))
         hesuvi_brir_exp_str= str(dpg.get_value('hesuvi_brir_toggle'))
         eapo_brir_exp_str= str(dpg.get_value('eapo_brir_toggle'))
+        sofa_brir_exp_str= str(dpg.get_value('sofa_brir_toggle'))
         autosize_win_str = str(dpg.get_value('resize_window_tag'))
         show_filter_sect_str = str(dpg.get_value('show_filter_sect_tag'))
         show_eapo_sect_str = str(dpg.get_value('show_eapo_sect_tag'))
@@ -1248,6 +1404,14 @@ def main():
         azim_rl_str=str(dpg.get_value('e_apo_az_angle_rl'))
         azim_rr_str=str(dpg.get_value('e_apo_az_angle_rr'))
         
+        enable_head_track_str=str(dpg.get_value('e_apo_head_tracking'))
+        show_head_track_str=str(dpg.get_value('show_head_tracking_tag'))
+        camera_index_str=str(dpg.get_value('camera_index_tag'))
+        camera_fps_str=str(dpg.get_value('camera_fps_tag'))
+        reference_pitch_str=str(dpg.get_value('reference_pitch'))
+        reference_yaw_str=str(dpg.get_value('reference_yaw'))
+        reference_roll_str=str(dpg.get_value('reference_roll'))
+        
         try:
             #save folder name to config file
             config = configparser.ConfigParser()
@@ -1257,6 +1421,7 @@ def main():
             config['DEFAULT']['bit_depth'] = bit_depth_str    # update
             config['DEFAULT']['brir_headphone_type'] = hp_type_str    # update
             config['DEFAULT']['brir_hrtf'] = hrtf_str    # update
+            config['DEFAULT']['spatial_resolution'] = brir_spat_res_str
             config['DEFAULT']['brir_room_target'] = room_target_str    # update
             config['DEFAULT']['brir_rt60'] = rt60_str    # update
             config['DEFAULT']['brir_direct_gain'] = direct_gain_str    # update
@@ -1271,6 +1436,7 @@ def main():
             config['DEFAULT']['ts_brir_exp'] = ts_brir_exp_str
             config['DEFAULT']['hesuvi_brir_exp'] = hesuvi_brir_exp_str 
             config['DEFAULT']['eapo_brir_exp'] = eapo_brir_exp_str
+            config['DEFAULT']['sofa_brir_exp'] = sofa_brir_exp_str
             config['DEFAULT']['autosize_win'] = autosize_win_str
             config['DEFAULT']['show_filter_section'] = show_filter_sect_str
             config['DEFAULT']['show_eapo_section'] = show_eapo_sect_str
@@ -1310,6 +1476,14 @@ def main():
             config['DEFAULT']['azim_sr'] = azim_sr_str
             config['DEFAULT']['azim_rl'] = azim_rl_str
             config['DEFAULT']['azim_rr'] = azim_rr_str
+            
+            config['DEFAULT']['enable_head_track'] = enable_head_track_str
+            config['DEFAULT']['show_head_track'] = show_head_track_str
+            config['DEFAULT']['camera_index'] = camera_index_str
+            config['DEFAULT']['camera_fps'] = camera_fps_str
+            config['DEFAULT']['reference_pitch'] = reference_pitch_str
+            config['DEFAULT']['reference_yaw'] = reference_yaw_str
+            config['DEFAULT']['reference_roll'] = reference_roll_str
             
 
             with open(CN.SETTINGS_FILE, 'w') as configfile:    # save
@@ -1351,7 +1525,7 @@ def main():
         dpg.set_value("e_apo_load_brir_set", '')
         
         #call main config writer function
-        e_apo_config_write()
+        e_apo_config_acquire()
         
     def remove_hpcfs(sender, app_data, user_data):
         """ 
@@ -1370,7 +1544,7 @@ def main():
         dpg.set_value("e_apo_load_sample", '')
         
         #call main config writer function
-        e_apo_config_write()
+        e_apo_config_acquire()
         
     def remove_select_brirs(sender, app_data, user_data):
         """ 
@@ -1384,8 +1558,12 @@ def main():
             brir_list_out_latest = e_apo_config_creation.get_exported_brir_list(base_folder_selected)
             dpg.configure_item('e_apo_load_brir_set',items=brir_list_out_latest)
             
+            #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
+            brir_out_sel=dpg.get_value('e_apo_load_brir_set')
+            update_elevations_list(brir_out_sel)
+            
             #call main config writer function
-            e_apo_config_write()
+            e_apo_config_acquire()
             
         dpg.configure_item("del_brir_popup", show=False)
         
@@ -1414,13 +1592,24 @@ def main():
                 dpg.configure_item('e_apo_load_sample',items=sample_list_sorted)
                 
             #call main config writer function
-            e_apo_config_write()
+            e_apo_config_acquire()
             
         dpg.configure_item("del_hp_popup", show=False)
         
     #
     # Equalizer APO configuration functions
     #
+
+    def e_apo_config_acquire(sender=None, app_data=None):
+        """ 
+        GUI function to acquire lock on function to write updates to custom E-APO config
+        """
+        
+        head_track_lock.acquire()
+        e_apo_config_write()
+        head_track_lock.release()
+        
+        
 
     def e_apo_config_write(sender=None, app_data=None):
         """ 
@@ -1471,6 +1660,33 @@ def main():
         azim_rl_selected=dpg.get_value('e_apo_az_angle_rl')
         azim_rr_selected=dpg.get_value('e_apo_az_angle_rr')
         
+        #apply transformations if head tracking enabled
+        enable_head_tracking=dpg.get_value('e_apo_head_tracking')
+        if enable_head_tracking == True:
+            fl_transformed = transform_direction(elev_fl_selected,azim_fl_selected)
+            fr_transformed = transform_direction(elev_fr_selected,azim_fr_selected)
+            c_transformed = transform_direction(elev_c_selected,azim_c_selected)
+            sl_transformed = transform_direction(elev_sl_selected,azim_sl_selected)
+            sr_transformed = transform_direction(elev_sr_selected,azim_sr_selected)
+            rl_transformed = transform_direction(elev_rl_selected,azim_rl_selected)
+            rr_transformed = transform_direction(elev_rr_selected,azim_rr_selected)
+            
+            elev_fl_selected=fl_transformed[0]
+            azim_fl_selected=fl_transformed[1]
+            elev_fr_selected=fr_transformed[0]
+            azim_fr_selected=fr_transformed[1]
+            elev_c_selected=c_transformed[0]
+            azim_c_selected=c_transformed[1]
+            elev_sl_selected=sl_transformed[0]
+            azim_sl_selected=sl_transformed[1]
+            elev_sr_selected=sr_transformed[0]
+            azim_sr_selected=sr_transformed[1]
+            elev_rl_selected=rl_transformed[0]
+            azim_rl_selected=rl_transformed[1]
+            elev_rr_selected=rr_transformed[0]
+            azim_rr_selected=rr_transformed[1]
+            
+        
         brir_dict = {'enable_conv': enable_brir_selected, 'brir_set': brir_set_selected, 'mute_fl': mute_fl_selected, 'mute_fr': mute_fr_selected, 'mute_c': mute_c_selected, 'mute_sl': mute_sl_selected,
                      'mute_sr': mute_sr_selected, 'mute_rl': mute_rl_selected, 'mute_rr': mute_rr_selected, 'gain_fl': gain_fl_selected, 'gain_fr': gain_fr_selected, 'gain_c': gain_c_selected,
                      'gain_sl': gain_sl_selected, 'gain_sr': gain_sr_selected, 'gain_rl': gain_rl_selected, 'gain_rr': gain_rr_selected, 'elev_fl': elev_fl_selected, 'elev_fr': elev_fr_selected,
@@ -1480,8 +1696,11 @@ def main():
         
         audio_channels=dpg.get_value('audio_channels_combo')
         
+        #get spatial resolution for this brir set
+        spatial_res_sel = e_apo_config_creation.get_spatial_res_from_dir(primary_path=base_folder_selected, brir_set=brir_set_selected)
+        
         #run function to write custom config
-        e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_dict=brir_dict, audio_channels=audio_channels, gui_logger=logz)
+        e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_dict=brir_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel)
         
         
         #run function to load the custom config file in config.txt
@@ -1501,7 +1720,7 @@ def main():
             dpg.set_value("e_apo_live_config", True)
             
         #call main config writer function
-        e_apo_config_write()
+        e_apo_config_acquire()
      
     def e_apo_select_hp(sender, app_data):
         """ 
@@ -1518,7 +1737,7 @@ def main():
         dpg.set_value("e_apo_live_config", True)
         dpg.set_value("e_apo_hpcf_conv", True)
         #call main config writer function
-        e_apo_config_write()
+        e_apo_config_acquire()
   
     def e_apo_select_brir(sender, app_data):
         """ 
@@ -1527,8 +1746,31 @@ def main():
         #enable e-apo live updates if not already enabled
         dpg.set_value("e_apo_live_config", True)
         dpg.set_value("e_apo_brir_conv", True)
+        
+        #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
+        brir_out_sel=app_data
+        update_elevations_list(brir_out_sel)
+        
         #call main config writer function
-        e_apo_config_write()
+        e_apo_config_acquire()
+        
+    def update_elevations_list(brir_out_sel):
+        """ 
+        GUI function to update elevation list in E-APO config section
+        """
+        #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
+        if brir_out_sel and brir_out_sel != None:
+            spatial_res_sel = e_apo_config_creation.get_spatial_res_from_dir(primary_path=primary_path, brir_set=brir_out_sel)
+            elevation_list_sel = hf.get_elevation_list(spatial_res_sel)
+        else:
+            elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
+        dpg.configure_item('e_apo_elev_angle_fl',items=elevation_list_sel)
+        dpg.configure_item('e_apo_elev_angle_fr',items=elevation_list_sel)
+        dpg.configure_item('e_apo_elev_angle_c',items=elevation_list_sel)
+        dpg.configure_item('e_apo_elev_angle_sl',items=elevation_list_sel)
+        dpg.configure_item('e_apo_elev_angle_sr',items=elevation_list_sel)
+        dpg.configure_item('e_apo_elev_angle_rl',items=elevation_list_sel)
+        dpg.configure_item('e_apo_elev_angle_rr',items=elevation_list_sel)
         
     def e_apo_select_sample(sender, app_data):
         """ 
@@ -1538,7 +1780,7 @@ def main():
         dpg.set_value("e_apo_live_config", True)
         dpg.set_value("e_apo_hpcf_conv", True)
         #call main config writer function
-        e_apo_config_write()
+        e_apo_config_acquire()
         
 
     def e_apo_config_azim_fl(sender=None, app_data=None):
@@ -1550,7 +1792,7 @@ def main():
             dpg.apply_transform("fl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("fl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
         
     def e_apo_config_azim_fr(sender=None, app_data=None):
         """ 
@@ -1561,7 +1803,7 @@ def main():
             dpg.apply_transform("fr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("fr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
         
     def e_apo_config_azim_c(sender=None, app_data=None):
         """ 
@@ -1572,7 +1814,7 @@ def main():
             dpg.apply_transform("c_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("c_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
         
     def e_apo_config_azim_sl(sender=None, app_data=None):
         """ 
@@ -1583,7 +1825,7 @@ def main():
             dpg.apply_transform("sl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("sl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
         
     def e_apo_config_azim_sr(sender=None, app_data=None):
         """ 
@@ -1594,7 +1836,7 @@ def main():
             dpg.apply_transform("sr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("sr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
         
     def e_apo_config_azim_rl(sender=None, app_data=None):
         """ 
@@ -1605,7 +1847,7 @@ def main():
             dpg.apply_transform("rl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("rl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
         
     def e_apo_config_azim_rr(sender=None, app_data=None):
         """ 
@@ -1616,9 +1858,9 @@ def main():
             dpg.apply_transform("rr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([90, 0]))
             dpg.apply_transform("rr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
-            e_apo_config_write()
+            e_apo_config_acquire()
 
-    def reset_channel_config(sender, app_data):
+    def reset_channel_config(sender=None, app_data=None):
         """ 
         GUI function to reset channel config in E-APO config section
         """
@@ -1665,7 +1907,8 @@ def main():
         
         
         #finally rewrite config file
-        e_apo_config_write()
+        e_apo_config_acquire()
+        
         
     def e_apo_select_channels(sender=None, app_data=None):
         """ 
@@ -1818,7 +2061,7 @@ def main():
 
 
         #finally rewrite config file
-        e_apo_config_write()
+        e_apo_config_acquire()
 
     def _hsv_to_rgb(h, s, v):
         """ 
@@ -1833,18 +2076,357 @@ def main():
         if i == 3: return (255*p, 255*q, 255*v)
         if i == 4: return (255*t, 255*p, 255*v)
         if i == 5: return (255*v, 255*p, 255*q)
-                
+               
+    def reset_progress():
+        """ 
+        GUI function to reset progress bar
+        """
+        #if not already running
+        #thread bool
+        process_brirs_running=dpg.get_item_user_data("brir_tag")
+        if process_brirs_running == False:
+            #reset progress bar
+            dpg.set_value("progress_bar_brir", 0)
+            dpg.configure_item("progress_bar_brir", overlay = 'Progress')
 
     def update_progress(sender, app_data):
         """ 
         GUI function to update progress bar
         """
-        print(str(app_data))
+        #print(str(app_data))
         value = dpg.get_value("Drag int")
         dpg.set_value("progress_bar_brir", value/100)
         dpg.configure_item("progress_bar_brir", overlay = str(value)+'%')
+  
+    
+    def reset_reference_pose():
+        """ 
+        GUI function to reset reference head pose
+        """
+        dpg.set_value("reference_pitch",reference_pitch_default)
+        dpg.set_value("reference_yaw", reference_yaw_default)
+        dpg.set_value("reference_roll", reference_roll_default)
+        
+        #also save settings
+        save_settings()
+        
+    def calibrate_head_pose():
+        """ 
+        GUI function to save reference head pose
+        """
+        #get current dimensions
+        reference_pitch_str=dpg.get_value('current_pitch')
+        reference_yaw_str=dpg.get_value('current_yaw')
+        reference_roll_str=dpg.get_value('current_roll')
+        
+        if reference_pitch_str == '':
+            reference_pitch_str='0'
+        if reference_yaw_str == '':
+            reference_yaw_str='0'
+        if reference_roll_str == '':
+            reference_roll_str='180'
+        
+        #save into reference dimensions
+        dpg.set_value("reference_pitch",reference_pitch_str)
+        dpg.set_value("reference_yaw", reference_yaw_str)
+        dpg.set_value("reference_roll", reference_roll_str)
+        
+        #also save settings
+        save_settings()
+      
+        
              
+    def get_head_pose():
+        """ 
+        GUI function to run head tracking code and return head pose estimate
+        """
+        head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
+        
+        #timing code
+        fps=CN.THREAD_FPS
+        frameperiod=1.0/fps
+        
+        cam_idx=dpg.get_value('camera_index_tag')
 
+        #get detectors (run once)
+        detectors = head_pose.setup_detection(camera_idx=cam_idx,gui_logger=logz)
+        
+        #Initialize the video source from webcam or video file. (run once)
+        cap = head_pose.setup_video_cap(camera_idx=cam_idx,gui_logger=logz)
+        sleep(1)
+        
+        prev_pitch=''
+        prev_yaw=''
+        prev_roll=''
+        update_config=0
+        #run through loop while bool is set to true
+        while head_track_running == True:
+
+            try:
+                #get latest fps and sleep for specified frame period
+                fps=dpg.get_value('camera_fps_tag')
+                frameperiod=1.0/fps
+                sleep(frameperiod)
+                
+                update_config=0
+                #get pose arr from head pose estimate of video source
+                pose_arr = head_pose.estimate_head_pose(detector_arr=detectors,camera_idx=cam_idx,cap=cap,gui_logger=logz)
+                
+                #if pose array not empty, update and populate gui elements
+                if pose_arr:
+                    pitch = str(int(pose_arr[0]))
+                    yaw = str(int(pose_arr[1]))
+                    roll = str(int(pose_arr[2]))
+                else:
+                    pitch = ''
+                    yaw = ''
+                    roll = ''
+                
+                dpg.set_value("current_pitch", pitch)
+                dpg.set_value("current_yaw", yaw)
+                dpg.set_value("current_roll", roll)
+                    
+                #check for differences
+                try:
+                    if pitch == '' or prev_pitch == '':
+                        if (pitch == '' and prev_pitch != '') or (pitch != '' and prev_pitch == ''):
+                            update_config=1
+                    else:
+                        #section to compare previous wav direction and new wav direction. If no change in wav file, do not update config
+                        brir_set_selected=dpg.get_value('e_apo_load_brir_set')
+                        base_folder_selected=dpg.get_value('selected_folder_base')
+                        #get spatial resolution for this brir set
+                        spatial_res_sel = e_apo_config_creation.get_spatial_res_from_dir(primary_path=base_folder_selected, brir_set=brir_set_selected)
+                        if 'B&K 4128 ' in brir_set_selected:
+                            hrtf_type=4
+                        else:
+                            hrtf_type=1#default to 1
+                        nearest_dir_dict_curr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=int(pitch) , target_azimuth=int(yaw), spatial_res=2)
+                        nearest_dir_dict_prev = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=int(prev_pitch) , target_azimuth=int(prev_yaw), spatial_res=2)
+                        elev_curr=nearest_dir_dict_curr.get('nearest_elevation')
+                        azim_curr=nearest_dir_dict_curr.get('nearest_azimuth')
+                        elev_prev=nearest_dir_dict_prev.get('nearest_elevation')
+                        azim_prev=nearest_dir_dict_prev.get('nearest_azimuth')
+                        if elev_curr != elev_prev or azim_curr != azim_prev:
+                            update_config=1
+                except:
+                    update_config=1
+                    
+                #run ash config write function to apply offsets in equalizer apo
+                if update_config == 1:
+                    e_apo_config_acquire()
+                
+                #store current pose for later
+                prev_pitch=pitch
+                prev_yaw=yaw
+                prev_roll=roll
+                
+                head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
+            except:
+                head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
+           
+        #after loop finished,
+        try:
+            dpg.set_value("current_pitch", "")
+            dpg.set_value("current_yaw", "")
+            dpg.set_value("current_roll", "")
+            
+            reset_reference_pose()
+            #run ash config write function once more to update offsets in equalizer apo
+            e_apo_config_acquire()
+        except:
+            pass
+        
+        #finally cleanup the capture data
+        head_pose.cleanup_capture(cap=cap,gui_logger=logz)
+        
+        
+    def start_stop_head_track(sender=None, app_data=False):
+        """ 
+        GUI function to start or stop head tracking thread
+        """
+        #thread bool
+        head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
+        
+        enable_head_tracking = app_data
+
+        #if box is ticked
+        if enable_head_tracking == True:
+            head_track_running = True#start thread
+            #update user data
+            dpg.configure_item('e_apo_head_tracking',user_data=head_track_running)
+            thread = threading.Thread(target=get_head_pose, args=(), daemon=True)
+            thread.start()
+        else:
+            head_track_running = False#end thread
+            #update user data
+            dpg.configure_item('e_apo_head_tracking',user_data=head_track_running)
+  
+        
+        #also save settings
+        save_settings()
+    
+    def update_cam_index(sender, app_data):
+        """ 
+        GUI function to rerun head track if cam index updated
+        """
+        enable_head_tracking=dpg.get_value('e_apo_head_tracking')
+        #if already enabled, restart thread
+        if enable_head_tracking == True:
+            start_stop_head_track(app_data=False)
+            sleep(0.1)
+            start_stop_head_track(app_data=True) 
+        #do nothing otherwise
+        
+        #also save settings
+        save_settings()
+        
+    def transform_direction(elevation,azimuth):
+        """ 
+        Function to transform a set of azimuth and elevation angles based on head pose data
+        """
+        directions_new=[elevation,azimuth]
+        gui_logger=logz
+        
+        try:
+            #used to invert results
+            polarity_factor=1
+            
+            elev_input = int(elevation)
+            azim_input = int(azimuth)
+            
+            #get current dimensions
+            current_pitch_str=dpg.get_value('current_pitch')
+            current_yaw_str=dpg.get_value('current_yaw')
+            current_roll_str=dpg.get_value('current_roll')
+            #dont proceed if current dimensions are blank
+            if current_pitch_str == '' or current_yaw_str == '' or current_roll_str == '':
+                return directions_new
+            current_pitch_int=int(current_pitch_str)
+            current_yaw_int=int(current_yaw_str)
+            current_roll_int=int(current_roll_str)
+            
+            #get reference dimensions
+            reference_pitch_str=dpg.get_value('reference_pitch')
+            reference_yaw_str=dpg.get_value('reference_yaw')
+            reference_roll_str=dpg.get_value('reference_roll')
+            if reference_pitch_str == '' or reference_yaw_str == '' or reference_roll_str == '':
+                return directions_new
+            reference_pitch_int=int(reference_pitch_str)
+            reference_yaw_int=int(reference_yaw_str)
+            reference_roll_int=int(reference_roll_str)
+            
+            #compare current and reference to get difference
+            relative_pitch=(current_pitch_int-reference_pitch_int)*polarity_factor
+            relative_yaw=(current_yaw_int-reference_yaw_int)*polarity_factor
+            relative_roll=(current_roll_int)*polarity_factor#assume no reference roll
+   
+            #transform azim and elev from yaw and pitch
+            azim_trans = azim_input-relative_yaw
+            #Handle cases where y > 180 or y <-180 
+            if azim_trans > 180:
+                azim_trans=-360+azim_trans 
+            if azim_trans < -180:
+                azim_trans=360+azim_trans
+            back_left_flag = 0
+            back_right_flag = 0
+            if azim_trans > 90:
+                back_right_flag=1
+            elif azim_trans < -90:
+                back_left_flag=1
+            #get pitch factor. Pitch will have lower impact towards 90 or 270 deg azimuths
+            pitch_factor=(90-abs(azim_trans))/90
+            elev_trans = elev_input-(relative_pitch*pitch_factor)
+            #handle edge cases
+            if elev_trans > 90:
+                elev_trans=90 
+            if elev_trans < -90:
+                elev_trans=-90
+   
+            #convert roll to range -180 to 180 deg with 0 deg reference
+            relative_roll_tr= int(-180-relative_roll) if relative_roll < 0 else int(180-relative_roll)
+            relative_roll_tr=relative_roll_tr*polarity_factor
+            
+            #transform azimuth and elev from roll
+            #steps
+            #1. find angle x of projected triangle
+            #1a. sin(abs(elev)) = adjacent length a (assume hypotenuse h=1)
+            x_a=math.sin(math.radians(abs(elev_trans)))
+            #1b. sin(azim) = opposite length o
+            x_o=math.sin(math.radians(azim_trans))
+            #1c. x = arctan(o/a)
+            x= math.degrees(math.atan2(x_o, x_a))
+            #1d. if elev < 0 move to correct quadrant due to arctan range
+            if azim_trans >= 0 and elev_trans < 0:
+                x=180-x
+            if azim_trans <= 0 and elev_trans < 0:
+                x=-180-x
+            #1e. hypotenuse h = sqrt(a2 + o2)
+            h=math.hypot(x_a, x_o)
+            h=min(1.0,h)#ensure h isnt greater than 1
+            #2. add roll degrees to x to get new circular angle y. 
+            y=x+relative_roll_tr
+            #2a. Handle cases where y > 180 or y <-180 
+            if y > 180:
+                y=-360+y 
+            if y < -180:
+                y=360+y
+            #2b. If y > 90, y = 180-y. if y <-90, y = -180-y due to arcsin range. flag each case
+            bottom_left_flag = 0
+            bottom_right_flag = 0
+            if y < -90:
+                y=-180-y
+                bottom_left_flag = 1
+            if y > 90:
+                y=180-y
+                bottom_right_flag = 1 
+            #3. convert new angle back to o and a lengths
+            #3a. o = sin(y) * h
+            y_o=math.sin(math.radians(y))*h
+            #3b. a = cos(y) * h
+            y_a=math.cos(math.radians(y))*h
+            
+            #4. convert o and a to azimuth and elev
+            #4a. azim = arcsin(o)
+            azim_new = int(math.degrees(math.asin(y_o)))
+            #4b. elev = arcsin(a)
+            elev_new = int(math.degrees(math.asin(y_a)))
+            #4c. if previously flagged, flip elevation or flip azimuth
+            if bottom_left_flag == 1 or bottom_right_flag == 1:
+                elev_new=elev_new*-1
+            if back_left_flag == 1: 
+                azim_new=-180-azim_new
+            if back_right_flag == 1:
+                azim_new=180-azim_new
+            
+            directions_new=[str(elev_new),str(azim_new)]
+    
+            return directions_new
+ 
+        except Exception as ex:
+            logging.error("Error occurred", exc_info = ex)
+            log_string = 'Failed to perform head pose estimation'
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string)
+                
+            return directions_new
+    
+    def show_hide_head_tracking(sender, app_data):
+        """ 
+        GUI function to show or hide head tracking section
+        """
+        if app_data == True:
+            dpg.configure_item("head_pose_tracking_win", show=True)
+            dpg.configure_item("e_apo_head_tracking", show=True)
+        else:
+            dpg.configure_item("head_pose_tracking_win", show=False)
+            dpg.configure_item("e_apo_head_tracking", show=False)
+            head_track_running = False#end thread
+            dpg.configure_item('e_apo_head_tracking',user_data=head_track_running)
+        
+        #also save settings
+        save_settings()
+    
     
     #
     ## GUI CODE
@@ -1888,13 +2470,13 @@ def main():
     # add a font registry
     with dpg.font_registry():
         # first argument ids the path to the .ttf or .otf file
-        in_file_path = pjoin(CN.DATA_DIR_EXT, 'Lato-Regular.ttf')#SourceSansPro-Regular
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Regular.ttf')#SourceSansPro-Regular
         default_font = dpg.add_font(in_file_path, 14)    
-        in_file_path = pjoin(CN.DATA_DIR_EXT, 'Lato-Bold.ttf')#SourceSansPro-Regular
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
         bold_font = dpg.add_font(in_file_path, 14)    
     
     
-    dpg.create_viewport(title='Audio Spatialisation for Headphones Toolset', width=gui_win_width_loaded, height=gui_win_height_loaded, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
+    dpg.create_viewport(title='Audio Spatialisation for Headphones', width=gui_win_width_loaded, height=gui_win_height_loaded, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
     
     with dpg.window(tag="Primary Window", horizontal_scrollbar=True):
         
@@ -1923,7 +2505,12 @@ def main():
                 dpg.add_theme_color(dpg.mvThemeCol_Header, (138, 138, 62), category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, (135, 163, 78), category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, (138, 138, 62), category=dpg.mvThemeCat_Core)
-                
+        with dpg.theme(tag="__theme_d"):
+            i=4
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.6, 0.6))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.8))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.7, 0.7))  
 
         with dpg.collapsing_header(label="Filter Creation",default_open = show_filter_sect_loaded):
             dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -1960,10 +2547,10 @@ def main():
                         dpg.bind_item_font(subtitle_2, bold_font)
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="FIR Filters", default_value = fir_hpcf_exp_loaded, callback=export_fir_toggle, tag='fir_hpcf_toggle')
+                            dpg.add_checkbox(label="WAV FIR Filters", default_value = fir_hpcf_exp_loaded, callback=export_fir_toggle, tag='fir_hpcf_toggle')
                             with dpg.tooltip("fir_hpcf_toggle"):
                                 dpg.add_text("Min phase WAV FIRs for convolution. 1 Channel. Required for Equalizer APO configuration updates.")
-                            dpg.add_checkbox(label="Stereo FIR Filters", default_value = fir_st_hpcf_exp_loaded, callback=export_fir_stereo_toggle, tag='fir_st_hpcf_toggle')
+                            dpg.add_checkbox(label="WAV Stereo FIR Filters", default_value = fir_st_hpcf_exp_loaded, callback=export_fir_stereo_toggle, tag='fir_st_hpcf_toggle')
                             with dpg.tooltip("fir_st_hpcf_toggle"):
                                 dpg.add_text("Min phase WAV FIRs for convolution. 2 Channels")
                             dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_hpcf_exp_loaded, callback=export_eapo_hpcf_toggle, tag='eapo_hpcf_toggle')  
@@ -2002,71 +2589,82 @@ def main():
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
                             with dpg.group():
-                                dpg.add_text("Select Target RT60 Reverberation Time (ms)")
+                                dpg.add_text("Target RT60 Reverberation Time (ms)")
                                 dpg.add_input_int(label="Target RT60 (ms)",width=150, tag='target_rt60', default_value=rt60_loaded, min_value=200, max_value=1250, min_clamped=True, max_clamped=True, callback=update_rt60)
                                 with dpg.tooltip("target_rt60"):
                                     dpg.add_text("Select a value between 200ms and 1250ms")
                                 dpg.add_slider_int(label="", min_value=200, max_value=1250,width=150, default_value=rt60_loaded, clamped=True, no_input=True, format="", callback=update_rt60_slider, tag='target_rt60_slider')
-                                
-                                dpg.add_text("Select Dummy Head / Head & Torso Simulator")
-                                listbox_4 = dpg.add_listbox(CN.HRTF_LIST_NUM, default_value=hrtf_loaded, num_items=13, width=250, callback=update_hrtf, tag='brir_hrtf')
+                                dpg.add_text("Spatial Resolution")
+                                dpg.add_radio_button(CN.SPATIAL_RES_LIST, horizontal=True, tag= "brir_spat_res", default_value=spatial_res_loaded, callback=select_spatial_resolution )
+                                with dpg.tooltip("brir_spat_res"):
+                                    dpg.add_text("Increasing resolution will increase number of directions available but will also increase processing time")
+                                dpg.add_text("Dummy Head / Head & Torso Simulator")
+                                listbox_4 = dpg.add_listbox(hrtf_list_loaded, default_value=hrtf_loaded, num_items=10, width=250, callback=update_hrtf, tag='brir_hrtf')
                             with dpg.group():
-                                dpg.add_text("Select Gain for Direct Sound (dB)")
+                                dpg.add_text("Direct Sound Gain (dB)")
                                 dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded,min_clamped=True, max_clamped=True, callback=update_direct_gain)
                                 with dpg.tooltip("direct_gain"):
                                     dpg.add_text("Higher values result in lower perceived distance, lower values result in higher perceived distance")
                                 dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded, width=140,clamped=True, no_input=True, format="", callback=update_direct_gain_slider, tag='direct_gain_slider')
                                 
-                                dpg.add_text("Select Headphone Compensation")
+                                dpg.add_text("Headphone Compensation")
                                 listbox_5 = dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, num_items=4, width=230, callback=update_hp_type, tag='brir_hp_type')
-                                dpg.add_text("Select Room Target")
+                                dpg.add_text("Room Target")
                                 listbox_6 = dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=room_target_loaded, num_items=6, width=230, tag='rm_target_list', callback=select_room_target)
                     with dpg.child_window(autosize_x=True, height=88):
                         subtitle_5 = dpg.add_text("Select Files to Include in Export")
                         dpg.bind_item_font(subtitle_5, bold_font)
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="Direction Specific WAVs", default_value = dir_brir_exp_loaded,  tag='dir_brir_toggle', callback=export_brir_toggle)
-                            with dpg.tooltip("dir_brir_toggle"):
+                            dpg.add_checkbox(label="Direction Specific WAV Files", default_value = dir_brir_exp_loaded,  tag='dir_brir_toggle', callback=export_brir_toggle, show=dir_brir_exp_show)
+                            with dpg.tooltip("dir_brir_toggle", tag='dir_brir_tooltip', show=dir_brir_tooltip_show):
                                 dpg.add_text("Directional WAV BRIRs for convolution. 2 Channels. Required for Equalizer APO configuration updates.")
-                            dpg.add_checkbox(label="True Stereo WAVs", default_value = ts_brir_exp_loaded,  tag='ts_brir_toggle', callback=export_brir_toggle)
-                            with dpg.tooltip("ts_brir_toggle"):
+                            dpg.add_checkbox(label="True Stereo WAV File", default_value = ts_brir_exp_loaded,  tag='ts_brir_toggle', callback=export_brir_toggle, show=ts_brir_exp_show)
+                            with dpg.tooltip("ts_brir_toggle", tag='ts_brir_tooltip', show=ts_brir_tooltip_show):
                                 dpg.add_text("True Stereo WAV BRIRs for convolution. 4 Channels")
+                            dpg.add_checkbox(label="SOFA File", default_value = sofa_brir_exp_loaded,  tag='sofa_brir_toggle', callback=export_brir_toggle, show=sofa_brir_exp_show)
+                            with dpg.tooltip("sofa_brir_toggle", tag='sofa_brir_tooltip', show=sofa_brir_tooltip_show):
+                                dpg.add_text("BRIR dataset as a SOFA file")
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="HeSuVi WAVs", default_value = hesuvi_brir_exp_loaded,  tag='hesuvi_brir_toggle', callback=export_brir_toggle)  
-                            with dpg.tooltip("hesuvi_brir_toggle"):
+                            dpg.add_checkbox(label="HeSuVi WAV Files", default_value = hesuvi_brir_exp_loaded,  tag='hesuvi_brir_toggle', callback=export_brir_toggle, show=hesuvi_brir_exp_show)  
+                            with dpg.tooltip("hesuvi_brir_toggle", tag='hesuvi_brir_tooltip', show=hesuvi_brir_tooltip_show):
                                 dpg.add_text("HeSuVi compatible WAV BRIRs. 14 Channels, 44.1kHz and 48kHz")
-                            dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_brir_exp_loaded,  tag='eapo_brir_toggle', callback=export_brir_toggle)
-                            with dpg.tooltip("eapo_brir_toggle"):
+                            dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_brir_exp_loaded,  tag='eapo_brir_toggle', callback=export_brir_toggle, show=eapo_brir_exp_show)
+                            with dpg.tooltip("eapo_brir_toggle", tag='eapo_brir_tooltip', show=eapo_brir_tooltip_show):
                                 dpg.add_text("Equalizer APO configurations to perform convolution with BRIRs. Deprecated from V2.0.0 onwards")
-                    with dpg.child_window(autosize_x=True, height=105):
+                    with dpg.child_window(autosize_x=True, height=107):
                         subtitle_6 = dpg.add_text("Generate and Export BRIRs")
                         dpg.bind_item_font(subtitle_6, bold_font)
                         dpg.add_separator()
-                        dpg.add_button(label="Click Here to Process BRIRs",user_data="",tag="brir_tag", callback=process_brirs)
-                        dpg.bind_item_theme(dpg.last_item(), "__theme_a")
-                        with dpg.tooltip("brir_tag"):
-                            dpg.add_text("This will generate the customised BRIRs and export to selected directory. It may take a minute to process")
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="Click Here to Process BRIRs",user_data=CN.PROCESS_BRIRS_RUNNING,tag="brir_tag", callback=start_process_brirs)
+                            dpg.bind_item_theme(dpg.last_item(), "__theme_a")
+                            with dpg.tooltip("brir_tag"):
+                                dpg.add_text("This will generate the customised BRIRs and export to selected directory. This may take some time to process")
+                            
+                            
+                            #dpg.add_combo(CN.SPATIAL_RES_LIST, width=100, label="",  tag='brir_spat_res',default_value=CN.SPATIAL_RES_LIST[0])
+                            
                         dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=27, width=485, overlay="Progress", tag="progress_bar_brir")
             
                 #right most section
                 with dpg.group():    
                     #Section for plotting
-                    with dpg.child_window(width=520, height=512):
+                    with dpg.child_window(width=604, height=487):
                         title_3 = dpg.add_text("Filter Preview")
                         dpg.bind_item_font(title_3, bold_font)
                         #plotting
                         dpg.add_separator()
                         dpg.add_text("Select a filter from list to preview")
                         # create plot
-                        with dpg.plot(label="Magnitude Response Plot", height=439, width=505):
+                        with dpg.plot(label="Magnitude Response Plot", height=410, width=585):
                             # optionally create legend
                             dpg.add_plot_legend()
                     
                             # REQUIRED: create x and y axes
                             dpg.add_plot_axis(dpg.mvXAxis, label="Frequency (Hz)", tag="x_axis", log_scale=True)
                             dpg.set_axis_limits("x_axis", 10, 20000)
-                            dpg.add_plot_axis(dpg.mvYAxis, label="Magnitude (DB)", tag="y_axis")
+                            dpg.add_plot_axis(dpg.mvYAxis, label="Magnitude (dB)", tag="y_axis")
                             dpg.set_axis_limits("y_axis", -20, 15)
                     
                             # series belong to a y axis
@@ -2075,15 +2673,30 @@ def main():
                             hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
                 
                     #Section for Exporting files
-                    with dpg.child_window(width=520, height=115):
-                        title_4 = dpg.add_text("WAV Settings", tag='export_title')
-                        dpg.bind_item_font(title_4, bold_font)
-                        dpg.add_separator()
-                        with dpg.group(horizontal=True):
+                    with dpg.group(horizontal=True):
+                        with dpg.child_window(width=361, height=140):
+                            dpg.add_text("Output Directory", tag='out_dir_title')
+                            dpg.add_separator()
+                            with dpg.group(horizontal=True):
+                                dpge.add_file_browser(width=800,height=600,label='Change Folder',show_as_window=True, dirs_only=True,show_ok_cancel=True, allow_multi_selection=False, collapse_sequences=True,callback=show_selected_folder)
+                            dpg.add_text(tag='selected_folder_ash', wrap=330)
+                            dpg.add_text(tag='selected_folder_base',show=False)
+                            with dpg.tooltip("selected_folder_ash"):
+                                dpg.add_text("'EqualizerAPO\config' directory should be selected if using Equalizer APO.")
+                            with dpg.tooltip("selected_folder_ash"):
+                                dpg.add_text("Location to save HpCFs and BRIRs. Files will be saved under ASH-Custom-Set sub directory.")        
+                        dpg.set_value('selected_folder_ash', primary_ash_path)
+                        dpg.set_value('selected_folder_base', primary_path)
+                        
+                        #Section for wav settings
+                        with dpg.child_window(width=235, height=140):
+                            title_4 = dpg.add_text("WAV Settings", tag='export_title')
+                            dpg.bind_item_font(title_4, bold_font)
+                            dpg.add_separator()
                             with dpg.group():
                                 dpg.add_text("Select Sample Rate")
                                 dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=True, tag= "wav_sample_rate", default_value=sample_freq_loaded, callback=update_sample_rate )
-                            dpg.add_text("          ")
+                            #dpg.add_text("          ")
                             with dpg.group():
                                 dpg.add_text("Select Bit Depth")
                                 dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "wav_bit_depth", default_value=bit_depth_loaded, callback=update_bit_depth)
@@ -2092,272 +2705,334 @@ def main():
         with dpg.collapsing_header(label="Equalizer APO Configuration",default_open = show_eapo_sect_loaded):
             dpg.bind_item_font(dpg.last_item(), bold_font)
             #Section for managing E-APO configurations
-            with dpg.child_window(width=1605, height=305):
+            with dpg.child_window(width=1690, height=305):
                 with dpg.group(horizontal=True):
-                    dpg.add_checkbox(label="Auto-Configure 'config.txt'", default_value = e_apo_enable_loaded,  tag='e_apo_live_config', callback=e_apo_config_write)
+                    dpg.add_checkbox(label="Auto-Configure 'config.txt'", default_value = e_apo_enable_loaded,  tag='e_apo_live_config', callback=e_apo_config_acquire)
                     with dpg.tooltip("e_apo_live_config"):
-                        dpg.add_text("This will auto-configure 'config.txt'to apply selected filters")
+                        dpg.add_text("Auto-configure 'config.txt'to apply selected filters")
                     dpg.add_text("  ")
                     dpg.add_checkbox(label="Enable Headphone Correction", default_value = e_apo_enable_hpcf_loaded,  tag='e_apo_hpcf_conv', callback=e_apo_enable_auto_conf)
                     with dpg.tooltip("e_apo_hpcf_conv"):
-                        dpg.add_text("This will enable convolution with selected HpCF FIR Filter")
+                        dpg.add_text("Enable convolution with selected HpCF FIR Filter")
                     dpg.add_text("  ")
                     dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = e_apo_enable_brir_loaded,  tag='e_apo_brir_conv', callback=e_apo_enable_auto_conf)
                     with dpg.tooltip("e_apo_brir_conv"):
-                        dpg.add_text("This will enable convolution with selected BRIRs")
+                        dpg.add_text("Enable convolution with selected BRIRs")
                     dpg.add_text("  ")
-                    dpg.add_button(label="  Delete Selected Headphone  ")
-                    with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_hp_popup"):
-                        dpg.add_text("Saved HpCFs for selected headphone will be deleted.")
-                        dpg.add_separator()
-                        with dpg.group(horizontal=True):
-                            dpg.add_button(label="OK", width=75, callback=remove_select_hpcfs)
-                            dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_hp_popup", show=False))
-                        
-                    dpg.add_button(label="  Delete Selected BRIRs  ")
-                    with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_brir_popup"):
-                        dpg.add_text("Selected BRIRs will be deleted.")
-                        dpg.add_separator()
-                        with dpg.group(horizontal=True):
-                            dpg.add_button(label="OK", width=75, callback=remove_select_brirs)
-                            dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_brir_popup", show=False))
-        
-                    dpg.add_text("                                 Select Audio Channels: ")
-                    dpg.add_combo(CN.AUDIO_CHANNELS, width=200, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=e_apo_select_channels)
+                    dpg.add_checkbox(label="Enable Head Pose Tracking", default_value = enable_head_track_loaded,  tag='e_apo_head_tracking', callback=start_stop_head_track, user_data=CN.HEAD_TRACK_RUNNING, show=show_head_track_loaded)
+                    with dpg.tooltip("e_apo_head_tracking"):
+                        dpg.add_text("Dynamically alter source direction based on captured head pose. Requires webcam")
+                    
                 with dpg.group(horizontal=True):
                     with dpg.child_window(width=360):
                         with dpg.group(horizontal=True):
                             with dpg.group():
-                                dpg.add_text("Select Headphone", tag='e_apo_hp_title')
-                                with dpg.tooltip("e_apo_hp_title"):
-                                    dpg.add_text("exported FIR filters will be shown below")
-                                listbox_7 = dpg.add_listbox(hp_list_out_default,default_value=headphone_out_default, num_items=11, width=220, tag='e_apo_load_hp', callback=e_apo_select_hp)
-                            with dpg.group():
-                                dpg.add_text("Select Sample", tag='e_apo_sample_title')
-                                with dpg.tooltip("e_apo_sample_title"):
-                                    dpg.add_text("exported FIR filters will be shown below")
-                                listbox_8 = dpg.add_listbox(sample_list_out_default,default_value=sample_out_default, num_items=11, width=115, tag='e_apo_load_sample', callback=e_apo_select_sample)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Select Headphone & Sample", tag='e_apo_hp_title')
+                                    with dpg.tooltip("e_apo_hp_title"):
+                                        dpg.add_text("exported FIR filters will be shown below")
+                                    dpg.add_text("  ")
+                                    dpg.add_button(label="  Delete Selected Headphone  ")
+                                    with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_hp_popup"):
+                                        dpg.add_text("Saved HpCFs for selected headphone will be deleted.")
+                                        dpg.add_separator()
+                                        with dpg.group(horizontal=True):
+                                            dpg.add_button(label="OK", width=75, callback=remove_select_hpcfs)
+                                            dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_hp_popup", show=False))
+                                dpg.add_separator()
+                                
+                                with dpg.group(horizontal=True):
+                                    listbox_7 = dpg.add_listbox(hp_list_out_default,default_value=headphone_out_default, num_items=11, width=220, tag='e_apo_load_hp', callback=e_apo_select_hp)
+                                    listbox_8 = dpg.add_listbox(sample_list_out_default,default_value=sample_out_default, num_items=11, width=115, tag='e_apo_load_sample', callback=e_apo_select_sample)
                     with dpg.child_window(width=390):
-                        dpg.add_text("Select BRIR Set", tag='e_apo_brir_title')
-                        with dpg.tooltip("e_apo_brir_title"):
-                            dpg.add_text("exported BRIRs will be shown below")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Select BRIR Set", tag='e_apo_brir_title')
+                            with dpg.tooltip("e_apo_brir_title"):
+                                dpg.add_text("exported BRIRs will be shown below")
+                            dpg.add_text("                                            ")
+                            dpg.add_button(label="  Delete Selected BRIRs  ")
+                            with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_brir_popup"):
+                                dpg.add_text("Selected BRIRs will be deleted.")
+                                dpg.add_separator()
+                                with dpg.group(horizontal=True):
+                                    dpg.add_button(label="OK", width=75, callback=remove_select_brirs)
+                                    dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_brir_popup", show=False))
+                        dpg.add_separator()
+                        
                         listbox_9 = dpg.add_listbox(brir_list_out_default, num_items=11, default_value=brir_out_default, width=370, tag='e_apo_load_brir_set', callback=e_apo_select_brir)
                     
-                    with dpg.child_window(width=820):
+                    with dpg.child_window(width=650):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 with dpg.group(horizontal=True):
                                     dpg.add_text("Channel Configuration                  ")
                                     dpg.add_button(label="Reset All", width=54, callback=reset_channel_config)
-                                with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=True,
-                                    borders_outerH=True, borders_innerH=True, no_host_extendX=True,
-                                    borders_outerV=True, delay_search=True):
-            
-                                    dpg.add_table_column(label="Channel")
-                                    dpg.add_table_column(label="Mute")
-                                    dpg.add_table_column(label="Gain (dB)")
-                                    dpg.add_table_column(label="Elevation Angle (°)")
-                                    dpg.add_table_column(label="Azimuth Angle (°)")
-                                    tooltip_gain = 'Positive values may result in clipping'
-                                    tooltip_elevation = 'Positive values are above the listener while negative values are below the listener'
-                                    for i in range(7):
-                                        with dpg.table_row():
-                                            for j in range(5):
-                                                if j == 0:#channel
-                                                    if i == 0:
-                                                        dpg.add_text("L")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                    elif i == 1:
-                                                        dpg.add_text("R")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                    elif i == 2:
-                                                        dpg.add_text("C + SUB")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                    elif i == 3:
-                                                        dpg.add_text("SL")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                    elif i == 4:
-                                                        dpg.add_text("SR")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                    elif i == 5:
-                                                        dpg.add_text("RL")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                    elif i == 6:
-                                                        dpg.add_text("RR")
-                                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                                if j == 1:#Mute
-                                                    if i == 0:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fl',default_value=e_apo_mute_fl_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                    elif i == 1:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fr',default_value=e_apo_mute_fr_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                    elif i == 2:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_c',default_value=e_apo_mute_c_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                    elif i == 3:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sl',default_value=e_apo_mute_sl_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                    elif i == 4:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sr',default_value=e_apo_mute_sr_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                    elif i == 5:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rl',default_value=e_apo_mute_rl_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                    elif i == 6:
-                                                        dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rr',default_value=e_apo_mute_rr_loaded, callback=e_apo_config_write)
-                                                        dpg.bind_item_theme(dpg.last_item(), "__theme_c")
-                                                if j == 2:#gain
-                                                    if i == 0:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_fl',default_value=e_apo_gain_fl_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_fl"):
-                                                            dpg.add_text(tooltip_gain)
-                                                    elif i == 1:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_fr',default_value=e_apo_gain_fr_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_fr"):
-                                                            dpg.add_text(tooltip_gain)
-                                                    elif i == 2:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_c',default_value=e_apo_gain_c_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_c"):
-                                                            dpg.add_text(tooltip_gain)
-                                                    elif i == 3:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_sl',default_value=e_apo_gain_sl_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_sl"):
-                                                            dpg.add_text(tooltip_gain)
-                                                    elif i == 4:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_sr',default_value=e_apo_gain_sr_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_sr"):
-                                                            dpg.add_text(tooltip_gain)
-                                                    elif i == 5:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_rl',default_value=e_apo_gain_rl_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_rl"):
-                                                            dpg.add_text(tooltip_gain)
-                                                    elif i == 6:
-                                                        dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_rr',default_value=e_apo_gain_rr_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_gain_rr"):
-                                                            dpg.add_text(tooltip_gain)
-                                                if j == 3:#elevation
-                                                    if i == 0:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_fl"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                    elif i == 1:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_fr"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                    elif i == 2:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_c"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                    elif i == 3:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_sl"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                    elif i == 4:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_sr"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                    elif i == 5:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_rl"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                    elif i == 6:
-                                                        dpg.add_combo(CN.ELEV_ANGLES_WAV, width=100, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=e_apo_config_write)
-                                                        with dpg.tooltip("e_apo_elev_angle_rr"):
-                                                            dpg.add_text(tooltip_elevation)
-                                                if j == 4:#azimuth
-                                                    if i == 0:
-                                                        dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=100, label="",  tag='e_apo_az_angle_fl',default_value=e_apo_az_angle_fl_loaded, callback=e_apo_config_azim_fl)
-                                                    elif i == 1:
-                                                        dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=100, label="",  tag='e_apo_az_angle_fr',default_value=e_apo_az_angle_fr_loaded, callback=e_apo_config_azim_fr)
-                                                    elif i == 2:
-                                                        dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=100, label="",  tag='e_apo_az_angle_c',default_value=e_apo_az_angle_c_loaded, callback=e_apo_config_azim_c)
-                                                    elif i == 3:
-                                                        dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=100, label="",  tag='e_apo_az_angle_sl',default_value=e_apo_az_angle_sl_loaded, callback=e_apo_config_azim_sl)
-                                                    elif i == 4:
-                                                        dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=100, label="",  tag='e_apo_az_angle_sr',default_value=e_apo_az_angle_sr_loaded, callback=e_apo_config_azim_sr)
-                                                    elif i == 5:
-                                                        dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=100, label="",  tag='e_apo_az_angle_rl',default_value=e_apo_az_angle_rl_loaded, callback=e_apo_config_azim_rl)
-                                                    elif i == 6:
-                                                        dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=100, label="",  tag='e_apo_az_angle_rr',default_value=e_apo_az_angle_rr_loaded, callback=e_apo_config_azim_rr)
-                            
-                            with dpg.drawlist(width=400, height=220, tag="channel_drawing"):
-    
-                                with dpg.draw_layer():
+                                    dpg.add_text("                    Select Audio Channels: ")
+                                    dpg.add_combo(CN.AUDIO_CHANNELS, width=200, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=e_apo_select_channels)
+                                dpg.add_separator()
+                                with dpg.group(horizontal=True):
+                                    with dpg.group():
+                                        #dpg.add_text(" ")
+                                        with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
+                                            borders_outerH=True, borders_innerH=True, no_host_extendX=True,
+                                            borders_outerV=True, borders_innerV=True, delay_search=True):
+                    
+                                            dpg.add_table_column(label="Channel")
+                                            dpg.add_table_column(label="Mute")
+                                            dpg.add_table_column(label="Gain (dB)")
+                                            dpg.add_table_column(label="Elevation Angle (°)")
+                                            dpg.add_table_column(label="Azimuth Angle (°)")
+                                            tooltip_gain = 'Positive values may result in clipping'
+                                            tooltip_elevation = 'Positive values are above the listener while negative values are below the listener'
+                                            for i in range(7):
+                                                with dpg.table_row():
+                                                    for j in range(5):
+                                                        if j == 0:#channel
+                                                            if i == 0:
+                                                                dpg.add_text("L")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                            elif i == 1:
+                                                                dpg.add_text("R")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                            elif i == 2:
+                                                                dpg.add_text("C + SUB")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                            elif i == 3:
+                                                                dpg.add_text("SL")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                            elif i == 4:
+                                                                dpg.add_text("SR")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                            elif i == 5:
+                                                                dpg.add_text("RL")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                            elif i == 6:
+                                                                dpg.add_text("RR")
+                                                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                                        if j == 1:#Mute
+                                                            if i == 0:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fl',default_value=e_apo_mute_fl_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                            elif i == 1:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fr',default_value=e_apo_mute_fr_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                            elif i == 2:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_c',default_value=e_apo_mute_c_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                            elif i == 3:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sl',default_value=e_apo_mute_sl_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                            elif i == 4:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sr',default_value=e_apo_mute_sr_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                            elif i == 5:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rl',default_value=e_apo_mute_rl_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                            elif i == 6:
+                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rr',default_value=e_apo_mute_rr_loaded, callback=e_apo_config_acquire)
+                                                                dpg.bind_item_theme(dpg.last_item(), "__theme_c")
+                                                        if j == 2:#gain
+                                                            if i == 0:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_fl',default_value=e_apo_gain_fl_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_fl"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                            elif i == 1:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_fr',default_value=e_apo_gain_fr_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_fr"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                            elif i == 2:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_c',default_value=e_apo_gain_c_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_c"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                            elif i == 3:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_sl',default_value=e_apo_gain_sl_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_sl"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                            elif i == 4:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_sr',default_value=e_apo_gain_sr_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_sr"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                            elif i == 5:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_rl',default_value=e_apo_gain_rl_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_rl"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                            elif i == 6:
+                                                                dpg.add_input_int(label=" ", width=75,min_value=-100, max_value=20, tag='e_apo_gain_rr',default_value=e_apo_gain_rr_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_gain_rr"):
+                                                                    dpg.add_text(tooltip_gain)
+                                                        if j == 3:#elevation
+                                                            if i == 0:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_fl"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                            elif i == 1:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_fr"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                            elif i == 2:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_c"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                            elif i == 3:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_sl"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                            elif i == 4:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_sr"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                            elif i == 5:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_rl"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                            elif i == 6:
+                                                                dpg.add_combo(elevation_list_sel, width=100, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=e_apo_config_acquire)
+                                                                with dpg.tooltip("e_apo_elev_angle_rr"):
+                                                                    dpg.add_text(tooltip_elevation)
+                                                        if j == 4:#azimuth
+                                                            if i == 0:
+                                                                dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=100, label="",  tag='e_apo_az_angle_fl',default_value=e_apo_az_angle_fl_loaded, callback=e_apo_config_azim_fl)
+                                                            elif i == 1:
+                                                                dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=100, label="",  tag='e_apo_az_angle_fr',default_value=e_apo_az_angle_fr_loaded, callback=e_apo_config_azim_fr)
+                                                            elif i == 2:
+                                                                dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=100, label="",  tag='e_apo_az_angle_c',default_value=e_apo_az_angle_c_loaded, callback=e_apo_config_azim_c)
+                                                            elif i == 3:
+                                                                dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=100, label="",  tag='e_apo_az_angle_sl',default_value=e_apo_az_angle_sl_loaded, callback=e_apo_config_azim_sl)
+                                                            elif i == 4:
+                                                                dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=100, label="",  tag='e_apo_az_angle_sr',default_value=e_apo_az_angle_sr_loaded, callback=e_apo_config_azim_sr)
+                                                            elif i == 5:
+                                                                dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=100, label="",  tag='e_apo_az_angle_rl',default_value=e_apo_az_angle_rl_loaded, callback=e_apo_config_azim_rl)
+                                                            elif i == 6:
+                                                                dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=100, label="",  tag='e_apo_az_angle_rr',default_value=e_apo_az_angle_rr_loaded, callback=e_apo_config_azim_rr)
                                     
-                                    radius=90
-                                    dpg.draw_circle([200, 115], radius, color=[163, 177, 184])           
-                                    with dpg.draw_node(tag="listener_drawing"):
-                                        dpg.apply_transform(dpg.last_item(), dpg.create_translation_matrix([200, 115]))
-                                        dpg.draw_circle([0, 0], 22, color=[163, 177, 184], fill=[158,158,158])
-                                        dpg.draw_text([-20, -8], 'Listener', color=[0, 0, 0],size=14)
+                                    with dpg.drawlist(width=250, height=220, tag="channel_drawing"):
+            
+                                        with dpg.draw_layer():
+                                            
+                                            radius=90
+                                            x_start=110
+                                            y_start=105#115
+                                            dpg.draw_circle([x_start, y_start], radius, color=[163, 177, 184])           
+                                            with dpg.draw_node(tag="listener_drawing"):
+                                                dpg.apply_transform(dpg.last_item(), dpg.create_translation_matrix([x_start, y_start]))
+                                                dpg.draw_circle([0, 0], 22, color=[163, 177, 184], fill=[158,158,158])
+                                                dpg.draw_text([-20, -8], 'Listener', color=[0, 0, 0],size=14)
+                                                
+                                                with dpg.draw_node(tag="fl_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="fl_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('fl_image',[-12, -12],[12, 12])
+                                                        
+                                                with dpg.draw_node(tag="fr_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="fr_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_fr_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('fr_image',[-12, -12],[12, 12])
+                                                
+                                                with dpg.draw_node(tag="c_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_c_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="c_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_c_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('c_image',[-12, -12],[12, 12])
+                                                        
+                                                with dpg.draw_node(tag="sl_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_sl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="sl_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_sl_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('sl_image',[-12, -12],[12, 12])
+                                                        
+                                                with dpg.draw_node(tag="sr_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_sr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="sr_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_sr_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('sr_image',[-12, -12],[12, 12])
+                                                        
+                                                with dpg.draw_node(tag="rl_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_rl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="rl_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rl_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('rl_image',[-12, -12],[12, 12])
+                                                        
+                                                with dpg.draw_node(tag="rr_drawing"):
+                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
+                                                    with dpg.draw_node(tag="rr_drawing_inner", user_data=45.0):
+                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1]))
+                                                        dpg.draw_image('rr_image',[-12, -12],[12, 12])
                                         
-                                        with dpg.draw_node(tag="fl_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="fl_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('fl_image',[-12, -12],[12, 12])
-                                                
-                                        with dpg.draw_node(tag="fr_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="fr_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_fr_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('fr_image',[-12, -12],[12, 12])
-                                        
-                                        with dpg.draw_node(tag="c_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_c_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="c_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_c_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('c_image',[-12, -12],[12, 12])
-                                                
-                                        with dpg.draw_node(tag="sl_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_sl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="sl_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_sl_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('sl_image',[-12, -12],[12, 12])
-                                                
-                                        with dpg.draw_node(tag="sr_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_sr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="sr_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_sr_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('sr_image',[-12, -12],[12, 12])
-                                                
-                                        with dpg.draw_node(tag="rl_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_rl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="rl_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rl_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('rl_image',[-12, -12],[12, 12])
-                                                
-                                        with dpg.draw_node(tag="rr_drawing"):
-                                            dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
-                                            with dpg.draw_node(tag="rr_drawing_inner", user_data=45.0):
-                                                dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1]))
-                                                dpg.draw_image('rr_image',[-12, -12],[12, 12])
-                            
+                    with dpg.child_window(width=252,tag="head_pose_tracking_win", show=show_head_track_loaded):
+                        dpg.add_text("Head Pose Tracking")
+                        dpg.add_separator()
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Camera index")
+                                dpg.add_input_int(label=" ",width=100, tag='camera_index_tag', default_value=camera_index_loaded, min_value=0, max_value=10, min_clamped=True, max_clamped=True, callback=update_cam_index)
+                                with dpg.tooltip("camera_index_tag"):
+                                    dpg.add_text("Camera device index. Default = 0")
+                            with dpg.group():
+                                dpg.add_text("Frame Rate")
+                                dpg.add_input_int(label=" ",width=100, tag='camera_fps_tag', default_value=camera_fps_loaded, min_value=CN.THREAD_FPS_MIN, max_value=CN.THREAD_FPS_MAX, min_clamped=True, max_clamped=True, callback=save_settings)
+                                with dpg.tooltip("camera_fps_tag"):
+                                    dpg.add_text("Number of frames processed every second")        
+                                    
+                        dpg.add_text("Calibration")
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="Calibrate",user_data="",tag="calibrate_tag", callback=calibrate_head_pose)
+                            dpg.bind_item_theme(dpg.last_item(), "__theme_d")
+                            with dpg.tooltip("calibrate_tag"):
+                                dpg.add_text("Save current head pose as reference head pose")
+                            dpg.add_text(" ")
+                            dpg.add_button(label="Reset",user_data="",tag="reset_calibration_tag", callback=reset_reference_pose)
+                            dpg.bind_item_theme(dpg.last_item(), "__theme_d")
+                            with dpg.tooltip("reset_calibration_tag"):
+                                dpg.add_text("Reset reference head pose to default values")
+                                dpg.add_text("Assumes listener is directly facing camera")
+                        
+                        dpg.add_text("Tracking Data")
+                        with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
+                            borders_outerH=True, borders_innerH=True, no_host_extendX=True,
+                            borders_outerV=True, borders_innerV=True, delay_search=True):
+    
+                            dpg.add_table_column(label="Dimension")
+                            dpg.add_table_column(label="Reference Pose")
+                            dpg.add_table_column(label="Current Pose")
+                            for i in range(4):
+                                with dpg.table_row():
+                                    for j in range(4):
+                                        if j == 0:#dimension
+                                            if i == 0:
+                                                dpg.add_text("Pitch")
+                                            elif i == 1:
+                                                dpg.add_text("Yaw")
+                                            elif i == 3:
+                                                dpg.add_text("Roll")
+                                        if j == 1:#reference pose
+                                            if i == 0:
+                                                dpg.add_text(default_value=reference_pitch_loaded,tag="reference_pitch")
+                                            elif i == 1:
+                                                dpg.add_text(default_value=reference_yaw_loaded,tag="reference_yaw")
+                                            elif i == 3:
+                                                dpg.add_text(default_value=reference_roll_loaded,tag="reference_roll")
+                                        if j == 2:#curent pose
+                                            if i == 0:
+                                                dpg.add_text(default_value="",tag="current_pitch")
+                                            elif i == 1:
+                                                dpg.add_text(default_value="",tag="current_yaw")
+                                            elif i == 3:
+                                                dpg.add_text(default_value="",tag="current_roll")
             
         
         with dpg.collapsing_header(label="Additional Tools & Settings"):
             with dpg.group(horizontal=True):
                 with dpg.group():  
-                    with dpg.child_window(width=552, height=70):
-                        dpg.add_text("File Output Directory", tag='out_dir_title')
-                        with dpg.group(horizontal=True):
-                            dpge.add_file_browser(width=800,height=600,label='Change Folder',show_as_window=True, dirs_only=True,show_ok_cancel=True, allow_multi_selection=False, collapse_sequences=True,callback=show_selected_folder)
-                            dpg.add_text(tag='selected_folder_ash')
-                            dpg.add_text(tag='selected_folder_base',show=False)
-                            with dpg.tooltip("selected_folder_ash"):
-                                dpg.add_text("'EqualizerAPO\config' directory should be selected if using Equalizer APO.")
-                            with dpg.tooltip("selected_folder_ash"):
-                                dpg.add_text("Location to save HpCFs and BRIRs. Files will be saved under ASH-Custom-Set sub directory.")        
-                    dpg.set_value('selected_folder_ash', primary_ash_path)
-                    dpg.set_value('selected_folder_base', primary_path)
+                    
                     
                     with dpg.group(horizontal=True):
                         with dpg.group():
                             #Section to reset settngs
                             with dpg.child_window(width=200, height=81):
                                 dpg.add_text("Reset Settings to Default")
-                                dpg.add_button(label="Click Here to Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)
+                                dpg.add_button(label="Click Here to Reset",user_data="",tag="reset_settings_tag", callback=reset_settings)
                             #Section for database
                             with dpg.child_window(width=200, height=70):
                                 dpg.add_text("Check for App Updates")
@@ -2401,11 +3076,18 @@ def main():
                                     dpg.add_text("Requires restart")
                         
                 #section for logging
-                with dpg.child_window(width=1045, height=353, tag="console_window"):
+                with dpg.child_window(width=1130, height=280, tag="console_window"):
                     dpg.add_text("Log")
         with dpg.collapsing_header(label="Developer Tools"):
             with dpg.group(horizontal=True):
                 with dpg.group():
+                    #section for head pose tracking
+                    with dpg.child_window(width=400, height=70):
+                        dpg.add_text("Head Pose Tracking (Experimental)")
+                        dpg.add_checkbox(label="Show Head Pose Tracking Tools", default_value = show_head_track_loaded,  tag='show_head_tracking_tag', callback=show_hide_head_tracking)
+                        with dpg.tooltip("show_head_tracking_tag"):
+                            dpg.add_text("This will show experimental head pose tracking functions")
+                    
                     #Section for BRIRs
                     with dpg.child_window(width=400, height=70):
                         dpg.add_text("Regenerate Reverberation Data for BRIR Generation")
@@ -2508,6 +3190,9 @@ def main():
     e_apo_select_channels(app_data=dpg.get_value('audio_channels_combo'))#update channel gui elements on load
     
     dpg.start_dearpygui()
+    
+
+    
     dpg.destroy_context()
         
     #finally close the connection

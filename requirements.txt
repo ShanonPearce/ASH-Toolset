@@ -11,3 +11,6 @@ scipy==1.11.4
 soundfile==0.12.1
 thefuzz==0.22.1
 resampy==0.4.3
+onnxruntime_directml==1.18.1
+opencv_python==4.10.0.84
+SOFASonix==1.0.7

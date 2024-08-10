@@ -21,6 +21,26 @@ from thefuzz import fuzz
 from thefuzz import process
 
 
+def get_elevation_list(spatial_res=0):
+    """ 
+    Function returns list of elevations based on spatial resolution
+    """
+    try:
+        if spatial_res == 0:
+            elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
+        elif spatial_res == 1:
+            elevation_list_sel= CN.ELEV_ANGLES_WAV_MED
+        elif spatial_res == 2:
+            elevation_list_sel= CN.ELEV_ANGLES_WAV_HI
+        elif spatial_res == 3:
+            elevation_list_sel= CN.ELEV_ANGLES_WAV_MAX
+        else:
+            elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
+    except:
+        elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
+        
+    return elevation_list_sel
+
 def print_message(message):
     """
     Function to print a message
@@ -498,12 +518,13 @@ def smooth_fft(data, crossover_fb=1500, win_size_a = 150, win_size_b = 750, n_ff
     return data_smooth_c
 
 
-def mag_to_min_fir(data, n_fft=65536, out_win_size=4096):
+def mag_to_min_fir(data, n_fft=65536, out_win_size=4096, crop=0):
     """
     Function to create min phase FIR from a fft mag response
     :param data: numpy array, magnitude response of a signal
     :param out_win_size: int, number of samples desired in output signal. Will crop signal
     :param n_fft: int, fft size
+    :param crop: int, 0 = leave fir samples as per fft size, 1 = crop to out_win_size
     :return: numpy array, time domain signal
     """  
     
@@ -536,7 +557,11 @@ def mag_to_min_fir(data, n_fft=65536, out_win_size=4096):
     #return result
     #result with original length and windowed
     data_out = np.multiply(data_min_pad[0:n_fft-1],fade_out_win[0:n_fft-1])
-    return data_out
+    
+    if crop == 1:
+        return data_out[0:out_win_size]
+    else:
+        return data_out
     
 #modify spectrum to have flat mag response at low and high ends
 def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win = 100):
