@@ -160,7 +160,7 @@ This part of the app is used to generate a set of customised BRIRs and export to
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of BRIRs and a HpCF. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
 ### Apply HpCFs and BRIRs in Equalizer APO (new method)
-V2.0.0 onwards of the toolset includes a section to browse exported filters and auto-configure 'config.txt' to apply selected filters in Equalizer APO. 
+V2.0.0 onwards of the toolset includes a section to browse exported filters and auto-configure 'config.txt' to apply selected filters in Equalizer APO. This method removes the need for manual interaction with the configuration editor.
 
 1. Select a headphone from the list of exported HpCFs. Refer to above HpCF creation steps if this list is empty.
 2. Select a specific sample to apply headphone correction.
