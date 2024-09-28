@@ -1158,7 +1158,13 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
     # get the start time
     st = time.time()
     
+    
+    
     try:
+        
+        current_list = get_all_headphone_list(conn)
+        if current_list == None:
+            raise ValueError('Unable to create new database table: hpcf_table. Table already exists. Delete existing table or database before proceeding.')
     
         #retrieve geq frequency list as an array - 127 bands
         geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
@@ -1527,7 +1533,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=0, gui_logger=None, samp_freq=44100, bit_depth='PCM_24'):
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=False, gui_logger=None, samp_freq=44100, bit_depth='PCM_24'):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1539,7 +1545,7 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_st
     :param geq_103_export: int, 1 = export graphic eq (103 band) files
     :param hesuvi_export: int, 1 = export hesuvi files
     :param eapo_export: int, 1 = export equalizer apo config files for hpcf fir convolution
-    :param report_progress: int, 1 = report progress to dearpygui progress bar
+    :param report_progress: bool, True = report progress to dearpygui progress bar
     """
     
     try:
@@ -1565,7 +1571,7 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_st
                 hpcf_to_file(sample_dict, primary_path=primary_path, fir_export=fir_export, fir_stereo_export=fir_stereo_export, geq_export=geq_export, 
                              geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger, samp_freq=samp_freq, bit_depth=bit_depth)
 
-                if report_progress == 1:
+                if report_progress == True:
                     progress = ((index+1)/num_samples)
                     dpg.set_value("progress_bar_hpcf", progress)
                     dpg.configure_item("progress_bar_hpcf", overlay = str(int(progress*100))+'%')
@@ -2078,11 +2084,14 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         #convert to mag
         hpcf_target_mag = hf.db2mag(hpcf_target_db_comp)
         #level ends of spectrum
-        hpcf_target_mag = hf.level_spectrum_ends(hpcf_target_mag, 50, 19000, smooth_win = 10)#
+        hpcf_target_mag = hf.level_spectrum_ends(hpcf_target_mag, 50, 19000, smooth_win = 7)#
         #smoothing
-        hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 1670, 30, 150)
-        hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 12000, 30, 750)
-        hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 30000, 30, 30)  
+        if CN.SPECT_SMOOTH_MODE == 0:
+            hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 1124, 20, 101)
+            hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 8075, 20, 505)
+            hpcf_target_mag = hf.smooth_fft(hpcf_target_mag, 20187, 20, 20)  
+        else:
+            hpcf_target_mag = hf.smooth_fft_octaves(hpcf_target_mag)
         
         #back to db
         hpcf_target_db_comp=hf.mag2db(hpcf_target_mag)
@@ -2111,14 +2120,16 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                 hpcf_fft_out_mag = hf.db2mag(hpcf_db)
   
                 #level ends of spectrum
-                hpcf_fft_out_mag = hf.level_spectrum_ends(hpcf_fft_out_mag, 50, 19000, smooth_win = 10)#
+                hpcf_fft_out_mag = hf.level_spectrum_ends(hpcf_fft_out_mag, 50, 19000, smooth_win = 7)#
   
                 #smoothing
-                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 1670, 30, 150)
-                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 8000, 30, 500)
-                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 11000, 30, 1000)
-                hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 30000, 30, 30)
-                
+                if CN.SPECT_SMOOTH_MODE == 0:
+                    hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 1124, 20, 101)
+                    hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 5383, 20, 336)
+                    hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 7402, 20, 673)
+                    hpcf_fft_out_mag = hf.smooth_fft(hpcf_fft_out_mag, 20187, 20, 20)
+                else:
+                    hpcf_fft_out_mag = hf.smooth_fft_octaves(hpcf_fft_out_mag)
                 
                 
                 #normalise to -6db in low frequencies

@@ -20,7 +20,8 @@ def main():
     from ash_toolset import constants as CN
     from ash_toolset import hpcf_functions
     from ash_toolset import helper_functions as hf
-    
+    from ash_toolset import air_processing
+    from scipy.io import wavfile
     import mat73
     import dearpygui.dearpygui as dpg
     import dearpygui_extend as dpge
@@ -35,10 +36,8 @@ def main():
     from time import time
     from time import sleep
     import threading
-    
-    if CN.SHOW_DEV_TOOLS == True:
-        from ash_toolset import head_pose
-    
+    import scipy as sp
+
     #logging
     logging.basicConfig(
     handlers=[
@@ -60,16 +59,19 @@ def main():
     #
     #program code
     #
-
     
+    #start with flat response
+    impulse=np.zeros(CN.N_FFT)
+    impulse[0]=1
+    fr_flat_mag = np.abs(np.fft.fft(impulse))
+
     #default values
     sample_freq_default=CN.SAMPLE_RATE_LIST[0]
     bit_depth_default=CN.BIT_DEPTH_LIST[0]
     brir_hp_type_default='Over/On-Ear Headphones - High Strength'
     hrtf_default=CN.HRTF_LIST_NUM[0]
-    spatial_res_default=CN.SPATIAL_RES_LIST[1]
+    spatial_res_default=CN.SPATIAL_RES_LIST[0]
     room_target_default=CN.ROOM_TARGET_LIST[1]
-    rt60_default = 400
     direct_gain_default=3.0
     fir_hpcf_exp_default=True
     fir_st_hpcf_exp_default=False
@@ -105,15 +107,9 @@ def main():
     e_apo_hp_selected_default=''
     e_apo_sample_selected_default=''
     e_apo_brir_selected_default=''
-    #head tracking
-    enable_head_track_default=False
-    show_head_track_default=False
-    camera_index_default=0
-    camera_fps_default=20
-    reference_pitch_default='0'
-    reference_yaw_default='0'
-    reference_roll_default='180'
-    
+
+    #acoustic space
+    ac_space_default=CN.AC_SPACE_LIST_GUI[0]
     
     #loaded values - start with defaults
     sample_freq_loaded=sample_freq_default
@@ -122,7 +118,6 @@ def main():
     hrtf_loaded=hrtf_default
     spatial_res_loaded=spatial_res_default
     room_target_loaded=room_target_default
-    rt60_loaded = rt60_default
     direct_gain_loaded=direct_gain_default
     fir_hpcf_exp_loaded=fir_hpcf_exp_default
     fir_st_hpcf_exp_loaded=fir_st_hpcf_exp_default
@@ -174,15 +169,12 @@ def main():
     e_apo_hp_selected_loaded = e_apo_hp_selected_default
     e_apo_sample_selected_loaded = e_apo_sample_selected_default
     e_apo_brir_selected_loaded = e_apo_brir_selected_default
-    #head tracking
-    enable_head_track_loaded=enable_head_track_default
-    show_head_track_loaded=show_head_track_default
-    camera_index_loaded=camera_index_default
-    camera_fps_loaded=camera_fps_default
-    reference_pitch_loaded=reference_pitch_default
-    reference_yaw_loaded=reference_yaw_default
-    reference_roll_loaded=reference_roll_default
+
+    #acoustic space
+    ac_space_loaded=ac_space_default
     
+    #thread variables
+    e_apo_conf_lock = threading.Lock()
     
     #code to get gui width based on windows resolution
     gui_win_width_loaded=gui_win_width_default
@@ -225,7 +217,6 @@ def main():
             hrtf_loaded=config['DEFAULT']['brir_hrtf']
             spatial_res_loaded=config['DEFAULT']['spatial_resolution']
             room_target_loaded=config['DEFAULT']['brir_room_target']
-            rt60_loaded=int(config['DEFAULT']['brir_rt60'])
             direct_gain_loaded=float(config['DEFAULT']['brir_direct_gain'])
             fir_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['fir_hpcf_exp']) 
             fir_st_hpcf_exp_loaded=ast.literal_eval(config['DEFAULT']['fir_st_hpcf_exp'])
@@ -282,14 +273,9 @@ def main():
             e_apo_sample_selected_loaded = config['DEFAULT']['sample_selected']
             e_apo_brir_selected_loaded = config['DEFAULT']['brir_set_selected']
             audio_channels_loaded=config['DEFAULT']['channel_config']
-            #head tracking
-            show_head_track_loaded=ast.literal_eval(config['DEFAULT']['show_head_track'])#disabled on load
-            camera_index_loaded=int(config['DEFAULT']['camera_index'])
-            camera_fps_loaded=int(config['DEFAULT']['camera_fps'])
-            reference_pitch_loaded=config['DEFAULT']['reference_pitch']
-            reference_yaw_loaded=config['DEFAULT']['reference_yaw']
-            reference_roll_loaded=config['DEFAULT']['reference_roll']
-            
+
+            #acoustic space
+            ac_space_loaded=config['DEFAULT']['acoustic_space']
             
         else:
             raise ValueError('Settings not loaded due to version mismatch')
@@ -305,13 +291,12 @@ def main():
     #adjust window size if setting enabled
     if autosize_win_loaded == True:
         if show_filter_sect_loaded == True and show_eapo_sect_loaded == False:
-            if gui_win_height_loaded > 732:
-                gui_win_height_loaded=732
+            if gui_win_height_loaded > 733:
+                gui_win_height_loaded=733
         elif show_filter_sect_loaded == False and show_eapo_sect_loaded == True:
-            if gui_win_height_loaded > 417:
-                gui_win_height_loaded=417
-            if show_head_track_loaded == False:
-                gui_win_width_loaded=1550
+            if gui_win_height_loaded > 430:
+                gui_win_height_loaded=430
+                gui_win_width_loaded=1650
             
     #adjust hrtf list based on loaded spatial resolution
     #also adjust file export selection
@@ -343,32 +328,6 @@ def main():
         sofa_brir_tooltip_show=False
     else:
         hrtf_list_loaded = CN.HRTF_LIST_NUM
-    
-    
-    #thread variables
-    head_track_lock = threading.Lock()
-
-    
-    #
-    # populate room target dictionary for plotting
-    #
-    # load room target filters (FIR)
-    mat_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.mat')
-    room_target_mat = mat73.loadmat(mat_fname)
-    #start with flat response
-    impulse=np.zeros(CN.N_FFT)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    #create dictionary
-    target_mag_dict = {'Flat': fr_flat_mag} 
-    for idx, target in enumerate(CN.ROOM_TARGET_LIST_FIRS):
-        if idx > 0:
-            room_target_fir=np.zeros(CN.N_FFT)
-            room_target_fir[0:4096] = room_target_mat[target]
-            data_fft = np.fft.fft(room_target_fir)
-            room_target_mag=np.abs(data_fft)
-            room_target_name=CN.ROOM_TARGET_LIST[idx]
-            target_mag_dict.update({room_target_name: room_target_mag})
  
     #
     # HpCF Database code
@@ -430,10 +389,7 @@ def main():
     #
     ## GUI Functions - HPCFs
     #
-    
-    
-        
-    
+
     def filter_brand_list(sender, app_data):
         """ 
         GUI function to update list of brands based on input text
@@ -650,22 +606,7 @@ def main():
         headphone = user_data
         sample = app_data 
         hpcf_functions.hpcf_to_plot(conn, headphone, sample, plot_type=1)
-        
  
-    def plot_filter(sender, app_data):
-        """ 
-        GUI function to plot a selected filter
-        """
-        
-        target = app_data
-        #print(target)
-        mag_response = target_mag_dict.get(target)
-        
-        #run plot
-        plot_tile = target + ' frequency response'
-        hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, plot_type=1)
-        
-
     def export_fir_toggle(sender, app_data):
         """ 
         GUI function to update hpcf dictionary based on toggle
@@ -802,7 +743,7 @@ def main():
         
         if hpcf_export == 1:
             hpcf_functions.hpcf_to_file_bulk(conn, primary_path=output_path, headphone=headphone, fir_export = fir_export, fir_stereo_export = fir_stereo_export, geq_export = geq_export, samp_freq=samp_freq_int, bit_depth=bit_depth, 
-                                             geq_31_export = geq_31_export, geq_103_export = geq_103_export, hesuvi_export = hesuvi_export, eapo_export=eapo_export, gui_logger=logz, report_progress=1)
+                                             geq_31_export = geq_31_export, geq_103_export = geq_103_export, hesuvi_export = hesuvi_export, eapo_export=eapo_export, gui_logger=logz, report_progress=True)
    
             #also populate headphone list in E-APO config section
             hp_list_out_latest = e_apo_config_creation.get_exported_hp_list(output_path)
@@ -886,19 +827,140 @@ def main():
         """ 
         GUI function to update brir based on input
         """
-        
-        target = app_data
+
+        target_sel = app_data
         
         #run plot
-        mag_response = target_mag_dict.get(target)
-        plot_tile = target + ' frequency response'
-        hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
+        try:
+
+            # populate room target dictionary for plotting
+            # load room target filters (FIR)
+            npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
+            room_target_mat = np.load(npy_fname)
+            #create dictionary
+            target_mag_dict = {} 
+            for idx, target in enumerate(CN.ROOM_TARGET_LIST_SHORT):
+                room_target_fir=np.zeros(CN.N_FFT)
+                room_target_fir[0:4096] = room_target_mat[idx]
+                data_fft = np.fft.fft(room_target_fir)
+                room_target_mag=np.abs(data_fft)
+                room_target_name=CN.ROOM_TARGET_LIST[idx]
+                target_mag_dict.update({room_target_name: room_target_mag})
+        
+            mag_response = target_mag_dict.get(target_sel)
+            plot_tile = target_sel + ' frequency response'
+            hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
+    
+        except:
+            pass
 
         #reset progress bar
         reset_progress()
         
         save_settings()
  
+    def select_hrtf(sender, app_data):
+        """ 
+        GUI function to update brir based on input
+        """
+        
+        #run plot
+        spat_res = dpg.get_value("brir_spat_res")
+        spat_res_int = CN.SPATIAL_RES_LIST.index(spat_res)
+        hrtf = dpg.get_value("brir_hrtf")
+        if spat_res == 'Max':
+            hrtf_type = CN.HRTF_LIST_FULL_RES_NUM.index(hrtf)+1
+        else:
+            hrtf_type = CN.HRTF_LIST_NUM.index(hrtf)+1
+        hrtf_index = hrtf_type-1
+        if spat_res_int <= 2:
+            try:
+                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_high.npy')
+                #load npy files
+                hrir_list = np.load(npy_fname)
+                hrir_selected = hrir_list[hrtf_index]
+                #set metadata
+                total_elev_hrir = len(hrir_selected)
+                total_azim_hrir = len(hrir_selected[0])
+                total_chan_hrir = len(hrir_selected[0][0])
+                total_samples_hrir = len(hrir_selected[0][0][0])
+                elev_min=CN.SPATIAL_RES_ELEV_MIN[spat_res_int] 
+                elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spat_res_int] #as per hrir dataset
+                azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spat_res_int] 
+                #grab hrir for specific direction
+                for elev in range(total_elev_hrir):
+                    elev_deg = int(elev_min + elev*elev_nearest)
+                    for azim in range(total_azim_hrir):
+                        azim_deg = int(azim*azim_nearest)
+                        if elev_deg == 0 and azim_deg == 330:  
+                            chan=1
+                            hrir=np.zeros(CN.N_FFT)
+                            hrir[0:total_samples_hrir] = hrir_selected[elev][azim][chan][0:total_samples_hrir]
+                            data_fft = np.fft.fft(hrir)
+                            hrtf_mag=np.abs(data_fft)
+                
+                mag_response = hrtf_mag
+                plot_tile = 'HRTF sample: ' + hrtf + ' 0° elevation, 30° azimuth, right ear'
+                hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=0, level_ends=1, plot_type=1)
+                
+            except:
+                pass
+     
+        #reset progress bar
+        reset_progress()
+        
+        save_settings()
+    
+    def select_hp_comp(sender, app_data):
+        """ 
+        GUI function to update brir based on input
+        """
+        
+        hp_type = dpg.get_value("brir_hp_type")
+        pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
+        pinna_comp = pinna_comp_int
+        
+        #run plot
+        try:
+            # load pinna comp filter (FIR)
+            mat_fname = pjoin(CN.DATA_DIR_INT, 'headphone_pinna_comp_fir.mat')
+            pinna_comp_mat = mat73.loadmat(mat_fname)
+            pinna_comp_fir = pinna_comp_mat['ash_hp_pinna_comp_fir'][0:4096]
+            # load additional headphone eq
+            apply_add_hp_eq = 0
+            if pinna_comp == 2:
+                filename = 'additional_comp_for_over_&_on_ear_headphones.wav'
+                apply_add_hp_eq = 1
+            elif pinna_comp == 0:
+                filename = 'additional_comp_for_in_ear_headphones.wav'
+                apply_add_hp_eq = 1
+            if apply_add_hp_eq > 0:
+                wav_fname = pjoin(CN.DATA_DIR_INT, filename)
+                samplerate, data_addit_eq = wavfile.read(wav_fname)
+                data_addit_eq = data_addit_eq / (2.**31)
+            #apply pinna compensation
+            brir_eq_b=np.copy(impulse)
+            if pinna_comp >= 2:
+                brir_eq_b = sp.signal.convolve(brir_eq_b,pinna_comp_fir, 'full', 'auto')
+            #apply additional eq for headphones
+            if apply_add_hp_eq > 0:
+                brir_eq_b = sp.signal.convolve(brir_eq_b,data_addit_eq, 'full', 'auto')
+            pinna_comp_fir=np.zeros(CN.N_FFT)
+            pinna_comp_fir[0:1024] = brir_eq_b[0:1024]
+            data_fft = np.fft.fft(pinna_comp_fir)
+            mag_response=np.abs(data_fft)
+            plot_tile = 'Headphone Compensation: ' + hp_type
+            hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, level_ends=1, plot_type=1)
+
+        except:
+            pass
+
+        #reset progress bar
+        reset_progress()
+        
+        save_settings()
+    
+    
     def update_direct_gain(sender, app_data):
         """ 
         GUI function to update brir based on input
@@ -923,35 +985,8 @@ def main():
         reset_progress()
         
         save_settings()
-    
-    def update_rt60(sender, app_data):
-        """ 
-        GUI function to update brir based on input
-        """
-        
-        rt60=app_data
-        dpg.set_value("target_rt60_slider", rt60)
  
-        #reset progress bar
-        reset_progress()
-        
-        save_settings()
-        
-    def update_rt60_slider(sender, app_data):
-        """ 
-        GUI function to update brir based on input
-        """
-        
-        rt60=app_data
-        dpg.set_value("target_rt60", rt60)
- 
-        #reset progress bar
-        reset_progress()
-        
-        save_settings()
-        
-    
-    def update_hrtf(sender, app_data):
+    def update_brir_param(sender, app_data):
         """ 
         GUI function to update brir based on input
         """
@@ -961,16 +996,6 @@ def main():
         
         save_settings()
     
-    def update_hp_type(sender, app_data):
-        """ 
-        GUI function to update brir based on input
-        """
- 
-        #reset progress bar
-        reset_progress()
-    
-        save_settings()
-        
         
     def export_brir_toggle(sender, app_data):
         """ 
@@ -995,34 +1020,38 @@ def main():
             process_brirs_running = True
             #update user data
             dpg.configure_item('brir_tag',user_data=process_brirs_running)
+            dpg.configure_item('brir_tag',label="Cancel")
+            
+            #set stop thread flag flag
+            stop_thread_flag = False
+            #update user data
+            dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
             
             #start thread
             thread = threading.Thread(target=process_brirs, args=(), daemon=True)
             thread.start()
+   
+        else:
             
-            
+            #set stop thread flag flag
+            stop_thread_flag = True
+            #update user data
+            dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
 
-    
     def process_brirs(sender=None, app_data=None, user_data=None):
         """ 
         GUI function to process BRIRs
         """
 
-
-        app_data = dpg.get_value("dir_brir_toggle")
-        brir_directional_export = int(app_data)
-            
-        app_data = dpg.get_value("ts_brir_toggle")
-        brir_ts_export = int(app_data)
-        
-        app_data = dpg.get_value("hesuvi_brir_toggle")
-        hesuvi_export = int(app_data)
-        
-        app_data = dpg.get_value("eapo_brir_toggle")
-        eapo_export = int(app_data)
-        
-        app_data = dpg.get_value("sofa_brir_toggle")
-        sofa_export = int(app_data)
+        brir_directional_export = int(dpg.get_value("dir_brir_toggle"))
+  
+        brir_ts_export = int(dpg.get_value("ts_brir_toggle"))
+  
+        hesuvi_export = int(dpg.get_value("hesuvi_brir_toggle"))
+  
+        eapo_export = int(dpg.get_value("eapo_brir_toggle"))
+  
+        sofa_export = int(dpg.get_value("sofa_brir_toggle"))
         
         target = dpg.get_value("rm_target_list")
         room_target_int = CN.ROOM_TARGET_LIST.index(target)
@@ -1031,7 +1060,10 @@ def main():
         direct_gain_db = dpg.get_value("direct_gain")
         direct_gain_db = round(direct_gain_db,1)#round to nearest .1 dB
 
-        target_rt60 = dpg.get_value("target_rt60")
+        ac_space = dpg.get_value("acoustic_space_combo")
+        ac_space_int = CN.AC_SPACE_LIST_GUI.index(ac_space)
+        ac_space_short = CN.AC_SPACE_LIST_SHORT[ac_space_int]
+        ac_space_src = CN.AC_SPACE_LIST_SRC[ac_space_int]
 
         hp_type = dpg.get_value("brir_hp_type")
         pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
@@ -1055,33 +1087,40 @@ def main():
         else:
             hrtf_type = CN.HRTF_LIST_NUM.index(hrtf)+1
  
-        
         if brir_set_export == 1:
         
             """
             #Run BRIR integration
             """
             brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, 
-                                                                pinna_comp=pinna_comp, target_rt60=target_rt60, report_progress=1, gui_logger=logz)
+                                                                pinna_comp=pinna_comp, report_progress=True, gui_logger=logz, acoustic_space=ac_space_src)
             
             """
             #Run BRIR export
             """
             #calculate name
+            #depends on reverb reduction
             #depends on spatial resolution
             if spat_res == 'Max':
-                brir_name = CN.HRTF_LIST_FULL_RES_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
+                brir_name = CN.HRTF_LIST_FULL_RES_SHORT[hrtf_type-1] + '_'+ac_space_short + '_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
             else:    
-                brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] +'_'+ str(target_rt60) + 'ms_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
-    
-            brir_export.export_brir(brir_arr=brir_gen, hrtf_type=hrtf_type, target_rt60=target_rt60, brir_name=brir_name, primary_path=output_path, samp_freq=samp_freq_int, 
-                                    bit_depth=bit_depth, brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, 
-                                    report_progress=1, gui_logger=logz, direct_gain_db=direct_gain_db, spatial_res=spat_res_int, sofa_export=sofa_export)
+                brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + '_'+ac_space_short + '_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
+                
             
-            #set progress to 100 as export is complete (assume E-APO export time is negligible)
-            progress = 100/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            if brir_gen.size != 0:
+                brir_export.export_brir(brir_arr=brir_gen, acoustic_space=ac_space_src, hrtf_type=hrtf_type, brir_name=brir_name, primary_path=output_path, samp_freq=samp_freq_int, 
+                                    bit_depth=bit_depth, brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, 
+                                    gui_logger=logz, direct_gain_db=direct_gain_db, spatial_res=spat_res_int, sofa_export=sofa_export)
+            
+                #set progress to 100 as export is complete (assume E-APO export time is negligible)
+                progress = 100/100
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                #set progress to 0 as process ended early
+                progress = 0
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
             
             #update BRIR list in E-APO section
             brir_list_out_latest = e_apo_config_creation.get_exported_brir_list(output_path)
@@ -1091,7 +1130,7 @@ def main():
             brir_out_sel=dpg.get_value('e_apo_load_brir_set')
             update_elevations_list(brir_out_sel)
         
-        if eapo_export == 1:
+        if eapo_export == 1 and brir_gen.size != 0:
             """
             #Run E-APO Config creator for BRIR convolution
             """
@@ -1104,6 +1143,11 @@ def main():
         process_brirs_running = False
         #update user data
         dpg.configure_item('brir_tag',user_data=process_brirs_running)
+        dpg.configure_item('brir_tag',label="Process")
+        #set stop thread flag flag
+        stop_thread_flag = False
+        #update user data
+        dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
         
     #
     ## GUI Functions - Additional DEV tools
@@ -1230,7 +1274,6 @@ def main():
         """ 
         GUI function to delete a hp from db
         """
-        
         headphone = dpg.get_value('headphone_list')
         
         hpcf_functions.delete_headphone(conn=conn, headphone=headphone, gui_logger=logz)
@@ -1245,7 +1288,6 @@ def main():
         """ 
         GUI function to delete a sample from db
         """
-        
         headphone = dpg.get_value('headphone_list')
         sample = dpg.get_value('sample_list')
         
@@ -1260,7 +1302,6 @@ def main():
         """ 
         GUI function to recreate db from wavs
         """
-        
         hpcf_functions.hpcf_wavs_to_database(conn, gui_logger=logz)
 
     def show_selected_folder(sender, files, cancel_pressed):
@@ -1287,8 +1328,6 @@ def main():
         dpg.set_value("brir_spat_res", spatial_res_default)
         dpg.configure_item('brir_hrtf',items=CN.HRTF_LIST_NUM)
         dpg.set_value("rm_target_list", room_target_default)
-        dpg.set_value("target_rt60", rt60_default)
-        dpg.set_value("target_rt60_slider", rt60_default)
         dpg.set_value("direct_gain", direct_gain_default)
         dpg.set_value("direct_gain_slider", direct_gain_default)
         
@@ -1331,11 +1370,7 @@ def main():
         dpg.set_value('selected_folder_base', primary_path)
         dpg.set_value('selected_folder_ash', primary_ash_path)
         
-        dpg.set_value("reference_pitch",reference_pitch_default)
-        dpg.set_value("reference_yaw", reference_yaw_default)
-        dpg.set_value("reference_roll", reference_roll_default) 
-        dpg.set_value("camera_fps_tag", camera_fps_default)
-        dpg.set_value("camera_index_tag", camera_index_default)
+        dpg.set_value("acoustic_space_combo", ac_space_default)
         
         reset_channel_config()
         
@@ -1352,7 +1387,6 @@ def main():
         hrtf_str = dpg.get_value('brir_hrtf')
         brir_spat_res_str = dpg.get_value('brir_spat_res')
         room_target_str = dpg.get_value('rm_target_list')
-        rt60_str = str(dpg.get_value('target_rt60'))
         direct_gain_str = str(dpg.get_value('direct_gain'))
         fir_hpcf_exp_str= str(dpg.get_value('fir_hpcf_toggle'))
         fir_st_hpcf_exp_str= str(dpg.get_value('fir_st_hpcf_toggle'))
@@ -1406,14 +1440,8 @@ def main():
         azim_sr_str=str(dpg.get_value('e_apo_az_angle_sr'))
         azim_rl_str=str(dpg.get_value('e_apo_az_angle_rl'))
         azim_rr_str=str(dpg.get_value('e_apo_az_angle_rr'))
-        
-        enable_head_track_str=str(dpg.get_value('e_apo_head_tracking'))
-        show_head_track_str=str(dpg.get_value('show_head_tracking_tag'))
-        camera_index_str=str(dpg.get_value('camera_index_tag'))
-        camera_fps_str=str(dpg.get_value('camera_fps_tag'))
-        reference_pitch_str=str(dpg.get_value('reference_pitch'))
-        reference_yaw_str=str(dpg.get_value('reference_yaw'))
-        reference_roll_str=str(dpg.get_value('reference_roll'))
+    
+        ac_space_str=dpg.get_value('acoustic_space_combo')
         
         try:
             #save folder name to config file
@@ -1426,7 +1454,6 @@ def main():
             config['DEFAULT']['brir_hrtf'] = hrtf_str    # update
             config['DEFAULT']['spatial_resolution'] = brir_spat_res_str
             config['DEFAULT']['brir_room_target'] = room_target_str    # update
-            config['DEFAULT']['brir_rt60'] = rt60_str    # update
             config['DEFAULT']['brir_direct_gain'] = direct_gain_str    # update
             config['DEFAULT']['version'] = __version__    # update
             config['DEFAULT']['fir_hpcf_exp'] = fir_hpcf_exp_str
@@ -1479,15 +1506,8 @@ def main():
             config['DEFAULT']['azim_sr'] = azim_sr_str
             config['DEFAULT']['azim_rl'] = azim_rl_str
             config['DEFAULT']['azim_rr'] = azim_rr_str
-            
-            config['DEFAULT']['enable_head_track'] = enable_head_track_str
-            config['DEFAULT']['show_head_track'] = show_head_track_str
-            config['DEFAULT']['camera_index'] = camera_index_str
-            config['DEFAULT']['camera_fps'] = camera_fps_str
-            config['DEFAULT']['reference_pitch'] = reference_pitch_str
-            config['DEFAULT']['reference_yaw'] = reference_yaw_str
-            config['DEFAULT']['reference_roll'] = reference_roll_str
-            
+
+            config['DEFAULT']['acoustic_space'] = ac_space_str
 
             with open(CN.SETTINGS_FILE, 'w') as configfile:    # save
                 config.write(configfile)
@@ -1607,12 +1627,9 @@ def main():
         """ 
         GUI function to acquire lock on function to write updates to custom E-APO config
         """
-        
-        head_track_lock.acquire()
+        e_apo_conf_lock.acquire()
         e_apo_config_write()
-        head_track_lock.release()
-        
-        
+        e_apo_conf_lock.release()
 
     def e_apo_config_write(sender=None, app_data=None):
         """ 
@@ -1662,41 +1679,13 @@ def main():
         azim_sr_selected=dpg.get_value('e_apo_az_angle_sr')
         azim_rl_selected=dpg.get_value('e_apo_az_angle_rl')
         azim_rr_selected=dpg.get_value('e_apo_az_angle_rr')
-        
-        #apply transformations if head tracking enabled
-        enable_head_tracking=dpg.get_value('e_apo_head_tracking')
-        if enable_head_tracking == True:
-            fl_transformed = transform_direction(elev_fl_selected,azim_fl_selected)
-            fr_transformed = transform_direction(elev_fr_selected,azim_fr_selected)
-            c_transformed = transform_direction(elev_c_selected,azim_c_selected)
-            sl_transformed = transform_direction(elev_sl_selected,azim_sl_selected)
-            sr_transformed = transform_direction(elev_sr_selected,azim_sr_selected)
-            rl_transformed = transform_direction(elev_rl_selected,azim_rl_selected)
-            rr_transformed = transform_direction(elev_rr_selected,azim_rr_selected)
-            
-            elev_fl_selected=fl_transformed[0]
-            azim_fl_selected=fl_transformed[1]
-            elev_fr_selected=fr_transformed[0]
-            azim_fr_selected=fr_transformed[1]
-            elev_c_selected=c_transformed[0]
-            azim_c_selected=c_transformed[1]
-            elev_sl_selected=sl_transformed[0]
-            azim_sl_selected=sl_transformed[1]
-            elev_sr_selected=sr_transformed[0]
-            azim_sr_selected=sr_transformed[1]
-            elev_rl_selected=rl_transformed[0]
-            azim_rl_selected=rl_transformed[1]
-            elev_rr_selected=rr_transformed[0]
-            azim_rr_selected=rr_transformed[1]
-            
-        
+ 
         brir_dict = {'enable_conv': enable_brir_selected, 'brir_set': brir_set_selected, 'mute_fl': mute_fl_selected, 'mute_fr': mute_fr_selected, 'mute_c': mute_c_selected, 'mute_sl': mute_sl_selected,
                      'mute_sr': mute_sr_selected, 'mute_rl': mute_rl_selected, 'mute_rr': mute_rr_selected, 'gain_fl': gain_fl_selected, 'gain_fr': gain_fr_selected, 'gain_c': gain_c_selected,
                      'gain_sl': gain_sl_selected, 'gain_sr': gain_sr_selected, 'gain_rl': gain_rl_selected, 'gain_rr': gain_rr_selected, 'elev_fl': elev_fl_selected, 'elev_fr': elev_fr_selected,
                      'elev_c': elev_c_selected, 'elev_sl': elev_sl_selected, 'elev_sr': elev_sr_selected, 'elev_rl': elev_rl_selected, 'elev_rr': elev_rr_selected, 'azim_fl': azim_fl_selected,
                      'azim_fr': azim_fr_selected, 'azim_c': azim_c_selected, 'azim_sl': azim_sl_selected, 'azim_sr': azim_sr_selected, 'azim_rl': azim_rl_selected, 'azim_rr': azim_rr_selected}
-        
-        
+  
         audio_channels=dpg.get_value('audio_channels_combo')
         
         #get spatial resolution for this brir set
@@ -1704,8 +1693,7 @@ def main():
         
         #run function to write custom config
         e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_dict=brir_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel)
-        
-        
+ 
         #run function to load the custom config file in config.txt
         load_config = dpg.get_value('e_apo_live_config')
         #if true, edit config.txt to include the custom config
@@ -1749,6 +1737,8 @@ def main():
         #enable e-apo live updates if not already enabled
         dpg.set_value("e_apo_live_config", True)
         dpg.set_value("e_apo_brir_conv", True)
+        #update current BRIR set text
+        dpg.set_value("e_apo_curr_brir_set", app_data)
         
         #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
         brir_out_sel=app_data
@@ -1906,13 +1896,10 @@ def main():
         e_apo_config_azim_sr(app_data=e_apo_az_angle_sr_default)
         e_apo_config_azim_rl(app_data=e_apo_az_angle_rl_default)
         e_apo_config_azim_rr(app_data=e_apo_az_angle_rr_default)
-        
-        
-        
+ 
         #finally rewrite config file
         e_apo_config_acquire()
-        
-        
+  
     def e_apo_select_channels(sender=None, app_data=None):
         """ 
         GUI function to process updates in E-APO config section
@@ -1953,7 +1940,6 @@ def main():
             dpg.configure_item("rr_drawing", show=False)
             dpg.configure_item("rr_drawing_inner", show=False)
 
-            
         elif app_data == '5.1 Surround':  
             dpg.configure_item("e_apo_mute_c", show=True)
             dpg.configure_item("e_apo_mute_sl", show=False)
@@ -2100,337 +2086,59 @@ def main():
         value = dpg.get_value("Drag int")
         dpg.set_value("progress_bar_brir", value/100)
         dpg.configure_item("progress_bar_brir", overlay = str(value)+'%')
-  
-    
-    def reset_reference_pose():
-        """ 
-        GUI function to reset reference head pose
-        """
-        dpg.set_value("reference_pitch",reference_pitch_default)
-        dpg.set_value("reference_yaw", reference_yaw_default)
-        dpg.set_value("reference_roll", reference_roll_default)
-        
-        #also save settings
-        save_settings()
-        
-    def calibrate_head_pose():
-        """ 
-        GUI function to save reference head pose
-        """
-        #get current dimensions
-        reference_pitch_str=dpg.get_value('current_pitch')
-        reference_yaw_str=dpg.get_value('current_yaw')
-        reference_roll_str=dpg.get_value('current_roll')
-        
-        if reference_pitch_str == '':
-            reference_pitch_str='0'
-        if reference_yaw_str == '':
-            reference_yaw_str='0'
-        if reference_roll_str == '':
-            reference_roll_str='180'
-        
-        #save into reference dimensions
-        dpg.set_value("reference_pitch",reference_pitch_str)
-        dpg.set_value("reference_yaw", reference_yaw_str)
-        dpg.set_value("reference_roll", reference_roll_str)
-        
-        #also save settings
-        save_settings()
-      
-        
-             
-    def get_head_pose():
-        """ 
-        GUI function to run head tracking code and return head pose estimate
-        """
-        head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
-        
-        #timing code
-        fps=CN.THREAD_FPS
-        frameperiod=1.0/fps
-        
-        cam_idx=dpg.get_value('camera_index_tag')
 
-        #get detectors (run once)
-        detectors = head_pose.setup_detection(camera_idx=cam_idx,gui_logger=logz)
-        
-        #Initialize the video source from webcam or video file. (run once)
-        cap = head_pose.setup_video_cap(camera_idx=cam_idx,gui_logger=logz)
-        sleep(1)
-        
-        prev_pitch=''
-        prev_yaw=''
-        prev_roll=''
-        update_config=0
-        #run through loop while bool is set to true
-        while head_track_running == True:
-
-            try:
-                #get latest fps and sleep for specified frame period
-                fps=dpg.get_value('camera_fps_tag')
-                frameperiod=1.0/fps
-                sleep(frameperiod)
-                
-                update_config=0
-                #get pose arr from head pose estimate of video source
-                pose_arr = head_pose.estimate_head_pose(detector_arr=detectors,camera_idx=cam_idx,cap=cap,gui_logger=logz)
-                
-                #if pose array not empty, update and populate gui elements
-                if pose_arr:
-                    pitch = str(int(pose_arr[0]))
-                    yaw = str(int(pose_arr[1]))
-                    roll = str(int(pose_arr[2]))
-                else:
-                    pitch = ''
-                    yaw = ''
-                    roll = ''
-                
-                dpg.set_value("current_pitch", pitch)
-                dpg.set_value("current_yaw", yaw)
-                dpg.set_value("current_roll", roll)
-                    
-                #check for differences
-                try:
-                    if pitch == '' or prev_pitch == '':
-                        if (pitch == '' and prev_pitch != '') or (pitch != '' and prev_pitch == ''):
-                            update_config=1
-                    else:
-                        #section to compare previous wav direction and new wav direction. If no change in wav file, do not update config
-                        brir_set_selected=dpg.get_value('e_apo_load_brir_set')
-                        base_folder_selected=dpg.get_value('selected_folder_base')
-                        #get spatial resolution for this brir set
-                        spatial_res_sel = e_apo_config_creation.get_spatial_res_from_dir(primary_path=base_folder_selected, brir_set=brir_set_selected)
-                        if 'B&K 4128 ' in brir_set_selected:
-                            hrtf_type=4
-                        else:
-                            hrtf_type=1#default to 1
-                        nearest_dir_dict_curr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=int(pitch) , target_azimuth=int(yaw), spatial_res=2)
-                        nearest_dir_dict_prev = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=int(prev_pitch) , target_azimuth=int(prev_yaw), spatial_res=2)
-                        elev_curr=nearest_dir_dict_curr.get('nearest_elevation')
-                        azim_curr=nearest_dir_dict_curr.get('nearest_azimuth')
-                        elev_prev=nearest_dir_dict_prev.get('nearest_elevation')
-                        azim_prev=nearest_dir_dict_prev.get('nearest_azimuth')
-                        if elev_curr != elev_prev or azim_curr != azim_prev:
-                            update_config=1
-                except:
-                    update_config=1
-                    
-                #run ash config write function to apply offsets in equalizer apo
-                if update_config == 1:
-                    e_apo_config_acquire()
-                
-                #store current pose for later
-                prev_pitch=pitch
-                prev_yaw=yaw
-                prev_roll=roll
-                
-                head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
-            except:
-                head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
-           
-        #after loop finished,
-        try:
-            dpg.set_value("current_pitch", "")
-            dpg.set_value("current_yaw", "")
-            dpg.set_value("current_roll", "")
-            
-            reset_reference_pose()
-            #run ash config write function once more to update offsets in equalizer apo
-            e_apo_config_acquire()
-        except:
-            pass
-        
-        #finally cleanup the capture data
-        head_pose.cleanup_capture(cap=cap,gui_logger=logz)
-        
-        
-    def start_stop_head_track(sender=None, app_data=False):
+    def run_raw_air_to_dataset(sender, app_data, user_data):
         """ 
-        GUI function to start or stop head tracking thread
+        GUI function to run RAW AIR to dataset function
         """
-        #thread bool
-        head_track_running=dpg.get_item_user_data("e_apo_head_tracking")
         
-        enable_head_tracking = app_data
-
-        #if box is ticked
-        if enable_head_tracking == True:
-            head_track_running = True#start thread
-            #update user data
-            dpg.configure_item('e_apo_head_tracking',user_data=head_track_running)
-            thread = threading.Thread(target=get_head_pose, args=(), daemon=True)
-            thread.start()
-        else:
-            head_track_running = False#end thread
-            #update user data
-            dpg.configure_item('e_apo_head_tracking',user_data=head_track_running)
-  
+        dataset_name=dpg.get_value('air_dataset_name_tag')
+        #desired_sets=dpg.get_value('air_output_sets_tag')#deprecated
+        air_processing.irs_to_air_set(ir_set=dataset_name, gui_logger=logz)
         
-        #also save settings
-        save_settings()
-    
-    def update_cam_index(sender, app_data):
+    def run_air_to_brir(sender, app_data, user_data):
         """ 
-        GUI function to rerun head track if cam index updated
+        GUI function to run AIR to BRIR dataset function
         """
-        enable_head_tracking=dpg.get_value('e_apo_head_tracking')
-        #if already enabled, restart thread
-        if enable_head_tracking == True:
-            start_stop_head_track(app_data=False)
-            sleep(0.1)
-            start_stop_head_track(app_data=True) 
-        #do nothing otherwise
         
-        #also save settings
-        save_settings()
-        
-    def transform_direction(elevation,azimuth):
+        dataset_name=dpg.get_value('air_dataset_name_tag')
+        #desired_sets=dpg.get_value('air_output_sets_tag')
+        air_processing.airs_to_brirs(ir_set=dataset_name, gui_logger=logz)
+    
+    def run_raw_to_brir(sender, app_data, user_data):
         """ 
-        Function to transform a set of azimuth and elevation angles based on head pose data
+        GUI function to run AIR to BRIR dataset function
         """
-        directions_new=[elevation,azimuth]
-        gui_logger=logz
-        
-        try:
-            #used to invert results
-            polarity_factor=1
-            
-            elev_input = int(elevation)
-            azim_input = int(azimuth)
-            
-            #get current dimensions
-            current_pitch_str=dpg.get_value('current_pitch')
-            current_yaw_str=dpg.get_value('current_yaw')
-            current_roll_str=dpg.get_value('current_roll')
-            #dont proceed if current dimensions are blank
-            if current_pitch_str == '' or current_yaw_str == '' or current_roll_str == '':
-                return directions_new
-            current_pitch_int=int(current_pitch_str)
-            current_yaw_int=int(current_yaw_str)
-            current_roll_int=int(current_roll_str)
-            
-            #get reference dimensions
-            reference_pitch_str=dpg.get_value('reference_pitch')
-            reference_yaw_str=dpg.get_value('reference_yaw')
-            reference_roll_str=dpg.get_value('reference_roll')
-            if reference_pitch_str == '' or reference_yaw_str == '' or reference_roll_str == '':
-                return directions_new
-            reference_pitch_int=int(reference_pitch_str)
-            reference_yaw_int=int(reference_yaw_str)
-            reference_roll_int=int(reference_roll_str)
-            
-            #compare current and reference to get difference
-            relative_pitch=(current_pitch_int-reference_pitch_int)*polarity_factor
-            relative_yaw=(current_yaw_int-reference_yaw_int)*polarity_factor
-            relative_roll=(current_roll_int)*polarity_factor#assume no reference roll
-   
-            #transform azim and elev from yaw and pitch
-            azim_trans = azim_input-relative_yaw
-            #Handle cases where y > 180 or y <-180 
-            if azim_trans > 180:
-                azim_trans=-360+azim_trans 
-            if azim_trans < -180:
-                azim_trans=360+azim_trans
-            back_left_flag = 0
-            back_right_flag = 0
-            if azim_trans > 90:
-                back_right_flag=1
-            elif azim_trans < -90:
-                back_left_flag=1
-            #get pitch factor. Pitch will have lower impact towards 90 or 270 deg azimuths
-            pitch_factor=(90-abs(azim_trans))/90
-            elev_trans = elev_input-(relative_pitch*pitch_factor)
-            #handle edge cases
-            if elev_trans > 90:
-                elev_trans=90 
-            if elev_trans < -90:
-                elev_trans=-90
-   
-            #convert roll to range -180 to 180 deg with 0 deg reference
-            relative_roll_tr= int(-180-relative_roll) if relative_roll < 0 else int(180-relative_roll)
-            relative_roll_tr=relative_roll_tr*polarity_factor
-            
-            #transform azimuth and elev from roll
-            #steps
-            #1. find angle x of projected triangle
-            #1a. sin(abs(elev)) = adjacent length a (assume hypotenuse h=1)
-            x_a=math.sin(math.radians(abs(elev_trans)))
-            #1b. sin(azim) = opposite length o
-            x_o=math.sin(math.radians(azim_trans))
-            #1c. x = arctan(o/a)
-            x= math.degrees(math.atan2(x_o, x_a))
-            #1d. if elev < 0 move to correct quadrant due to arctan range
-            if azim_trans >= 0 and elev_trans < 0:
-                x=180-x
-            if azim_trans <= 0 and elev_trans < 0:
-                x=-180-x
-            #1e. hypotenuse h = sqrt(a2 + o2)
-            h=math.hypot(x_a, x_o)
-            h=min(1.0,h)#ensure h isnt greater than 1
-            #2. add roll degrees to x to get new circular angle y. 
-            y=x+relative_roll_tr
-            #2a. Handle cases where y > 180 or y <-180 
-            if y > 180:
-                y=-360+y 
-            if y < -180:
-                y=360+y
-            #2b. If y > 90, y = 180-y. if y <-90, y = -180-y due to arcsin range. flag each case
-            bottom_left_flag = 0
-            bottom_right_flag = 0
-            if y < -90:
-                y=-180-y
-                bottom_left_flag = 1
-            if y > 90:
-                y=180-y
-                bottom_right_flag = 1 
-            #3. convert new angle back to o and a lengths
-            #3a. o = sin(y) * h
-            y_o=math.sin(math.radians(y))*h
-            #3b. a = cos(y) * h
-            y_a=math.cos(math.radians(y))*h
-            
-            #4. convert o and a to azimuth and elev
-            #4a. azim = arcsin(o)
-            azim_new = int(math.degrees(math.asin(y_o)))
-            #4b. elev = arcsin(a)
-            elev_new = int(math.degrees(math.asin(y_a)))
-            #4c. if previously flagged, flip elevation or flip azimuth
-            if bottom_left_flag == 1 or bottom_right_flag == 1:
-                elev_new=elev_new*-1
-            if back_left_flag == 1: 
-                azim_new=-180-azim_new
-            if back_right_flag == 1:
-                azim_new=180-azim_new
-            
-            directions_new=[str(elev_new),str(azim_new)]
+        dataset_name=dpg.get_value('air_dataset_name_tag')
+        #desired_sets=dpg.get_value('air_output_sets_tag')
+        air_processing.raw_brirs_to_brir_set(ir_set=dataset_name, gui_logger=logz)
     
-            return directions_new
- 
-        except Exception as ex:
-            logging.error("Error occurred", exc_info = ex)
-            log_string = 'Failed to perform head pose estimation'
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-                
-            return directions_new
-    
-    def show_hide_head_tracking(sender, app_data):
+    def generate_hrir_dataset(sender, app_data, user_data):
         """ 
-        GUI function to show or hide head tracking section
+        GUI function to run AIR to BRIR dataset function
         """
-        if app_data == True:
-            dpg.configure_item("head_pose_tracking_win", show=True)
-            dpg.configure_item("e_apo_head_tracking", show=True)
-        else:
-            dpg.configure_item("head_pose_tracking_win", show=False)
-            dpg.configure_item("e_apo_head_tracking", show=False)
-            head_track_running = False#end thread
-            dpg.configure_item('e_apo_head_tracking',user_data=head_track_running)
+        spat_res = dpg.get_value("brir_spat_res")
+        spat_res_int = CN.SPATIAL_RES_LIST.index(spat_res)
+        brir_generation.preprocess_hrirs(spatial_res=spat_res_int, gui_logger=logz)
+    
+    def calc_reverb_target(sender, app_data, user_data):
+        """ 
+        GUI function to run calc reverb target function
+        """
+        air_processing.calc_reverb_target_mag(gui_logger=logz)
         
-        #also save settings
-        save_settings()
-    
-    
+    def run_sub_brir_calc(sender, app_data, user_data):
+        """ 
+        GUI function to run calc sub brir function
+        """
+        air_processing.calc_subrir(gui_logger=logz)
+        
+    def run_room_target_calc(sender, app_data, user_data):
+        """ 
+        GUI function to run calc avg room target function
+        """
+        air_processing.calc_room_target_dataset(gui_logger=logz)
+        
     #
     ## GUI CODE
     #
@@ -2442,7 +2150,6 @@ def main():
         default_x.append(i)
         default_y.append(i)
  
-    
     dpg.create_context()
     
     image_location_fl = pjoin(CN.DATA_DIR_RAW, 'l_icon.png')
@@ -2469,16 +2176,16 @@ def main():
         dpg.add_static_texture(width=width_rl, height=height_rl, default_value=data_rl, tag='rl_image')
         dpg.add_static_texture(width=width_rr, height=height_rr, default_value=data_rr, tag='rr_image')
 
-    
     # add a font registry
     with dpg.font_registry():
         # first argument ids the path to the .ttf or .otf file
-        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Regular.ttf')#SourceSansPro-Regular
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Medium.ttf')#SourceSansPro-Regular
         default_font = dpg.add_font(in_file_path, 14)    
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
         bold_font = dpg.add_font(in_file_path, 14)    
-    
-    
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
+        large_font = dpg.add_font(in_file_path, 16)    
+
     dpg.create_viewport(title='Audio Spatialisation for Headphones', width=gui_win_width_loaded, height=gui_win_height_loaded, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
     
     with dpg.window(tag="Primary Window", horizontal_scrollbar=True):
@@ -2488,7 +2195,7 @@ def main():
         
         # Themes
         with dpg.theme(tag="__theme_a"):
-            i=3
+            i=4.2#i=3
             with dpg.theme_component(dpg.mvButton):
                 dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.6, 0.6))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.8))
@@ -2496,7 +2203,7 @@ def main():
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, i*5)
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 8)
         with dpg.theme(tag="__theme_b"):
-            i=2
+            i=3.6#i=2
             with dpg.theme_component(dpg.mvButton):
                 dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.6, 0.6))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.8))
@@ -2514,13 +2221,16 @@ def main():
                 dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.6, 0.6))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.8))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.7, 0.7))  
+        with dpg.theme(tag="__theme_e"):
+            i=3.1
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_CheckMark, _hsv_to_rgb(i/7.0, 0.6, 0.6))
 
         with dpg.collapsing_header(label="Filter Creation",default_open = show_filter_sect_loaded):
-            dpg.bind_item_font(dpg.last_item(), bold_font)
             with dpg.group(horizontal=True):
                 #Section for HpCF Export
-                with dpg.child_window(width=550, height=631):
-                    title_1 = dpg.add_text("Headphone Correction Filters (HpCFs)")
+                with dpg.child_window(width=550, height=610):
+                    title_1 = dpg.add_text("Headphone Correction Filters")
                     dpg.bind_item_font(title_1, bold_font)
                     with dpg.child_window(autosize_x=True, height=390):
                         subtitle_1 = dpg.add_text("Select a Headphone", tag='hpcf_title')
@@ -2530,18 +2240,23 @@ def main():
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
                             dpg.add_text("Search Brand:")
+                            dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.add_input_text(label="", callback=filter_brand_list, width=105)
                             dpg.add_text("Search Headphone:")
+                            dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.add_input_text(label="", callback=filter_headphone_list, width=209)
                         with dpg.group(horizontal=True, width=0):
                             with dpg.group():
                                 dpg.add_text("Brand")
-                                listbox_1 = dpg.add_listbox(brands_list, width=165, num_items=16, tag='brand_list', callback=update_headphone_list)
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                listbox_1 = dpg.add_listbox(brands_list, width=135, num_items=16, tag='brand_list', callback=update_headphone_list)
                             with dpg.group():
                                 dpg.add_text("Headphone")
-                                listbox_2 = dpg.add_listbox(hp_list_default, width=220, num_items=16, tag='headphone_list', default_value=headphone_default ,callback=update_sample_list)
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                listbox_2 = dpg.add_listbox(hp_list_default, width=250, num_items=16, tag='headphone_list', default_value=headphone_default ,callback=update_sample_list)
                             with dpg.group():
                                 dpg.add_text("Sample")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 listbox_3 = dpg.add_listbox(sample_list_default, width=115, num_items=16, default_value=sample_default, tag='sample_list', user_data=headphone_default, callback=plot_sample)
                                 with dpg.tooltip("sample_list"):
                                     dpg.add_text("Note: all samples will be exported. Select a sample to preview")
@@ -2552,10 +2267,11 @@ def main():
                         with dpg.group(horizontal=True):
                             dpg.add_checkbox(label="WAV FIR Filters", default_value = fir_hpcf_exp_loaded, callback=export_fir_toggle, tag='fir_hpcf_toggle')
                             with dpg.tooltip("fir_hpcf_toggle"):
-                                dpg.add_text("Min phase WAV FIRs for convolution. 1 Channel. Required for Equalizer APO configuration updates.")
+                                dpg.add_text("Min phase FIRs in WAV format for convolution. 1 Channel")
+                                dpg.add_text("Required for Equalizer APO configuration updates")
                             dpg.add_checkbox(label="WAV Stereo FIR Filters", default_value = fir_st_hpcf_exp_loaded, callback=export_fir_stereo_toggle, tag='fir_st_hpcf_toggle')
                             with dpg.tooltip("fir_st_hpcf_toggle"):
-                                dpg.add_text("Min phase WAV FIRs for convolution. 2 Channels")
+                                dpg.add_text("Min phase FIRs in WAV format for convolution. 2 Channels")
                             dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_hpcf_exp_loaded, callback=export_eapo_hpcf_toggle, tag='eapo_hpcf_toggle')  
                             with dpg.tooltip("eapo_hpcf_toggle"):
                                 dpg.add_text("Equalizer APO configurations to perform convolution with FIR filters. Deprecated from V2.0.0 onwards")
@@ -2569,98 +2285,117 @@ def main():
                             dpg.add_checkbox(label="HeSuVi Filters", default_value = hesuvi_hpcf_exp_loaded, callback=export_hesuvi_hpcf_toggle, tag='hesuvi_hpcf_toggle')
                             with dpg.tooltip("hesuvi_hpcf_toggle"):
                                 dpg.add_text("Graphic EQ configurations with 103 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder")
-                    with dpg.child_window(autosize_x=True, height=105):
-                        subtitle_3 = dpg.add_text("Export HpCFs")
-                        dpg.bind_item_font(subtitle_3, bold_font)
-                        dpg.add_separator()
-                        dpg.add_button(label="Click Here to Process HpCFs",user_data="",tag="hpcf_tag", callback=process_hpcfs)
-                        dpg.bind_item_theme(dpg.last_item(), "__theme_b")
-                        dpg.configure_item('hpcf_tag',user_data=default_hpcf_settings)
-                        with dpg.tooltip("hpcf_tag"):
-                            dpg.add_text("This will export the selected HpCFs to selected directory")
-                        dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=27, width=515, overlay="Progress", tag="progress_bar_hpcf")
-
-                #Section for BRIR generation
-                with dpg.child_window(width=520, height=631):
-                    title_2 = dpg.add_text("Binaural Room Impulse Responses (BRIRs)", tag='brir_title')
-                    dpg.bind_item_font(title_2, bold_font)
-                    with dpg.tooltip("brir_title"):
-                        dpg.add_text("Customise a new set of BRIRs using below parameters")
-                    with dpg.child_window(autosize_x=True, height=388):
-                        subtitle_4 = dpg.add_text("Set Parameters")
+                    with dpg.child_window(autosize_x=True, height=84):
+                        subtitle_3 = dpg.add_text("Export Correction Filters")
                         dpg.bind_item_font(subtitle_3, bold_font)
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
+                            dpg.add_button(label="Process",user_data="",tag="hpcf_tag", callback=process_hpcfs, width=130)
+                            dpg.bind_item_theme(dpg.last_item(), "__theme_b")
+                            dpg.bind_item_font(dpg.last_item(), large_font)
+                            dpg.configure_item('hpcf_tag',user_data=default_hpcf_settings)
+                            with dpg.tooltip("hpcf_tag"):
+                                dpg.add_text("This will export the selected filters to the output directory")
+                                
+                            dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=32, width=370, overlay="Progress", tag="progress_bar_hpcf")
+
+                #Section for BRIR generation
+                with dpg.child_window(width=520, height=610):
+                    title_2 = dpg.add_text("Binaural Room Simulation", tag='brir_title')
+                    dpg.bind_item_font(title_2, bold_font)
+                    
+                    with dpg.child_window(autosize_x=True, height=388):
+                        subtitle_4 = dpg.add_text("Set Parameters", tag='brir_param_title')
+                        with dpg.tooltip("brir_param_title"):
+                            dpg.add_text("Customise a new binaural room simulation using below parameters")
+                        dpg.bind_item_font(subtitle_4, bold_font)
+                        dpg.add_separator()
+                        with dpg.group(horizontal=True):
                             with dpg.group():
-                                dpg.add_text("Target RT60 Reverberation Time (ms)")
-                                dpg.add_input_int(label="Target RT60 (ms)",width=150, tag='target_rt60', default_value=rt60_loaded, min_value=200, max_value=1250, min_clamped=True, max_clamped=True, callback=update_rt60)
-                                with dpg.tooltip("target_rt60"):
-                                    dpg.add_text("Select a value between 200ms and 1250ms")
-                                dpg.add_slider_int(label="", min_value=200, max_value=1250,width=150, default_value=rt60_loaded, clamped=True, no_input=True, format="", callback=update_rt60_slider, tag='target_rt60_slider')
-                                dpg.add_text("Spatial Resolution")
+                                dpg.add_text("Acoustic Space",tag='acoustic_space_title')
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_listbox(CN.AC_SPACE_LIST_GUI, label="",tag='acoustic_space_combo',default_value=ac_space_loaded, callback=update_brir_param, num_items=6, width=250)
+                                with dpg.tooltip("acoustic_space_title"):
+                                    dpg.add_text("This will determine the listening environment")
+                                dpg.add_text("Spatial Resolution", tag= "brir_spat_res_title")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_radio_button(CN.SPATIAL_RES_LIST, horizontal=True, tag= "brir_spat_res", default_value=spatial_res_loaded, callback=select_spatial_resolution )
-                                with dpg.tooltip("brir_spat_res"):
-                                    dpg.add_text("Increasing resolution will increase number of directions available but will also increase processing time")
-                                dpg.add_text("Dummy Head / Head & Torso Simulator")
-                                listbox_4 = dpg.add_listbox(hrtf_list_loaded, default_value=hrtf_loaded, num_items=10, width=250, callback=update_hrtf, tag='brir_hrtf')
+                                with dpg.tooltip("brir_spat_res_title"):
+                                    dpg.add_text("Increasing resolution will increase number of directions available but will also increase processing time and dataset size")
+                                    dpg.add_text("'Low' is recommended unless additional directions or SOFA export is required")
+                                dpg.add_text("Dummy Head / Head & Torso Simulator", tag='brir_hrtf_title')
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                listbox_4 = dpg.add_listbox(hrtf_list_loaded, default_value=hrtf_loaded, num_items=6, width=250, callback=select_hrtf, tag='brir_hrtf')
+                                with dpg.tooltip("brir_hrtf_title"):
+                                    dpg.add_text("This will influence the externalisation and localisation of sounds around the listener")
                             with dpg.group():
-                                dpg.add_text("Direct Sound Gain (dB)")
+                                dpg.add_text("Direct Sound Gain (dB)", tag='direct_gain_title')
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded,min_clamped=True, max_clamped=True, callback=update_direct_gain)
-                                with dpg.tooltip("direct_gain"):
+                                with dpg.tooltip("direct_gain_title"):
                                     dpg.add_text("Higher values result in lower perceived distance, lower values result in higher perceived distance")
                                 dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded, width=140,clamped=True, no_input=True, format="", callback=update_direct_gain_slider, tag='direct_gain_slider')
                                 
-                                dpg.add_text("Headphone Compensation")
-                                listbox_5 = dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, num_items=4, width=230, callback=update_hp_type, tag='brir_hp_type')
-                                dpg.add_text("Room Target")
+                                dpg.add_text("Headphone Compensation", tag='brir_hp_type_title')
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                listbox_5 = dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, num_items=4, width=230, callback=select_hp_comp, tag='brir_hp_type')
+                                with dpg.tooltip("brir_hp_type_title"):
+                                    dpg.add_text("This should align with the listener's headphone type")
+                                    dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised.")
+                                
+                                dpg.add_text("Room Target", tag='rm_target_title')
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 listbox_6 = dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=room_target_loaded, num_items=6, width=230, tag='rm_target_list', callback=select_room_target)
+                                with dpg.tooltip("rm_target_title"):
+                                    dpg.add_text("This will influence the overall balance of low and high frequencies")
                     with dpg.child_window(autosize_x=True, height=88):
                         subtitle_5 = dpg.add_text("Select Files to Include in Export")
                         dpg.bind_item_font(subtitle_5, bold_font)
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="Direction Specific WAV Files", default_value = dir_brir_exp_loaded,  tag='dir_brir_toggle', callback=export_brir_toggle, show=dir_brir_exp_show)
+                            dpg.add_checkbox(label="Direction-specific WAV BRIRs", default_value = dir_brir_exp_loaded,  tag='dir_brir_toggle', callback=export_brir_toggle, show=dir_brir_exp_show)
                             with dpg.tooltip("dir_brir_toggle", tag='dir_brir_tooltip', show=dir_brir_tooltip_show):
-                                dpg.add_text("Directional WAV BRIRs for convolution. 2 Channels. Required for Equalizer APO configuration updates.")
-                            dpg.add_checkbox(label="True Stereo WAV File", default_value = ts_brir_exp_loaded,  tag='ts_brir_toggle', callback=export_brir_toggle, show=ts_brir_exp_show)
+                                dpg.add_text("Binaural Room Impulse Responses (BRIRs) in WAV format for convolution")
+                                dpg.add_text("2 channels per file. One file for each direction")
+                                dpg.add_text("Required for Equalizer APO configuration updates")
+                            dpg.add_checkbox(label="True Stereo WAV BRIR", default_value = ts_brir_exp_loaded,  tag='ts_brir_toggle', callback=export_brir_toggle, show=ts_brir_exp_show)
                             with dpg.tooltip("ts_brir_toggle", tag='ts_brir_tooltip', show=ts_brir_tooltip_show):
-                                dpg.add_text("True Stereo WAV BRIRs for convolution. 4 Channels")
+                                dpg.add_text("True Stereo BRIR in WAV format for convolution")
+                                dpg.add_text("4 channels. One file representing L and R speakers")
                             dpg.add_checkbox(label="SOFA File", default_value = sofa_brir_exp_loaded,  tag='sofa_brir_toggle', callback=export_brir_toggle, show=sofa_brir_exp_show)
                             with dpg.tooltip("sofa_brir_toggle", tag='sofa_brir_tooltip', show=sofa_brir_tooltip_show):
                                 dpg.add_text("BRIR dataset as a SOFA file")
                         with dpg.group(horizontal=True):
-                            dpg.add_checkbox(label="HeSuVi WAV Files", default_value = hesuvi_brir_exp_loaded,  tag='hesuvi_brir_toggle', callback=export_brir_toggle, show=hesuvi_brir_exp_show)  
+                            dpg.add_checkbox(label="HeSuVi WAV BRIRs", default_value = hesuvi_brir_exp_loaded,  tag='hesuvi_brir_toggle', callback=export_brir_toggle, show=hesuvi_brir_exp_show)  
                             with dpg.tooltip("hesuvi_brir_toggle", tag='hesuvi_brir_tooltip', show=hesuvi_brir_tooltip_show):
-                                dpg.add_text("HeSuVi compatible WAV BRIRs. 14 Channels, 44.1kHz and 48kHz")
+                                dpg.add_text("BRIRs in HeSuVi compatible WAV format. 14 channels, 44.1kHz and 48kHz")
                             dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_brir_exp_loaded,  tag='eapo_brir_toggle', callback=export_brir_toggle, show=eapo_brir_exp_show)
                             with dpg.tooltip("eapo_brir_toggle", tag='eapo_brir_tooltip', show=eapo_brir_tooltip_show):
                                 dpg.add_text("Equalizer APO configurations to perform convolution with BRIRs. Deprecated from V2.0.0 onwards")
-                    with dpg.child_window(autosize_x=True, height=107):
-                        subtitle_6 = dpg.add_text("Generate and Export BRIRs")
+                    with dpg.child_window(autosize_x=True, height=86):
+                        subtitle_6 = dpg.add_text("Generate and Export Binaural Dataset")
                         dpg.bind_item_font(subtitle_6, bold_font)
                         dpg.add_separator()
                         with dpg.group(horizontal=True):
-                            dpg.add_button(label="Click Here to Process BRIRs",user_data=CN.PROCESS_BRIRS_RUNNING,tag="brir_tag", callback=start_process_brirs)
+                            dpg.add_button(label="Process",user_data=CN.PROCESS_BRIRS_RUNNING,tag="brir_tag", callback=start_process_brirs, width=130)
                             dpg.bind_item_theme(dpg.last_item(), "__theme_a")
+                            dpg.bind_item_font(dpg.last_item(), large_font)
                             with dpg.tooltip("brir_tag"):
-                                dpg.add_text("This will generate the customised BRIRs and export to selected directory. This may take some time to process")
-                            
-                            
-                            #dpg.add_combo(CN.SPATIAL_RES_LIST, width=100, label="",  tag='brir_spat_res',default_value=CN.SPATIAL_RES_LIST[0])
-                            
-                        dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=27, width=485, overlay="Progress", tag="progress_bar_brir")
+                                dpg.add_text("This will generate the binaural dataset and export to the output directory. This may take some time to process")
+         
+                            dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=32, width=340, overlay="Progress", tag="progress_bar_brir",user_data=CN.STOP_THREAD_FLAG)
             
                 #right most section
                 with dpg.group():    
                     #Section for plotting
-                    with dpg.child_window(width=604, height=487):
+                    with dpg.child_window(width=604, height=467):
                         title_3 = dpg.add_text("Filter Preview")
                         dpg.bind_item_font(title_3, bold_font)
                         #plotting
                         dpg.add_separator()
                         dpg.add_text("Select a filter from list to preview")
                         # create plot
-                        with dpg.plot(label="Magnitude Response Plot", height=410, width=585):
+                        with dpg.plot(label="Magnitude Response Plot", height=390, width=585):
                             # optionally create legend
                             dpg.add_plot_legend()
                     
@@ -2673,14 +2408,17 @@ def main():
                             # series belong to a y axis
                             dpg.add_line_series(default_x, default_y, label="Plot", parent="y_axis", tag="series_tag")
                             #initial plot
-                            hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
+                            #hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
+                            hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
                 
                     #Section for Exporting files
                     with dpg.group(horizontal=True):
                         with dpg.child_window(width=361, height=140):
                             dpg.add_text("Output Directory", tag='out_dir_title')
+                            dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpge.add_file_browser(width=800,height=600,label='Change Folder',show_as_window=True, dirs_only=True,show_ok_cancel=True, allow_multi_selection=False, collapse_sequences=True,callback=show_selected_folder)
                             dpg.add_text(tag='selected_folder_ash', wrap=330)
                             dpg.add_text(tag='selected_folder_base',show=False)
@@ -2698,46 +2436,47 @@ def main():
                             dpg.add_separator()
                             with dpg.group():
                                 dpg.add_text("Select Sample Rate")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=True, tag= "wav_sample_rate", default_value=sample_freq_loaded, callback=update_sample_rate )
                             #dpg.add_text("          ")
                             with dpg.group():
                                 dpg.add_text("Select Bit Depth")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "wav_bit_depth", default_value=bit_depth_loaded, callback=update_bit_depth)
-                    
-          
+  
         with dpg.collapsing_header(label="Equalizer APO Configuration",default_open = show_eapo_sect_loaded):
-            dpg.bind_item_font(dpg.last_item(), bold_font)
             #Section for managing E-APO configurations
-            with dpg.child_window(width=1690, height=305):
+            with dpg.child_window(width=1690, height=325):
                 with dpg.group(horizontal=True):
+                    dpg.bind_item_font(dpg.last_item(), bold_font)
                     dpg.add_checkbox(label="Auto-Configure 'config.txt'", default_value = e_apo_enable_loaded,  tag='e_apo_live_config', callback=e_apo_config_acquire)
+                    dpg.bind_item_theme(dpg.last_item(), "__theme_e")
                     with dpg.tooltip("e_apo_live_config"):
-                        dpg.add_text("Auto-configure 'config.txt'to apply selected filters")
+                        dpg.add_text("Auto-configure 'config.txt' to apply selected filters")
                     dpg.add_text("  ")
                     dpg.add_checkbox(label="Enable Headphone Correction", default_value = e_apo_enable_hpcf_loaded,  tag='e_apo_hpcf_conv', callback=e_apo_enable_auto_conf)
+                    dpg.bind_item_theme(dpg.last_item(), "__theme_e")
                     with dpg.tooltip("e_apo_hpcf_conv"):
-                        dpg.add_text("Enable convolution with selected HpCF FIR Filter")
+                        dpg.add_text("Enable convolution with selected headphone correction WAV filter")
                     dpg.add_text("  ")
                     dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = e_apo_enable_brir_loaded,  tag='e_apo_brir_conv', callback=e_apo_enable_auto_conf)
+                    dpg.bind_item_theme(dpg.last_item(), "__theme_e")
                     with dpg.tooltip("e_apo_brir_conv"):
-                        dpg.add_text("Enable convolution with selected BRIRs")
-                    dpg.add_text("  ")
-                    dpg.add_checkbox(label="Enable Head Pose Tracking", default_value = enable_head_track_loaded,  tag='e_apo_head_tracking', callback=start_stop_head_track, user_data=CN.HEAD_TRACK_RUNNING, show=show_head_track_loaded)
-                    with dpg.tooltip("e_apo_head_tracking"):
-                        dpg.add_text("Dynamically alter source direction based on captured head pose. Requires webcam")
-                    
+                        dpg.add_text("Enable convolution with selected BRIR WAV Files")
+
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(width=360):
+                    with dpg.child_window(width=CN.HP_SEL_WIN_WIDTH_FULL, tag='e_apo_load_hp_win'):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 with dpg.group(horizontal=True):
+                                    dpg.bind_item_font(dpg.last_item(), bold_font)
                                     dpg.add_text("Select Headphone & Sample", tag='e_apo_hp_title')
                                     with dpg.tooltip("e_apo_hp_title"):
-                                        dpg.add_text("exported FIR filters will be shown below")
+                                        dpg.add_text("Exported FIR filters will be shown below")
                                     dpg.add_text("  ")
                                     dpg.add_button(label="  Delete Selected Headphone  ")
                                     with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_hp_popup"):
-                                        dpg.add_text("Saved HpCFs for selected headphone will be deleted.")
+                                        dpg.add_text("Saved filters for selected headphone will be deleted.")
                                         dpg.add_separator()
                                         with dpg.group(horizontal=True):
                                             dpg.add_button(label="OK", width=75, callback=remove_select_hpcfs)
@@ -2745,41 +2484,47 @@ def main():
                                 dpg.add_separator()
                                 
                                 with dpg.group(horizontal=True):
-                                    listbox_7 = dpg.add_listbox(hp_list_out_default,default_value=headphone_out_default, num_items=11, width=220, tag='e_apo_load_hp', callback=e_apo_select_hp)
-                                    listbox_8 = dpg.add_listbox(sample_list_out_default,default_value=sample_out_default, num_items=11, width=115, tag='e_apo_load_sample', callback=e_apo_select_sample)
-                    with dpg.child_window(width=390):
+                                    listbox_7 = dpg.add_listbox(hp_list_out_default,default_value=headphone_out_default, num_items=12, width=CN.HP_SEL_LIST_WIDTH_FULL, tag='e_apo_load_hp', callback=e_apo_select_hp)
+                                    listbox_8 = dpg.add_listbox(sample_list_out_default,default_value=sample_out_default, num_items=12, width=120, tag='e_apo_load_sample', callback=e_apo_select_sample)
+                    with dpg.child_window(width=CN.BRIR_SEL_WIN_WIDTH_FULL, tag='e_apo_load_brir_win'):
                         with dpg.group(horizontal=True):
-                            dpg.add_text("Select BRIR Set", tag='e_apo_brir_title')
+                            dpg.bind_item_font(dpg.last_item(), bold_font)
+                            dpg.add_text("Select Binaural Dataset", tag='e_apo_brir_title')
                             with dpg.tooltip("e_apo_brir_title"):
-                                dpg.add_text("exported BRIRs will be shown below")
+                                dpg.add_text("Exported BRIR WAV datasets will be shown below")
                             dpg.add_text("                                            ")
-                            dpg.add_button(label="  Delete Selected BRIRs  ")
+                            dpg.add_button(label="  Delete Selected Dataset  ")
                             with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_brir_popup"):
-                                dpg.add_text("Selected BRIRs will be deleted.")
+                                dpg.add_text("Selected dataset will be deleted.")
                                 dpg.add_separator()
                                 with dpg.group(horizontal=True):
                                     dpg.add_button(label="OK", width=75, callback=remove_select_brirs)
                                     dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_brir_popup", show=False))
                         dpg.add_separator()
                         
-                        listbox_9 = dpg.add_listbox(brir_list_out_default, num_items=11, default_value=brir_out_default, width=370, tag='e_apo_load_brir_set', callback=e_apo_select_brir)
+                        listbox_9 = dpg.add_listbox(brir_list_out_default, num_items=12, default_value=brir_out_default, width=CN.BRIR_SEL_LIST_WIDTH_FULL, tag='e_apo_load_brir_set', callback=e_apo_select_brir)
                     
-                    with dpg.child_window(width=650):
+                    with dpg.child_window(width=670):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 with dpg.group(horizontal=True):
+                                    dpg.bind_item_font(dpg.last_item(), bold_font)
                                     dpg.add_text("Channel Configuration                  ")
                                     dpg.add_button(label="Reset All", width=54, callback=reset_channel_config)
                                     dpg.add_text("                    Select Audio Channels: ")
                                     dpg.add_combo(CN.AUDIO_CHANNELS, width=200, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=e_apo_select_channels)
                                 dpg.add_separator()
+                                
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Current dataset: ")
+                                    dpg.add_text(default_value=brir_out_default,  tag='e_apo_curr_brir_set')
                                 with dpg.group(horizontal=True):
                                     with dpg.group():
                                         #dpg.add_text(" ")
                                         with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
                                             borders_outerH=True, borders_innerH=True, no_host_extendX=True,
                                             borders_outerV=True, borders_innerV=True, delay_search=True):
-                    
+                                            dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_table_column(label="Channel")
                                             dpg.add_table_column(label="Mute")
                                             dpg.add_table_column(label="Gain (dB)")
@@ -2907,8 +2652,8 @@ def main():
                                                                 dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=100, label="",  tag='e_apo_az_angle_rl',default_value=e_apo_az_angle_rl_loaded, callback=e_apo_config_azim_rl)
                                                             elif i == 6:
                                                                 dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=100, label="",  tag='e_apo_az_angle_rr',default_value=e_apo_az_angle_rr_loaded, callback=e_apo_config_azim_rr)
-                                    
-                                    with dpg.drawlist(width=250, height=220, tag="channel_drawing"):
+                       
+                                    with dpg.drawlist(width=250, height=210, tag="channel_drawing"):
             
                                         with dpg.draw_layer():
                                             
@@ -2918,8 +2663,8 @@ def main():
                                             dpg.draw_circle([x_start, y_start], radius, color=[163, 177, 184])           
                                             with dpg.draw_node(tag="listener_drawing"):
                                                 dpg.apply_transform(dpg.last_item(), dpg.create_translation_matrix([x_start, y_start]))
-                                                dpg.draw_circle([0, 0], 22, color=[163, 177, 184], fill=[158,158,158])
-                                                dpg.draw_text([-20, -8], 'Listener', color=[0, 0, 0],size=14)
+                                                dpg.draw_circle([0, 0], 20, color=[163, 177, 184], fill=[158,158,158])
+                                                dpg.draw_text([-19, -8], 'Listener', color=[0, 0, 0],size=13)
                                                 
                                                 with dpg.draw_node(tag="fl_drawing"):
                                                     dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([radius, 0]))
@@ -2962,150 +2707,83 @@ def main():
                                                     with dpg.draw_node(tag="rr_drawing_inner", user_data=45.0):
                                                         dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1]))
                                                         dpg.draw_image('rr_image',[-12, -12],[12, 12])
-                                        
-                    with dpg.child_window(width=252,tag="head_pose_tracking_win", show=show_head_track_loaded):
-                        dpg.add_text("Head Pose Tracking")
-                        dpg.add_separator()
-                        with dpg.group(horizontal=True):
-                            with dpg.group():
-                                dpg.add_text("Camera index")
-                                dpg.add_input_int(label=" ",width=100, tag='camera_index_tag', default_value=camera_index_loaded, min_value=0, max_value=10, min_clamped=True, max_clamped=True, callback=update_cam_index)
-                                with dpg.tooltip("camera_index_tag"):
-                                    dpg.add_text("Camera device index. Default = 0")
-                            with dpg.group():
-                                dpg.add_text("Frame Rate")
-                                dpg.add_input_int(label=" ",width=100, tag='camera_fps_tag', default_value=camera_fps_loaded, min_value=CN.THREAD_FPS_MIN, max_value=CN.THREAD_FPS_MAX, min_clamped=True, max_clamped=True, callback=save_settings)
-                                with dpg.tooltip("camera_fps_tag"):
-                                    dpg.add_text("Number of frames processed every second")        
-                                    
-                        dpg.add_text("Calibration")
-                        with dpg.group(horizontal=True):
-                            dpg.add_button(label="Calibrate",user_data="",tag="calibrate_tag", callback=calibrate_head_pose)
-                            dpg.bind_item_theme(dpg.last_item(), "__theme_d")
-                            with dpg.tooltip("calibrate_tag"):
-                                dpg.add_text("Save current head pose as reference head pose")
-                            dpg.add_text(" ")
-                            dpg.add_button(label="Reset",user_data="",tag="reset_calibration_tag", callback=reset_reference_pose)
-                            dpg.bind_item_theme(dpg.last_item(), "__theme_d")
-                            with dpg.tooltip("reset_calibration_tag"):
-                                dpg.add_text("Reset reference head pose to default values")
-                                dpg.add_text("Assumes listener is directly facing camera")
-                        
-                        dpg.add_text("Tracking Data")
-                        with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
-                            borders_outerH=True, borders_innerH=True, no_host_extendX=True,
-                            borders_outerV=True, borders_innerV=True, delay_search=True):
-    
-                            dpg.add_table_column(label="Dimension")
-                            dpg.add_table_column(label="Reference Pose")
-                            dpg.add_table_column(label="Current Pose")
-                            for i in range(4):
-                                with dpg.table_row():
-                                    for j in range(4):
-                                        if j == 0:#dimension
-                                            if i == 0:
-                                                dpg.add_text("Pitch")
-                                            elif i == 1:
-                                                dpg.add_text("Yaw")
-                                            elif i == 3:
-                                                dpg.add_text("Roll")
-                                        if j == 1:#reference pose
-                                            if i == 0:
-                                                dpg.add_text(default_value=reference_pitch_loaded,tag="reference_pitch")
-                                            elif i == 1:
-                                                dpg.add_text(default_value=reference_yaw_loaded,tag="reference_yaw")
-                                            elif i == 3:
-                                                dpg.add_text(default_value=reference_roll_loaded,tag="reference_roll")
-                                        if j == 2:#curent pose
-                                            if i == 0:
-                                                dpg.add_text(default_value="",tag="current_pitch")
-                                            elif i == 1:
-                                                dpg.add_text(default_value="",tag="current_yaw")
-                                            elif i == 3:
-                                                dpg.add_text(default_value="",tag="current_roll")
-            
-        
+   
         with dpg.collapsing_header(label="Additional Tools & Settings"):
             with dpg.group(horizontal=True):
                 with dpg.group():  
-                    
-                    
                     with dpg.group(horizontal=True):
                         with dpg.group():
                             #Section to reset settngs
                             with dpg.child_window(width=200, height=81):
                                 dpg.add_text("Reset Settings to Default")
-                                dpg.add_button(label="Click Here to Reset",user_data="",tag="reset_settings_tag", callback=reset_settings)
+                                dpg.add_button(label="Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)
                             #Section for database
                             with dpg.child_window(width=200, height=70):
                                 dpg.add_text("Check for App Updates")
-                                dpg.add_button(label="Click Here to Check Versions",user_data="",tag="app_version_tag", callback=check_app_version)
+                                dpg.add_button(label="Check App Versions",user_data="",tag="app_version_tag", callback=check_app_version)
                                 with dpg.tooltip("app_version_tag"):
                                     dpg.add_text("This will display version of local app and latest available version in the log")   
                             with dpg.child_window(width=200, height=120):
                                 dpg.add_text("Check for HpCF Database Updates")
-                                dpg.add_button(label="Click Here to Check Versions",user_data="",tag="hpcf_db_version_tag", callback=check_db_version)
+                                dpg.add_button(label="Check Database Versions",user_data="",tag="hpcf_db_version_tag", callback=check_db_version)
                                 with dpg.tooltip("hpcf_db_version_tag"):
-                                    dpg.add_text("This will display version of local HpcF database and latest version in the log")
-                                dpg.add_text("Download latest HpCF Database")
-                                dpg.add_button(label="Click Here to Download",user_data="",tag="hpcf_db_download_tag", callback=download_latest_db)
+                                    dpg.add_text("This will display version of local headphone correction filter database and latest version in the log")
+                                dpg.add_text("Download Latest HpCF Database")
+                                dpg.add_button(label="Download Latest Database",user_data="",tag="hpcf_db_download_tag", callback=download_latest_db)
                                 with dpg.tooltip("hpcf_db_download_tag"):
                                     dpg.add_text("This will download latest version of HpcF database and replace local version")
                             
                         with dpg.group():
-                            with dpg.child_window(width=344, height=115):
-                                dpg.add_text("Delete all HpCFs from output directory")
-                                dpg.add_button(label="Click Here to Delete HpCFs",user_data="",tag="remove_hpcfs_tag", callback=remove_hpcfs)
+                            with dpg.child_window(width=274, height=115):
+                                dpg.add_text("Delete All Exported Headphone Filters")
+                                dpg.add_button(label="Delete Headphone Filters",user_data="",tag="remove_hpcfs_tag", callback=remove_hpcfs)
                                 with dpg.tooltip("remove_hpcfs_tag"):
-                                    dpg.add_text("Warning: this will delete all HpCFs and E-APO configs that have been generated and stored in above directory")
-                                dpg.add_text("Delete all BRIRs from output directory")
-                                dpg.add_button(label="Click Here to Delete BRIRs",user_data="",tag="remove_brirs_tag", callback=remove_brirs)
+                                    dpg.add_text("Warning: this will delete all headphone filters that have been generated and exported to output directory")
+                                dpg.add_text("Delete All Exported Binaural Datasets")
+                                dpg.add_button(label="Delete Binaural Datasets",user_data="",tag="remove_brirs_tag", callback=remove_brirs)
                                 with dpg.tooltip("remove_brirs_tag"):
-                                    dpg.add_text("Warning: this will delete all BRIRs and E-APO configs that have been generated and stored in above directory")
+                                    dpg.add_text("Warning: this will delete all BRIRs that have been generated and exported to output directory")
                                 
                             #Section to reduce size of window
-                            with dpg.child_window(width=344, height=160):
+                            with dpg.child_window(width=274, height=160):
                                 dpg.add_text("Auto-size App Window on Start")
                                 dpg.add_checkbox(label="Auto-size Window", default_value = autosize_win_loaded,  tag='resize_window_tag', callback=save_settings)
                                 with dpg.tooltip("resize_window_tag"):
                                     dpg.add_text("Requires restart")
-                                dpg.add_text("Show Filter Creation Section on Start")
+                                dpg.add_text("Show/Hide Sections on Start")
                                 dpg.add_checkbox(label="Show Filter Creation", default_value = show_filter_sect_loaded,  tag='show_filter_sect_tag', callback=save_settings)
                                 with dpg.tooltip("show_filter_sect_tag"):
                                     dpg.add_text("Requires restart")
-                                dpg.add_text("Show Equalizer APO Configuration Section on Start")
                                 dpg.add_checkbox(label="Show E-APO Configuration", default_value = show_eapo_sect_loaded,  tag='show_eapo_sect_tag', callback=save_settings)
                                 with dpg.tooltip("show_eapo_sect_tag"):
                                     dpg.add_text("Requires restart")
                         
                 #section for logging
-                with dpg.child_window(width=1130, height=280, tag="console_window"):
+                with dpg.child_window(width=1200, height=280, tag="console_window"):
                     dpg.add_text("Log")
                     
         with dpg.collapsing_header(label="Developer Tools",show=CN.SHOW_DEV_TOOLS):
             with dpg.group(horizontal=True):
                 with dpg.group():
-                    #section for head pose tracking
-                    with dpg.child_window(width=400, height=70):
-                        dpg.add_text("Head Pose Tracking (Experimental)")
-                        dpg.add_checkbox(label="Show Head Pose Tracking Tools", default_value = show_head_track_loaded,  tag='show_head_tracking_tag', callback=show_hide_head_tracking)
-                        with dpg.tooltip("show_head_tracking_tag"):
-                            dpg.add_text("This will show experimental head pose tracking functions")
-                    
-                    #Section for BRIRs
-                    with dpg.child_window(width=400, height=70):
-                        dpg.add_text("Regenerate Reverberation Data for BRIR Generation")
+            
+                    #Section for HRIRs and BRIRs
+                    with dpg.child_window(width=400, height=110):
+                        dpg.add_text("Regenerate Generic Room Reverberation Data")
                         dpg.add_button(label="Click Here to Regenerate",user_data="",tag="brir_reverb_tag", callback=generate_brir_reverb)
                         with dpg.tooltip("brir_reverb_tag"):
-                            dpg.add_text("This will regenerate the reverberation data used to generate BRIRs. Requires brir_dataset_compensated in data\interim folder. It may take some time to process")
+                            dpg.add_text("This will regenerate the Generic Room reverberation data used to generate BRIRs. Requires brir_dataset_compensated in data\interim folder. It may take some time to process")
+                        dpg.add_text("Regenerate HRIR Dataset")
+                        dpg.add_button(label="Click Here to Regenerate",user_data="",tag="hrir_dataset_tag", callback=generate_hrir_dataset)
+                        with dpg.tooltip("hrir_dataset_tag"):
+                            dpg.add_text("This will regenerate the HRIR dataset used to generate BRIRs. Requires hrir_dataset_compensated .mat files in data\interim folder.")
                     #Section for database
-                    with dpg.child_window(width=400, height=70):
+                    with dpg.child_window(width=400, height=60):
                         dpg.add_text("Rebuild HpCF Database from WAVs")
                         dpg.add_button(label="Click Here to Rebuild",user_data="",tag="hpcf_db_create", callback=create_db_from_wav)
                         with dpg.tooltip("hpcf_db_create"):
                             dpg.add_text("This will rebuild the HpCF database from WAV FIRs. Requires WAV FIRs in data\interim\hpcf_wavs folder")
                     #Section for detailing HpCFs
-                    with dpg.child_window(width=400, height=70):
+                    with dpg.child_window(width=400, height=60):
                         dpg.add_text("Print Summary of Recent HpCFs")
                         dpg.add_button(label="Click Here to Print",user_data="",tag="hpcf_print_summary_tag", callback=print_summary)
                 with dpg.group():
@@ -3164,29 +2842,60 @@ def main():
                 with dpg.group():
                     
                     #Section for renaming existing HpCFs - find and replace
-                    with dpg.child_window(width=400, height=180):
-                        dpg.add_text("Enter Sample Name to Replace")
-                        dpg.add_input_text(label="input text", default_value="Sample Name",tag="sample_find_tag")
-                        dpg.add_text("Enter New Name for Sample")
-                        dpg.add_input_text(label="input text", default_value="New Name",tag="sample_replace_tag")
-                        dpg.add_text("Bulk Rename Sample")
-                        dpg.add_button(label="Click Here to Rename",user_data="",tag="bulk_rename_sample_tag", callback=bulk_rename_sample)
-                        with dpg.tooltip("bulk_rename_sample_tag"):
-                            dpg.add_text("Bulk renames sample name across all headphones")
+                    with dpg.child_window(width=450, height=120):
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Enter Sample Name to Replace")
+                                dpg.add_input_text(label="input text", default_value="Sample Name",tag="sample_find_tag",width=150)
+                                dpg.add_text("Enter New Name for Sample")
+                                dpg.add_input_text(label="input text", default_value="New Name",tag="sample_replace_tag",width=150)
+                            dpg.add_text("   ")    
+                            with dpg.group():
+                                dpg.add_text("Bulk Rename Sample")
+                                dpg.add_button(label="Click Here to Rename",user_data="",tag="bulk_rename_sample_tag", callback=bulk_rename_sample)
+                                with dpg.tooltip("bulk_rename_sample_tag"):
+                                    dpg.add_text("Bulk renames sample name across all headphones")
+                        
+                    #Section for running AIR processing functions
+                    with dpg.child_window(width=450, height=180):
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Enter name of AIR dataset")
+                                dpg.add_input_text(label="input text", default_value="dataset_name",tag="air_dataset_name_tag",width=150)
+                                #dpg.add_input_int(label="Desired AIR sets", width=75,min_value=0, max_value=20, tag='air_output_sets_tag',default_value=0)
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Raw AIRs to AIR Dataset")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="raw_air_to_dataset_tag", callback=run_raw_air_to_dataset)
+                            dpg.add_text("  ")
+                            with dpg.group():
+                                dpg.add_text("AIR to BRIR Estimation")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="air_to_brir_tag", callback=run_air_to_brir)
+                            dpg.add_text("  ")
+                            with dpg.group():
+                                dpg.add_text("Raw BRIR Compensation")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="raw_brir_comp_tag", callback=run_raw_to_brir)
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Calculate reverb target resp.")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="calc_reverb_target_tag", callback=calc_reverb_target)
+                            dpg.add_text("  ")
+                            with dpg.group():
+                                dpg.add_text("Sub BRIR Generation")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="calc_sub_brir_tag", callback=run_sub_brir_calc)
+                            dpg.add_text("  ")
+                            with dpg.group():
+                                dpg.add_text("Generate room target set")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="calc_room_target_tag", callback=run_room_target_calc)
 
-                
-    #dpg.show_font_manager()    
-    
     dpg.setup_dearpygui()
     logz=logger.mvLogger(parent="console_window")
-    #logz.log_info("test string")
-    
+
     #section to log tool version on startup
     #log results
     log_string = 'Audio Spatialisation for Headphones Toolset. Version: ' + __version__
     logz.log_info(log_string)
-    
-    
+
     dpg.show_viewport()
     dpg.set_primary_window("Primary Window", True)
     
@@ -3194,9 +2903,7 @@ def main():
     e_apo_select_channels(app_data=dpg.get_value('audio_channels_combo'))#update channel gui elements on load
     
     dpg.start_dearpygui()
-    
 
-    
     dpg.destroy_context()
         
     #finally close the connection

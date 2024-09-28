@@ -29,19 +29,18 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr, hrtf_type, target_rt60, brir_name, primary_path, brir_dir_export=1, brir_ts_export=1, hesuvi_export=1, report_progress=0, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=44100, bit_depth='PCM_24', spatial_res=1, sofa_export=0):
+def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, brir_dir_export=1, brir_ts_export=1, hesuvi_export=1, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=44100, bit_depth='PCM_24', spatial_res=1, sofa_export=0):
     """
     Function to export a customised BRIR to WAV files
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
-    :param hrtf_type: int, selected HRTF type: 1 = KU100, 2 = kemar L pinna, 3 = kemar N pinna, 4 = B&K 4128 HATS, 5 = DADEC, 6 = HEAD acoustics HMSII.2, 7 = G.R.A.S.KEMAR (new), 8 = Bruel & Kjaer Type 4128C (BKwHA)
-    :param target_rt60: int, value in ms for target reverberation time
+    :param hrtf_type: int, selected HRTF type starts from 1
+    :param acoustic_space: str, shorthand name of selected acoustic space
     :param brir_name: string, name of brir
     :param primary_path: string, base path to save files to
     :param brir_dir_export: int, 1 = export directional wav brirs
     :param brir_ts_export: int, 1 = export true stereo wav brirs
     :param hesuvi_export: int, 1 = export hesuvi compatible wav brirs
     :param direct_gain_db: float, adjust gain of direct sound in dB
-    :param report_progress: int, 1 = update progress to progress bar in gui, set to 0 if no gui
     :param gui_logger: gui logger object for dearpygui
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
     :param samp_freq: int, sample frequency in Hz
@@ -54,19 +53,34 @@ def export_brir(brir_arr, hrtf_type, target_rt60, brir_name, primary_path, brir_
 
     try:
     
+        total_elev_brir = len(brir_arr)
+        total_azim_brir = len(brir_arr[0])
+        total_chan_brir = len(brir_arr[0][0])
+        total_samples_brir = len(brir_arr[0][0][0])    
+    
         #hesuvi path
         if 'EqualizerAPO' in primary_path:
-            hesuvi_path = pjoin(primary_path,'HeSuVi')#pjoin(primary_path, 'config','HeSuVi')      
+            hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
         else:
-            hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')  #pjoin(primary_path, CN.PROJECT_FOLDER,'config','HeSuVi')  
+            hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
     
         #larger reverb times will need additional samples
-        if target_rt60 <=350:
+        ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
+        est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
+        
+        if est_rt60 <=400:
             out_wav_samples_44 = 33075
-        elif target_rt60 <750:#800
+        elif est_rt60 <750:
             out_wav_samples_44 = 44100
-        else:
+        elif est_rt60 <1000:
             out_wav_samples_44 = 55125
+        elif est_rt60 <=1250:
+            out_wav_samples_44 = 63945    
+        else:
+            out_wav_samples_44 = 127890
+        if out_wav_samples_44 > total_samples_brir:
+            out_wav_samples_44 = max(total_samples_brir-1000,4410)  
+            
         out_wav_samples_48 = round(out_wav_samples_44 * float(48000) / 44100) 
             
         #gain adjustment
@@ -80,16 +94,6 @@ def export_brir(brir_arr, hrtf_type, target_rt60, brir_name, primary_path, brir_
         ## write set of WAVs
         #
    
-        total_elev_brir = len(brir_arr)
-        total_azim_brir = len(brir_arr[0])
-        total_chan_brir = len(brir_arr[0][0])
-        total_samples_brir = len(brir_arr[0][0][0])
-        
-        #print(str(total_elev_brir))
-        #print(str(total_azim_brir))
-        #print(str(total_chan_brir))
-        #print(str(total_samples_brir))
-        
         out_wav_array=np.zeros((out_wav_samples_44,2))
  
         #output directory - wav files
@@ -156,7 +160,7 @@ def export_brir(brir_arr, hrtf_type, target_rt60, brir_name, primary_path, brir_
          
         if sofa_export == 1:
 
-            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, target_rt60=target_rt60, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
+            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, est_rt60=est_rt60, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
     
  
         #
@@ -350,7 +354,7 @@ def export_brir(brir_arr, hrtf_type, target_rt60, brir_name, primary_path, brir_
 def generate_direction_matrix(hrtf_type, spatial_res=1, output_variant=1):
     """
     Function returns a numpy array containing a matrix of elevations and azimuths marked for export (output_variant) or processing
-    :param hrtf_type: int, select HRTF type: 1 = KU100, 2 = kemar L pinna, 3 = kemar N pinna, 4 = B&K 4128 HATS, 5 = DADEC, 6 = HEAD acoustics HMSII.2, 7 = G.R.A.S.KEMAR (new), 8 = Bruel & Kjaer Type 4128C (BKwHA)
+    :param hrtf_type: int, select HRTF type, starts from 1
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
     :param output_variant: int, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 0 = no reduction
     """
@@ -506,6 +510,8 @@ def remove_brirs(primary_path, gui_logger=None):
     """
     out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
     output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS_BRIR)
+    output_hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi','hrir')
+    
     
     try:
         
@@ -524,6 +530,14 @@ def remove_brirs(primary_path, gui_logger=None):
                 logging.info(log_string_b)
             if CN.LOG_GUI == 1 and gui_logger != None:
                 gui_logger.log_info(log_string_b)
+    
+        if os.path.exists(output_hesuvi_path):
+            shutil.rmtree(output_hesuvi_path)
+            log_string_c = 'Deleted folder and contents: ' + output_hesuvi_path
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_c)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string_c)
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
@@ -547,7 +561,7 @@ def remove_select_brirs(primary_path, brir_set, gui_logger=None):
                     folder_path=os.path.join(root, dir)
                     shutil.rmtree(folder_path)
                     #os.rmdir(folder_path)
-                    log_string_a = 'Deleted folder and conents: ' + folder_path 
+                    log_string_a = 'Deleted folder and contents: ' + folder_path 
                     if CN.LOG_INFO == 1:
                         logging.info(log_string_a)
                     if CN.LOG_GUI == 1 and gui_logger != None:
@@ -561,14 +575,14 @@ def remove_select_brirs(primary_path, brir_set, gui_logger=None):
             gui_logger.log_info(log_string)
             
             
-def export_sofa_brir(primary_path, brir_arr, brir_set_name, target_rt60, spatial_res, samp_freq, gui_logger=None):
+def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt60, samp_freq, gui_logger=None):
     """
     Function to export a customised BRIR to SOFA file
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
     :param brir_name: string, name of brir
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
     :param samp_freq: int, sample frequency in Hz
-    :param target_rt60: int, value in ms for target reverberation time
+    :param est_rt60: int, value in ms for target reverberation time
     """
     
     now_datetime = datetime.now()
@@ -594,14 +608,21 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, target_rt60, spatial
         total_directions = total_elev_brir*total_azim_brir
         
         #set number of output samples assuming base rate is 44.1kHz
-        if target_rt60 <=300:
+        if est_rt60 <300:
             output_samples = 22050
-        elif target_rt60 <500:
+        elif est_rt60 <=400:
             output_samples = 33075
-        elif target_rt60 <750:
+        elif est_rt60 <750:
             output_samples = 44100
-        else:
+        elif est_rt60 <1000:
             output_samples = 55125
+        elif est_rt60 <=1250:
+            output_samples = 63945    
+        else:
+            output_samples = 127890
+        if output_samples > total_samples_brir:
+            output_samples = max(total_samples_brir-1000,4410)  
+            
         #recalculate based on selected sample rate
         output_samples_re = round(output_samples * float(samp_freq) / 44100) 
         

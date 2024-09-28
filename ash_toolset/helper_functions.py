@@ -19,6 +19,23 @@ import librosa
 from difflib import SequenceMatcher, _nlargest  # necessary imports of functions used by modified get_close_matches
 from thefuzz import fuzz
 from thefuzz import process
+import functools
+
+def combine_dims_old(a, i=0, n=1):
+    """
+    Combines dimensions of numpy array `a`, 
+    starting at index `i`,
+    and combining `n` dimensions
+    """
+    s = list(a.shape)
+    combined = functools.reduce(lambda x,y: x*y, s[i:i+n+1])
+    return np.reshape(a, s[:i] + [combined] + s[i+n+1:])
+
+def combine_dims(a, start=0, count=2):
+    """ Reshapes numpy array a by combining count dimensions, 
+        starting at dimension index start """
+    s = a.shape
+    return np.reshape(a, s[:start] + (-1,) + s[start+count:])
 
 
 def get_elevation_list(spatial_res=0):
@@ -55,8 +72,10 @@ def round_to_multiple(number, multiple):
     """
     return multiple * round(number / multiple)
 
+def round_down_even(n):
+    return 2 * int(n // 2) 
 
-def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44100, y_lim_adjust = 0, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT, normalise=1, plot_type=0):
+def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44100, y_lim_adjust = 0, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT, normalise=1, level_ends=0, plot_type=0):
     """
     Function takes a magnitude reponse array as an input and plots the reponse
     :param mag_response: numpy array 1d, magnitude reponse array
@@ -71,6 +90,12 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
     :return: None
     """
 
+    #level ends of spectrum
+    if level_ends == 1:
+        mag_response = level_spectrum_ends(mag_response, 320, 19000, n_fft=n_fft)
+        #octave smoothing
+        mag_response = smooth_fft_octaves(data=mag_response, n_fft=n_fft)
+        
     nUniquePts = int(np.ceil((n_fft+1)/2.0))
     sampling_ratio = samp_freq/n_fft
     freqArray = np.arange(0, nUniquePts, 1.0) * sampling_ratio    
@@ -79,11 +104,13 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
     mag_response = mag_response[0:nUniquePts]
     mag_response_log = 20*np.log10(mag_response)
     
+    
+    #normalise to 0db
     if normalise == 1:
         mag_response_log = mag_response_log-np.mean(mag_response_log[0:200])
     elif normalise == 2:
-        mag_response_log = mag_response_log-np.mean(mag_response_log[1000:1300])
-    
+        mag_response_log = mag_response_log-np.mean(mag_response_log[1200:1800])
+
     if plot_type == 0:
         plt.figure()
         plt.plot(freqArray, mag_response_log, color='k', label="FR")
@@ -259,7 +286,7 @@ def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_dep
     sf.write(file_name, data, samplerate, bit_depth)
     
     
-def resample_signal(signal, original_rate = 44100, new_rate = 48000):
+def resample_signal(signal, original_rate = 44100, new_rate = 48000, axis=0):
     """
     function to resample a signal. By default will upsample from 44100Hz to 48000Hz
     """  
@@ -271,7 +298,7 @@ def resample_signal(signal, original_rate = 44100, new_rate = 48000):
     # resampled_signal = sps.resample(signal, number_of_samples) 
     
     #new versions use librosa
-    resampled_signal = librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=0, scale=True )
+    resampled_signal = librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=axis, scale=True )
     
     
     return resampled_signal
@@ -486,18 +513,20 @@ def group_delay(sig):
     return np.divide(br, b + 0.01).real
 
 
-def smooth_fft(data, crossover_fb=1500, win_size_a = 150, win_size_b = 750, n_fft=65536):
+def smooth_fft(data, crossover_f=1000, win_size_a = 150, win_size_b = 750, n_fft=65536, fs=44100):
     """
     Function to perform smoothing of fft mag response
     :param data: numpy array, magnitude response of a signal
-    :param crossover_fb: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
+    :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
     :param win_size_a: int, smoothing window size in Hz for lower frequencies
     :param win_size_b: int, smoothing window size in Hz for higher frequencies
     :param n_fft: int, fft size
     :return: numpy array, smoothed signal
     """  
     
-    #yhat = sp.signal.savgol_filter(data, 20, 3)
+    crossover_fb= int(round(crossover_f*(n_fft/fs)))
+    win_size_a=int(round(win_size_a*(n_fft/fs)))
+    win_size_b=int(round(win_size_b*(n_fft/fs)))
     
     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
     nyq_freq = n_unique_pts-1
@@ -508,6 +537,41 @@ def smooth_fft(data, crossover_fb=1500, win_size_a = 150, win_size_b = 750, n_ff
     #apply win size b to high frequencies
     data_smooth_b[crossover_fb:n_unique_pts] = sp.ndimage.uniform_filter1d(data_smooth_a,size=win_size_b)[crossover_fb:n_unique_pts]
     data_smooth_c = sp.ndimage.uniform_filter1d(data_smooth_b,size=10)
+    
+    #make conjugate symmetric
+    for freq in range(n_fft):
+        if freq>nyq_freq:
+            dist_from_nyq = np.abs(freq-nyq_freq)
+            data_smooth_c[freq]=data_smooth_c[nyq_freq-dist_from_nyq]
+    
+    return data_smooth_c
+
+def smooth_fft_octaves(data, fund_freq=120, win_size_base = 15, n_fft=65536, fs=44100):
+    """
+    Function to perform smoothing of fft mag response
+    :param data: numpy array, magnitude response of a signal
+    :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
+    :param win_size_a: int, smoothing window size in Hz for lower frequencies
+    :param win_size_b: int, smoothing window size in Hz for higher frequencies
+    :param n_fft: int, fft size
+    :return: numpy array, smoothed signal
+    """ 
+    
+    n_unique_pts = int(np.ceil((n_fft+1)/2.0))
+    nyq_freq = n_unique_pts-1
+    
+    max_freq = int(fs/2)
+    num_octaves = int(np.log2(max_freq/fund_freq))
+    
+    for idx in range(num_octaves):
+        power = np.power(2,idx)
+        curr_cutoff_f = fund_freq*power
+        curr_win_s_a = win_size_base#win_size_base*power
+        curr_win_s_b = win_size_base*power#curr_win_s_a*2
+        
+        data = smooth_fft(data, crossover_f=curr_cutoff_f, win_size_a = curr_win_s_a, win_size_b = curr_win_s_b, n_fft=n_fft, fs=fs)
+    
+    data_smooth_c = data
     
     #make conjugate symmetric
     for freq in range(n_fft):
@@ -564,7 +628,7 @@ def mag_to_min_fir(data, n_fft=65536, out_win_size=4096, crop=0):
         return data_out
     
 #modify spectrum to have flat mag response at low and high ends
-def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win = 100):
+def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win = 67):
     """
     Function to modify spectrum to have flat mag response at low and high ends
     :param data: numpy array, magnitude response of a signal
@@ -575,6 +639,8 @@ def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=4410
     :param smooth_win: int, smoothing window size in Hz to be applied after leveling ends
     :return: numpy array, spectrum with smooth ends
     """     
+    smooth_win=int(round(smooth_win*(n_fft/fs)))
+    
     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
     nyq_freq = n_unique_pts-1
     

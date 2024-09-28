@@ -31,7 +31,7 @@ log_info=1
 def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
     """
     Function creates equalizer APO configuration files for specified brir name
-    :param hrtf_type: int, selected HRTF type: 1 = KU100, 2 = kemar L pinna, 3 = kemar N pinna, 4 = B&K 4128 HATS, 5 = DADEC, 6 = HEAD acoustics HMSII.2, 7 = G.R.A.S.KEMAR (new), 8 = Bruel & Kjaer Type 4128C (BKwHA)
+    :param hrtf_type: int, selected HRTF type
     :param brir_name: string, name of brir
     :param primary_path: string, base path to save files to
     :return: None
@@ -186,8 +186,7 @@ def write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path):
     :param primary_path: string, base path to save files to
     :return: None
     """ 
-    
-    
+
     # get the start time
     st = time.time()
 
@@ -244,18 +243,19 @@ def write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path):
     if CN.LOG_INFO == 1:
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
-
-
-
-        
+ 
 def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, spatial_res=1, gui_logger=None):
     """
     Function creates equalizer APO configuration file to perform relevant convolution commands. This file needs to be loaded into config.txt
     :param primary_path: string, base path to save files to
+    :param hpcf_dict: dict, dictionary containing hpcf related metadata
+    :param brir_dict: dict, dictionary containing brir related metadata
+    :param primary_path: string, selected audio channel configuration
+    :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
     :return: None
     """ 
     out_file=''
-    additional_gain=3
+    additional_gain=CN.HRTF_GAIN_ADDIT#
     #impulse
     fft_size=CN.N_FFT
     impulse=np.zeros(fft_size)
@@ -403,19 +403,8 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
         gain_overall=0
         output_fr_db = fr_flat
         max_level_db=0
-        if enable_hpcf_conv == True and enable_brir_conv == False:
-            #get max level from hpcf
-            samplerate, data = wavfile.read(hpcf_file_path)
-            fir_array = data / (2.**31)
-            data_pad=np.zeros(fft_size)
-            data_pad[0:(CN.HPCF_FIR_LENGTH-1)]=fir_array[0:(CN.HPCF_FIR_LENGTH-1)]
-            data_fft = np.fft.fft(data_pad)
-            output_fr = np.abs(data_fft)
-            output_fr_db=np.add(output_fr_db,hf.mag2db(output_fr))
-            max_level_db = max_level_db + np.max(output_fr_db)
-            max_level_db=max_level_db+additional_gain
-        elif enable_hpcf_conv == True and enable_brir_conv == True:
-            #assume -6dB is peak if also applying brirs
+        if enable_hpcf_conv == True:
+            #assume -6dB is peak for all hpcfs
             max_level_db=max_level_db-6
         if enable_brir_conv == True:
             #find HATS from file name
@@ -431,9 +420,10 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
                 if x in brir_set_formatted:
                     brir_gain = gain_list[idx]*-1
                     
-            max_level_db = max_level_db + brir_gain + additional_gain
+            max_level_db = max_level_db + brir_gain -1
         if enable_hpcf_conv == False and enable_brir_conv == False:
-            max_level_db=max_level_db+additional_gain*2
+            max_level_db=max_level_db+0
+        max_level_db = max_level_db + additional_gain
         gain_overall=gain_overall-max_level_db
         gain_overall = round(gain_overall,1)
         if gain_overall > 50 or gain_overall < -50:
@@ -565,13 +555,9 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
                 f.write(conv_hpcf_command)
                 f.write('\n')
                 f.write('\n')
-                    
-                    
-                
-                
+  
             return True
-                
-    
+  
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to write config file: ' + out_file
@@ -579,6 +565,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
             gui_logger.log_info(log_string)
             
         return False
+    
     
 def include_ash_e_apo_config(primary_path, enabled=False):
     """
@@ -659,11 +646,8 @@ def get_exported_brir_list(primary_path):
     try:
 
         brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
-        
-        #logging.info('brirs_path: ' + str(brirs_path))
-        
-        #list all names in path
-        
+
+        #list all names in path 
         directory_list = list()
         for root, dirs, files in os.walk(brirs_path, topdown=False):
             for name in dirs:
@@ -671,8 +655,6 @@ def get_exported_brir_list(primary_path):
                     extracted_brir_name =  name.replace("_", " ")
                     directory_list.append(extracted_brir_name)
         
-        #logging.info('dir_list: ' + str(directory_list))
-    
         return sorted(directory_list, key=str.casefold)
     
     except Exception as ex:
@@ -690,14 +672,10 @@ def get_spatial_res_from_dir(primary_path, brir_set):
     
     try:
 
-        #brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
-        
         #find file names for desired brirs
         brir_set_formatted = brir_set.replace(" ", "_")
         brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
-        
-        #logging.info('brirs_path: ' + str(brirs_path))
-        
+
         spatial_res_low=0
         spatial_res_med=0 
         spatial_res_high=0 
@@ -715,8 +693,7 @@ def get_spatial_res_from_dir(primary_path, brir_set):
                     spatial_res_low=1 
                 if '_E-2_' in filename:
                     spatial_res_full=1     
-                    
-        
+  
         if spatial_res_full == 1:
             spatial_res=3
         elif spatial_res_high == 1:
@@ -725,18 +702,14 @@ def get_spatial_res_from_dir(primary_path, brir_set):
             spatial_res=1
         elif spatial_res_low == 1:
             spatial_res=0
-            
-        #logging.info('dir_list: ' + str(directory_list))
-    
+ 
         return spatial_res
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)   
         return spatial_res
     
-    
-    
-    
+ 
 def get_exported_hp_list(primary_path):
     """
     Function reads HpCF folders in output directory and returns list of headphones.
