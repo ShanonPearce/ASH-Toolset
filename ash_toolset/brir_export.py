@@ -608,7 +608,7 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt6
         total_directions = total_elev_brir*total_azim_brir
         
         #set number of output samples assuming base rate is 44.1kHz
-        if est_rt60 <300:
+        if est_rt60 <=300:
             output_samples = 22050
         elif est_rt60 <=400:
             output_samples = 33075
