@@ -87,7 +87,7 @@ Run the ash_toolset.py using python to launch the GUI
 python C:\sample-location\ASH-Toolset\ash_toolset.py
 ```
 
-### Generate headphone correction filters
+### Generate Headphone Correction Filters
 This part of the app is used to generate a set of correction filters for a specific headphone and export to filter files which can then be loaded into audio processing software to apply headphone correction.
 1. Select a headphone brand to filter down on the headphone list.
 2. Select a specific headphone.
@@ -105,7 +105,7 @@ This part of the app is used to generate a set of correction filters for a speci
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
-### Generate binaural dataset for room simulation over headphones
+### Generate Binaural Dataset for Room Simulation Over Headphones
 This part of the app is used to create a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation over headphones.
 1. Select acoustic space from below environments. This will determine the listening environment of the simulation.
    - Audio lab
@@ -161,11 +161,11 @@ This part of the app is used to create a customised binaural dataset containing 
 
 ![brir steps](docs/images/brir_steps.png)
 
-### Using the filters
+### Using the Filters
 
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
-### Apply filters in Equalizer APO (new method)
+### Apply Filters in Equalizer APO (new method)
 V2.0.0 onwards of the toolset includes a section to browse exported filters and auto-configure 'config.txt' to apply selected filters in Equalizer APO. This method removes the need for manual interaction with the configuration editor.
 
 1. Select a headphone from the list of exported filters. Refer to above generation steps if this list is empty.
@@ -177,7 +177,7 @@ V2.0.0 onwards of the toolset includes a section to browse exported filters and 
 
 ![Equalizer APO example](docs/images/e_apo_steps.png)
 
-### Apply filters in Equalizer APO (old method - V1.0 to V1.2)
+### Apply Filters in Equalizer APO (old method - V1.0 to V1.2)
 
 1. In the Windows sound settings, set the default format of the output sound device to the sample rate of the generated filters. In Windows 11 the playback device settings can be found in Settings -> System -> Sound -> (your output device) -> Properties. The sample rate of the sound device must match the sample rate of the filters.
 2. Generated filters will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. Move the ASH-Custom-Set folder to this location if it was saved elsewhere.
@@ -191,7 +191,7 @@ V2.0.0 onwards of the toolset includes a section to browse exported filters and 
 
 If your audio device does not support a 7.1 surround channel configuration, a virtual audio device such as [VB-Audio Virtual Cable](https://www.vb-audio.com/Cable/index.htm) or [Voicemeeter](https://www.vb-audio.com/Voicemeeter/index.htm) can be used for audio processing in place of your regular audio playback device. Equalizer APO can be installed on the virtual audio device which can be configured for 7.1 audio, and the output of the virtual audio device can be sent to your regular audio playback device.
 
-### Apply filters in HeSuVi
+### Apply Filters in HeSuVi
 
 As an alternative to above method in Equalizer APO, the generated filters can be applied using HeSuVi.
 
@@ -205,7 +205,7 @@ As an alternative to above method in Equalizer APO, the generated filters can be
 
 
 
-### File naming and Structure
+### File Naming and Structure
 Outputs (excluding HeSuVi files) are saved within the `ASH-Custom-Set` child folder under the output directory. This will be in the Equalizer APO config directory (e.g. `C:\Program Files\EqualizerAPO\config\ASH-Custom-Set`) by default. HeSuVi files will be saved within the HeSuVi folder (e.g. `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default. If required, the output directory can be changed using the directory selector. The `EqualizerAPO\config` directory should be selected if using Equalizer APO to ensure the filters and configurations can be read by Equalizer APO. 
 
 **Binaural Room Impulse Responses**
