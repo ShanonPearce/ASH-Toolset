@@ -105,7 +105,7 @@ This part of the app is used to generate a set of correction filters for a speci
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
-### Generate Binaural Dataset for Room Simulation Over Headphones
+### Generate Binaural Dataset for Room Simulation over Headphones
 This part of the app is used to create a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation over headphones.
 1. Select acoustic space from below environments. This will determine the listening environment of the simulation.
    - Audio lab
