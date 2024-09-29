@@ -17,25 +17,24 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 ![screenshot](docs/images/ash_toolset_sample.png)
 
 ## Features <a name="Features"></a> 
-- **Headphone Correction** — Generate Headphone correction filters (HpCFs) in WAV format for IR convolution or configurations for graphic equalisers
-- **Binaural Room Simulation** —  Generate customised Binaural Room Impulse Responses (BRIRs) in WAV format for IR convolution or SOFA format.
+- **Headphone Correction** — Generate headphone correction filters in WAV format for IR convolution or configurations for graphic equalisers.
+- **Binaural Room Simulation** —  Generate customised binaural simulations of different acoustic environments including control rooms, studios, halls, and more. Resulting filters can be saved in WAV format or SOFA format for IR convolution.
 - **Equalizer APO Integration** —  Auto configures Equalizer APO to apply created filters and perform headphone correction and binaural room simulation.
-- **HeSuVi Compatibility** —  Generates BRIRs and HpCFs in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
+- **HeSuVi Compatibility** —  Generates fitlers in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
 
 ## Background <a name="Background"></a> 
 
 ### Binaural Room Impulse Responses
 Binaural room impulse responses (BRIRs) are measurements that capture the spectral filtering properties of the head and ears, as well as the loudspeakers and any room reverberation present. Measurements are typically made in reverberant rooms using dummy heads that are rotated above their torso to capture multiple head orientations for a number of source locations within the room. One key application of BRIRs is the synthesis of spatial audio over headphones. Convolution of an audio signal with a BRIR converts the audio to that which would be heard by the listener if it had been played at the source location. This process can be repeated for all channels in the audio signal and their respective source locations in the room to create spatial surround sound on headphones.
 
-The ASH Toolset can be used to generate BRIRs that can be customised to achieve a desired acoustic simulation over headphones. Distance, reverberation time, listener, headphone type and room target response can be customised to the user's preference.
+The ASH Toolset can be used to generate sets of BRIRs that can be customised to achieve a desired acoustic simulation over headphones. Distance, acoustic environment, listener, headphone type and room target response can be customised to the user's preference.
 
 ### Headphone Correction Filters
-
 A significant source of spectral colouration impacting the quality of binaural simulations is the headphones used for binaural reproduction. A common design goal for headphone calibration is the diffuse-field target which minimises spectral colouration of stereo signals on headphones. Binaural measurements that have been diffuse-field calibrated will be compatible with these types of headphones. As the binaural responses produced by the toolset are diffuse-field calibrated (prior to applying room targets), headphones should also be diffuse-field equalised to ensure compatibility in terms of timbral quality. 
 
 Although diffuse-field calibrated headphones are common, differences in frequency responses across headphones are considerably large. Individual headphone equalisation is therefore recommended to compensate for the unique and undesired spectral colouration introduced by the listener's headphones.  
 
-The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
+The ASH Toolset can be used to generate Headphone Correction Filters (s) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
 
 
 
@@ -62,8 +61,6 @@ Python libraries:
   pip install librosa==0.10.2.post1
   pip install thefuzz==0.22.1
   pip install SOFASonix==1.0.7
-  pip install opencv_python==4.10.0.84
-  pip install onnxruntime_directml==1.18.1
   ```
 Data files:
 
@@ -90,39 +87,42 @@ Run the ash_toolset.py using python to launch the GUI
 python C:\sample-location\ASH-Toolset\ash_toolset.py
 ```
 
-### Generate HpCFs for headphone correction
-This part of the app is used to generate a set of HpCFs for a selected headphone and export to filter files which can then be loaded into audio processing software to apply headphone correction.
+### Generate headphone correction filters
+This part of the app is used to generate a set of correction filters for a specific headphone and export to filter files which can then be loaded into audio processing software to apply headphone correction.
 1. Select a headphone brand to filter down on the headphone list.
 2. Select a specific headphone.
 3. (optional) One or more samples will be available for the specified headphone. Select one to preview the filter response. Note that all samples will be exported for the selected headphone.
 4. Select which files to include in the export.
-   - FIR Filters: Minimum phase WAV FIRs for convolution. 1 channel at specified sample rate and bit depth. This is filter type is required for the app to auto-configure 'config.txt' in Equalizer APO.
-   - stereo FIR Filters: Minimum phase WAV FIRs for convolution. 2 channels at specified sample rate and bit depth.
-   - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with HpCF FIR filters. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
+   - FIR Filters: Minimum phase FIRs in WAV format for convolution. 1 channel at specified sample rate and bit depth. This is filter type is required for the app to auto-configure 'config.txt' in Equalizer APO.
+   - Stereo FIR Filters: Minimum phase FIRs in WAV format for convolution. 2 channels at specified sample rate and bit depth.
+   - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with the FIR filters. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
    - Graphic EQ Filters (127 bands): Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
    - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
    - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
-5. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated HpCFs should match the sample rate of the sound device.
+5. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated fitlers should match the sample rate of the sound device.
 6. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-7. Click the process HpCFs button to export the selected HpCFs to above directory.
+7. Click the 'process' button to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Custom-Set` but can be changed using the change folder option.
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
-### Generate BRIRs for binaural room simulation
-This part of the app is used to generate a set of customised BRIRs and export to WAV files or SOFA files which can then be loaded into audio processing software to apply binaural room simulation.
-1. Select Target RT60 Reverberation Time in ms. Select a value between 200ms and 1250ms. Higher values will result in stronger late reflections and larger perceived room size.
-2. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-3. Select spatial resolution from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size.
+### Generate binaural dataset for room simulation over headphones
+This part of the app is used to create a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation over headphones.
+1. Select acoustic space from below environments. This will determine the listening environment of the simulation.
+   - Audio lab
+   - Conference room
+   - Control room
+   - Hall
+   - Office
+   - Outdoors
+   - Seminar room
+   - Studio
+   - Tatami room
+2. Select spatial resolution from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size. Low' is recommended unless additional directions or SOFA export is required.
    - Low: Elevation angles ranging from -30 to 30 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
    - Medium: Elevation angles ranging from -45 to 45 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
    - High: Elevation angles ranging from -50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps. Azimuth angles ranging from 0 to 360 degrees in 5 degree steps.
    - Max: Elevation angles ranging from -40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps. Azimuth angles ranging from 0 to 360 degrees in 2 degree steps.
-4. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
-   - In-Ear Headphones, high strength
-   - In-Ear Headphones, low strength
-   - Over-Ear/On-Ear Headphones, high strength
-   - Over-Ear/On-Ear Headphones, low strength
-5. Select Dummy Head / Head & Torso Simulator from available options:
+3. Select Dummy Head / Head & Torso Simulator from below options. This will influence the externalisation and localisation of sounds around the listener.
    - Neumann KU 100 (SADIE)
    - Neumann KU 100 (TH Köln)
    - FABIAN HATS
@@ -136,7 +136,13 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - KEMAR (SADIE)
    - KEMAR-N (PKU-IOA)
    - KEMAR-L (PKU-IOA)
-6. Select Room Target from below options.  Flat is recommended if using headphone correction from other sources such as AutoEq.
+4. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
+5. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+   - In-Ear Headphones, high strength
+   - In-Ear Headphones, low strength
+   - Over-Ear/On-Ear Headphones, high strength
+   - Over-Ear/On-Ear Headphones, low strength
+6. Select Room Target from below options. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
    - Flat
    - ASH Target
    - Harman Target
@@ -144,40 +150,40 @@ This part of the app is used to generate a set of customised BRIRs and export to
    - Toole Target
    - rtings Target
 7. Select which files to include in the export.
-   - Direction specific WAVs: Directional WAV BRIRs for convolution. 2 channels at specified sample rate and bit depth. This is file type is required for the app to auto-configure 'config.txt' in Equalizer APO.
-   - True Stereo WAVs: True Stereo WAV BRIRs for convolution. 4 channels (LL LR RL RR) at specified sample rate and bit depth
-   - HeSuVi WAVs: HeSuVi compatible WAV BRIRs. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz
+   - Direction specific WAV BRIRs: Binaural Room Impulse Responses (BRIRs) in WAV format for convolution. One file for each source direction and 2 channels per file at specified sample rate and bit depth. This is file type is required for the app to auto-configure 'config.txt' in Equalizer APO.
+   - True Stereo WAV BRIRs: True Stereo BRIR in WAV format for convolution. One file with 4 channels representing L and R speakers (LL LR RL RR) at specified sample rate and bit depth.
+   - HeSuVi WAV BRIRs: BRIRs in HeSuVi compatible WAV format. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz
    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
    - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format.
 8. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
 9. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-10. Click the process BRIRs button to generate and export the customised BRIRs to above directory. This may take a minute to run.
+10. Click the 'process' button to generate and export the binaural dataset to the output directory. This may take a minute to run.
 
 ![brir steps](docs/images/brir_steps.png)
 
-### Using the BRIRs and HpCFs
+### Using the filters
 
-The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of BRIRs and a HpCF. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
+The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
-### Apply HpCFs and BRIRs in Equalizer APO (new method)
+### Apply filters in Equalizer APO (new method)
 V2.0.0 onwards of the toolset includes a section to browse exported filters and auto-configure 'config.txt' to apply selected filters in Equalizer APO. This method removes the need for manual interaction with the configuration editor.
 
-1. Select a headphone from the list of exported HpCFs. Refer to above HpCF creation steps if this list is empty.
+1. Select a headphone from the list of exported filters. Refer to above generation steps if this list is empty.
 2. Select a specific sample to apply headphone correction.
-3. Select a BRIR set from list of generated BRIR sets to apply binaural room simulation. Refer to above BRIR creation steps if this list is empty.
+3. Select a binaural dataset from list of generated datasets to apply binaural room simulation. Refer to above generation steps if this list is empty.
 4. Select audio channel configuration. The selected channel configuration must be supported by the sound device.
 5. Configure the gain and source direction of each audio channel.
 
 
 ![Equalizer APO example](docs/images/e_apo_steps.png)
 
-### Apply HpCFs and BRIRs in Equalizer APO (old method - V1.0 to V1.2)
+### Apply filters in Equalizer APO (old method - V1.0 to V1.2)
 
-1. In the Windows sound settings, set the default format of the output sound device to the sample rate of the generated HpCFs and BRIRs. In Windows 11 the playback device settings can be found in Settings -> System -> Sound -> (your output device) -> Properties. The sample rate of the sound device must match the sample rate of the filters.
-2. HpCFs and BRIRs will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. Move the ASH-Custom-Set folder to this location if it was saved elsewhere.
+1. In the Windows sound settings, set the default format of the output sound device to the sample rate of the generated filters. In Windows 11 the playback device settings can be found in Settings -> System -> Sound -> (your output device) -> Properties. The sample rate of the sound device must match the sample rate of the filters.
+2. Generated filters will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Custom-Set) by default. Move the ASH-Custom-Set folder to this location if it was saved elsewhere.
 3. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\HpCF-Convolution` folder and select the desired configuration file for headphone correction.
 4. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Custom-Set\E-APO-Configs\BRIR-Convolution` folder and select the desired configuration file for binaural room simulation.
-5. To swap out a HpCF or BRIR, simply load a different configuration file.
+5. To swap out a filter or binaural dataset, simply load a different configuration file.
 
 ![Equalizer APO example](docs/images/e_apo_example.png)
 
@@ -185,14 +191,14 @@ V2.0.0 onwards of the toolset includes a section to browse exported filters and 
 
 If your audio device does not support a 7.1 surround channel configuration, a virtual audio device such as [VB-Audio Virtual Cable](https://www.vb-audio.com/Cable/index.htm) or [Voicemeeter](https://www.vb-audio.com/Voicemeeter/index.htm) can be used for audio processing in place of your regular audio playback device. Equalizer APO can be installed on the virtual audio device which can be configured for 7.1 audio, and the output of the virtual audio device can be sent to your regular audio playback device.
 
-### Apply HpCFs and BRIRs in HeSuVi
+### Apply filters in HeSuVi
 
-As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be applied using HeSuVi.
+As an alternative to above method in Equalizer APO, the generated filters can be applied using HeSuVi.
 
 1. If using HeSuVi for the first time, download [HeSuVi](https://sourceforge.net/projects/hesuvi/) and follow the installation and usage steps outlined in the [HeSuVi Wiki](https://sourceforge.net/p/hesuvi/wiki/Help/).
 2. Open or restart HeSuVi
-3. The BRIRs can be selected in the `Virtualisation` tab. The rooms can be found under the `Common HRIRs` section at the top of the list.
-4. The HpCFs can be selected in the `Equalizer` tab. The HpCFs can be found under `_HpCFs` at the bottom of the list.
+3. The binaural room simulations can be selected in the `Virtualisation` tab. The simulation can be found under the `Common HRIRs` section at the top of the list.
+4. The headphone correction filters can be selected in the `Equalizer` tab. The filters can be found under `_HpCFs` at the bottom of the list.
 
 ![HeSuVi HPCF example](docs/images/hesuvi_hpcf_example.png)
 ![HeSuVi BRIR example](docs/images/hesuvi_brir_example.png)
@@ -202,10 +208,10 @@ As an alternative to above method in Equalizer APO, the HpCFs and BRIRs can be a
 ### File naming and Structure
 Outputs (excluding HeSuVi files) are saved within the `ASH-Custom-Set` child folder under the output directory. This will be in the Equalizer APO config directory (e.g. `C:\Program Files\EqualizerAPO\config\ASH-Custom-Set`) by default. HeSuVi files will be saved within the HeSuVi folder (e.g. `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default. If required, the output directory can be changed using the directory selector. The `EqualizerAPO\config` directory should be selected if using Equalizer APO to ensure the filters and configurations can be read by Equalizer APO. 
 
-**BRIRs**
-- BRIRs are saved within the ASH-Custom-Set\BRIRs folder.
+**Binaural Room Impulse Responses**
+- Binaural room impulse responses are saved within the ASH-Custom-Set\BRIRs folder.
 - A folder is created for each set of WAV BRIRs and is named as per the selected parameters.
-    - The naming convention for the folder is `(Listener)_(Reverb_Time)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)`.
+    - The naming convention for the folder is `(Listener)_(Acoustic_Space)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)`.
 - A WAV file is created for a range of source directions around the listener. Each WAV file corresponds to a unique direction.
     - The naming convention for the BRIR WAV files is `BRIR_E(Elevation)_A(Azimuth).wav`.
     - Positive elevation angles correspond to points above the listener while negative angles correspond to points below the listener. An elevation of 0 corresponds to a point at the same level as the listener.
@@ -213,16 +219,16 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Custom-Set` child fol
 - A true stereo WAV file is also located in each folder with naming `BRIR_True_Stereo.wav`
 - SOFA files are located under the SOFA folder
 
-**HpCFs**
-- HpCFs are saved within the ASH-Custom-Set\HpCFs folder
+**Headphone Correction Filters**
+- Correction filters are saved within the ASH-Custom-Set\HpCFs folder
 - A folder is created for each filter type and for each headphone brand that has an exported filter
 - The filters are named as per the headphone name
 
-**Equalizer APO Configurations**
+**Equalizer APO Configurations (deprecated)**
 - Equalizer APO configurations are saved within the ASH-Custom-Set\E-APO-Configs folder
-- Folders follow the same naming as the BRIRs and HpCFs
-- A set of BRIR convolution configuration files are created for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
-- A set of HpCF convolution configuration files are created for each HpCF that was exported
+- Folders follow the same naming as above filters and binaural datasets
+- A set of IR convolution configuration files are created for each binaural dataset and for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
+- A set of IR convolution configuration files are created for each headphone correction filter
 
 
 ## License <a name="License"></a> 
@@ -246,4 +252,4 @@ Distribution: [https://sourceforge.net/projects/ash-toolset/](https://sourceforg
 * [scipy](https://scipy.org/)
 
 ### Datasets
-This project makes use of various publically available HRIR and BRIR datasets. Refer to the sheets provided in the `ASH-Toolset\docs` folder for information on the raw datasets used in this project
+This project makes use of various publically available HRIR, RIR, and BRIR datasets. Refer to the sheets provided in the `ASH-Toolset\docs` folder for information on the raw datasets used in this project
