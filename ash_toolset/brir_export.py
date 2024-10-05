@@ -52,6 +52,12 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
     st = time.time()
 
     try:
+        
+        log_string = 'Preparing BRIRs for export'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
     
         total_elev_brir = len(brir_arr)
         total_azim_brir = len(brir_arr[0])
@@ -76,6 +82,8 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
             out_wav_samples_44 = 55125
         elif est_rt60 <=1250:
             out_wav_samples_44 = 63945    
+        elif est_rt60 <=1500:
+            out_wav_samples_44 = 99225 
         else:
             out_wav_samples_44 = 127890
         if out_wav_samples_44 > total_samples_brir:
@@ -159,10 +167,8 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         #
          
         if sofa_export == 1:
-
             export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, est_rt60=est_rt60, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
     
- 
         #
         ## write set of HESUVI WAVs
         #
@@ -208,16 +214,14 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
                     dezired_az=225
                 
                 dezired_azim_id = int(dezired_az/azim_nearest)    
-                    
-                
+
                 #load into zero pad array
-                data_pad=np.zeros((65536,2))
+                data_pad=np.zeros((out_wav_samples_44,2))
                 data_pad[0:(out_wav_samples_44),0]=np.copy(brir_arr[elev_id][dezired_azim_id][0][0:out_wav_samples_44])/max_amp#L
                 data_pad[0:(out_wav_samples_44),1]=np.copy(brir_arr[elev_id][dezired_azim_id][1][0:out_wav_samples_44])/max_amp#R
       
                 #create a copy and resample to 48kHz
-                data_pad_48k=np.zeros((65536,2))
-                
+                data_pad_48k=np.zeros((out_wav_samples_48,2))           
                 data_pad_48k = hf.resample_signal(data_pad)
       
                 #place each channel into output array as per HeSuVi channel mapping
@@ -337,7 +341,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to export BRIRs'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
     # get the end time
     et = time.time()
@@ -543,7 +547,7 @@ def remove_brirs(primary_path, gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folders: ' + out_file_dir_wav + ' & ' + output_config_path
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
             
 def remove_select_brirs(primary_path, brir_set, gui_logger=None):
@@ -572,7 +576,7 @@ def remove_select_brirs(primary_path, brir_set, gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folder: ' + out_file_dir_brirs
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
             
 def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt60, samp_freq, gui_logger=None):
@@ -618,6 +622,8 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt6
             output_samples = 55125
         elif est_rt60 <=1250:
             output_samples = 63945    
+        elif est_rt60 <=1500:
+            output_samples = 99225
         else:
             output_samples = 127890
         if output_samples > total_samples_brir:
@@ -779,5 +785,5 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt6
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to export SOFA file: ' + brir_set_name 
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     

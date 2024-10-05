@@ -1529,7 +1529,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to export HpCFs'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
 
 
 
@@ -2243,7 +2243,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         
         log_string = 'Failed to generate new HpCFs'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
         return False
         
@@ -2298,7 +2298,7 @@ def check_for_database_update(conn, gui_logger=None):
         
         log_string = 'Failed to check HpCF versions'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
         return False
 
@@ -2336,7 +2336,7 @@ def downlod_latest_database(conn, gui_logger=None):
         
         log_string = 'Failed to download latest HpCF database'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
         return False
             
@@ -2666,7 +2666,7 @@ def check_for_app_update(gui_logger=None):
         
         log_string = 'Failed to check app versions'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
         return False
 
@@ -2701,7 +2701,7 @@ def remove_hpcfs(primary_path, gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folders: ' + out_file_dir_hpcf + ' & ' + output_config_path
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
 def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
     """
@@ -2736,4 +2736,222 @@ def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folder: ' + out_file_dir_hpcf
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
+            
+ 
+    
+
+def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logger=None):
+    """
+    Function performs statistical analysis on monoaural cues from headphone measurements
+    """
+    
+    try:
+        
+        log_string_a = 'Starting hp cues analysis'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string_a)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string_a)
+        
+        if in_ear_set == 1:
+            hp_folder = 'in_ear'
+        else:
+            hp_folder = 'over_ear'   
+  
+        #directories
+        data_raw_directory = CN.DATA_DIR_RAW_HP_MEASRUEMENTS
+        measurement_directory = pjoin(CN.DATA_DIR_RAW_HP_MEASRUEMENTS, hp_folder, measurement_folder_name)
+        
+        #impulse
+        impulse=np.zeros(CN.N_FFT)
+        impulse[0]=1
+        fr_flat_mag = np.abs(np.fft.fft(impulse))
+        fr_flat = hf.mag2db(fr_flat_mag)
+    
+        
+        #create array for new x axis for interpolation
+        freq_max = int(CN.SAMP_FREQ/2)
+        #in np fft array where nfft = 65536, id 0 and id 32768 are unique. Create 32769 unique values
+        num_samples = int(CN.N_FFT/2)+1
+        xnew = np.linspace(0, freq_max, num=num_samples)
+        
+        #read in-ear headphone equalisation from WAV file
+        if CN.APPLY_ADD_HP_EQ > 0:
+            filename = 'diffuse_field_eq_for_in_ear_headphones.wav'
+            wav_fname = pjoin(CN.DATA_DIR_INT, filename)
+            samplerate, data_addit_eq = wavfile.read(wav_fname)
+            data_addit_eq = data_addit_eq / (2.**31)
+            #convert to mag response
+            in_ear_eq_fir=np.zeros(CN.N_FFT)
+            in_ear_eq_fir[0:1024] = data_addit_eq[0:1024]
+            data_fft = np.fft.fft(in_ear_eq_fir)#
+            in_ear_eq_mag=np.abs(data_fft)
+            in_ear_eq_db=hf.mag2db(in_ear_eq_mag)
+        
+        #variable to identify if set contains left and right samples
+        left_and_right_set = 0
+        left_meas_count = 0
+        right_meas_count = 0
+        
+        #
+        #read metadata from csv
+        #
+        metadata_file_name = measurement_folder_name + '_summary.csv'
+        metadata_file = pjoin(data_raw_directory, metadata_file_name)
+        metadata_dict_list = []
+        with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+            reader = DictReader(inputfile)
+            for row in reader:#rows 2 and onward
+                #store each row as a dictionary
+
+                #append to list of dictionaries
+                metadata_dict_list.append(row)  
+                
+                #check if set contains left and right samples
+                file_name = row.get('file_name')
+                if 'L.txt' in file_name or 'l.txt' in file_name or 'l1.txt' in file_name or 'L1.txt' in file_name:
+                    left_meas_count = left_meas_count+1
+                if 'R.txt' in file_name or 'r.txt' in file_name or 'r1.txt' in file_name or 'R1.txt' in file_name:
+                    right_meas_count = right_meas_count+1
+                
+        #check if set contains left and right samples
+        if left_meas_count > 0 and right_meas_count > 0:
+            left_and_right_set=1
+        
+        #create array to fill with frequency data
+        hpcf_data_dict_list = metadata_dict_list
+        
+        #
+        #read measurements from txt
+        #
+        for root, dirs, files in os.walk(measurement_directory):
+            for filename in sorted(files):
+                for hpcf_dict in hpcf_data_dict_list:
+                    file_name_hpcf = hpcf_dict.get('file_name')
+                    
+                    #logging.info(filename)
+                    
+                    if file_name_hpcf == filename:
+                        #read txt file and store data into array
+                        txt_fname = pjoin(root, filename)
+                        try:
+                            data = np.loadtxt(txt_fname, comments='*')
+                        except:
+                            try:
+                                data = np.loadtxt(txt_fname, comments='*', delimiter=';')
+                            except:
+                                data = np.loadtxt(txt_fname, comments='*', delimiter=',')
+                 
+                        #1-D data interpolation
+                        data_x = data[:,0]
+                        data_y = data[:,1]
+                        spl = CubicSpline(data_x, data_y)
+                        data_y_new = spl(xnew)
+
+                        #fill entire spectrum
+                        data_y_full=np.zeros(CN.N_FFT)
+                        reversed_arr = np.flipud(data_y_new)
+                        neg_f_ind_start = int(CN.N_FFT/2)+1
+                        rev_arr_ind_start = 1#ignore nyquist f
+                        rev_arr_ind_end = int(CN.N_FFT/2) #ignore DC
+                        data_y_full[0:neg_f_ind_start] = data_y_new
+                        data_y_full[neg_f_ind_start:] = reversed_arr[1:rev_arr_ind_end]
+               
+                        #add to current dictionary
+                        hpcf_dict['meas_resp_db_intrp'] = data_y_full
+  
+        #condense list if this is a left/right set
+        if left_and_right_set == 1:
+            #create new dict list for condensed set
+            hpcf_data_dict_list_c = []
+            #iterate through full list
+            for hpcf_dict_l in hpcf_data_dict_list:
+                extract_name = hpcf_dict_l.get('extracted_name')
+                file_name_l = hpcf_dict_l.get('file_name')
+       
+                #continue if this is a L measurement
+                if 'L.txt' in file_name_l or 'l.txt' in file_name or 'l1.txt' in file_name_l or 'L1.txt' in file_name_l:
+                    #grab response for L measurement
+                    resp_db_l = hpcf_dict_l.get('meas_resp_db_intrp')
+                    #find R measurement
+                    for hpcf_dict_r in hpcf_data_dict_list:
+                        extract_name_r = hpcf_dict_r.get('extracted_name')
+                        file_name_r = hpcf_dict_r.get('file_name')
+                        #continue if this is a R measurement
+                        if ('R.txt' in file_name_r or 'r.txt' in file_name_r or 'r1.txt' in file_name or 'R1.txt' in file_name) and (extract_name_r == extract_name):
+                            #grab response for R measurement
+                            resp_db_r = hpcf_dict_r.get('meas_resp_db_intrp')
+                    #calculate average response
+                    resp_db_avg = np.divide(np.add(resp_db_l,resp_db_r),2)
+                    #create new dictionary
+                    dict_new = hpcf_dict_l.copy()
+                    dict_new.update({"meas_resp_db_intrp": resp_db_avg})
+                    #add to new dict list
+                    hpcf_data_dict_list_c.append(dict_new)
+            
+        else:
+            hpcf_data_dict_list_c=hpcf_data_dict_list
+        
+        #
+        #calculate target headphone
+        #
+        hpcf_fft_avg_db = fr_flat.copy()
+        num_headphones = 0
+        for hpcf_dict in hpcf_data_dict_list_c:
+            #get db response
+            resp_db = hpcf_dict.get('meas_resp_db_intrp')
+            #add db response to average
+            hpcf_fft_avg_db = np.add(hpcf_fft_avg_db,resp_db)
+            
+            num_headphones = num_headphones+1
+            
+        #divide by total number of samples
+        hpcf_fft_avg_db = hpcf_fft_avg_db/num_headphones
+        hpcf_target_db = hpcf_fft_avg_db.copy()
+        
+        #apply in ear compensation to target if in_ear_set
+        if in_ear_set == 1:
+            #apply additional EQ for in-ear headphones
+            hpcf_target_db_comp = np.add(hpcf_target_db,in_ear_eq_db)
+        else:
+            hpcf_target_db_comp = hpcf_target_db.copy()
+            
+        #apply smoothing
+        #convert to mag
+        hpcf_target_mag = hf.db2mag(hpcf_target_db_comp)
+        #level ends of spectrum
+        hpcf_target_mag = hf.level_spectrum_ends(hpcf_target_mag, 50, 19000, smooth_win = 7)#
+        #smoothing
+        hpcf_target_mag = hf.smooth_fft_octaves(hpcf_target_mag)
+            
+        if CN.PLOT_ENABLE == 1:
+            hf.plot_data(hpcf_target_mag,'hpcf_target_mag ' + measurement_folder_name, normalise=0)
+
+        #
+        #save numpy array for later use
+        #
+        ir_set='hp_cues'
+        data_out_folder = pjoin(CN.DATA_DIR_INT, 'mono_cues', ir_set,hp_folder)
+        npy_file_name = hp_folder + '_' + measurement_folder_name + '_mean_hp.npy'
+        out_file_path = pjoin(data_out_folder,npy_file_name)      
+          
+        output_file = Path(out_file_path)
+        output_file.parent.mkdir(exist_ok=True, parents=True)
+        
+        np.save(out_file_path,hpcf_target_mag)    
+        
+        log_string_a = 'Exported numpy file to: ' + out_file_path 
+        if CN.LOG_INFO == 1:
+            logging.info(log_string_a)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string_a)
+
+
+
+
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Failed to complete analysis'
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_error(log_string)

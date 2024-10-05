@@ -34,6 +34,8 @@ APPLY_ADD_HP_EQ = 1
 HRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
 SUBRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
 ROOM_TARGET_MODE=1#0= load .mat dataset, 1=load .npy dataset
+PINNA_COMP_MODE=1#0= load .mat dataset, 1=load .npy dataset
+
 
 #control level of direct sound
 DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
@@ -53,7 +55,7 @@ T_SHIFT_INTERVAL = 25#50
 MIN_T_SHIFT = -1500
 MAX_T_SHIFT = 0
 NUM_INTERVALS = int(np.abs((MAX_T_SHIFT-MIN_T_SHIFT)/T_SHIFT_INTERVAL))
-ORDER=7#default 6
+ORDER=8#6,7
 DELAY_WIN_MIN_T = 0
 DELAY_WIN_MAX_T = 1200#1500
 GRP_DELAY_MIN_F = 30
@@ -68,22 +70,22 @@ MIN_T_SHIFT_C = -250#-250
 MAX_T_SHIFT_C = 50#150
 NUM_INTERVALS_C = int(np.abs((MAX_T_SHIFT_C-MIN_T_SHIFT_C)/T_SHIFT_INTERVAL_C))
 T_SHIFT_INTERVAL_S = 10
-MIN_T_SHIFT_S = -250#-250
-MAX_T_SHIFT_S = 250#150
+MIN_T_SHIFT_S = -370#-250
+MAX_T_SHIFT_S = 250#250
 NUM_INTERVALS_S = int(np.abs((MAX_T_SHIFT_S-MIN_T_SHIFT_S)/T_SHIFT_INTERVAL_S))
 T_SHIFT_INTERVAL_N = 25
 MIN_T_SHIFT_N = -250#-250
 MAX_T_SHIFT_N = 100#150
 NUM_INTERVALS_N = int(np.abs((MAX_T_SHIFT_N-MIN_T_SHIFT_N)/T_SHIFT_INTERVAL_N))
 T_SHIFT_INTERVAL_P = 25
-MIN_T_SHIFT_P = -250#-250
-MAX_T_SHIFT_P = 50#150
+MIN_T_SHIFT_P = -200#-250
+MAX_T_SHIFT_P = 50#50
 NUM_INTERVALS_P = int(np.abs((MAX_T_SHIFT_P-MIN_T_SHIFT_P)/T_SHIFT_INTERVAL_P))
 
 #new constants
 DELAY_WIN_HOP_SIZE = 5
 DELAY_WIN_HOPS = int((DELAY_WIN_MAX_T-DELAY_WIN_MIN_T)/DELAY_WIN_HOP_SIZE)
-EVAL_POLARITY=True
+EVAL_POLARITY=True#True
 
 #AIR alignment
 MIN_T_SHIFT_A = -1000#-1000,-800
@@ -216,6 +218,20 @@ AZIM_HORIZ_RANGE = {5,20,25,35,40,355,340,335,325,320}
 
 #spatial resolution
 SPATIAL_RES_LIST = ['Low','Medium','High','Max']
+SPATIAL_RES_ELEV_DESC = ['-30 to 30 degrees in 15 degree steps.','-45 to 45 degrees in 15 degree steps.',
+                         '-50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps.','-40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps.']
+SPATIAL_RES_AZIM_DESC = ['0 to 360 degrees in varying steps.','0 to 360 degrees in varying steps.',
+                         '0 to 360 degrees in 5 degree steps.','0 to 360 degrees in 2 degree steps.']
+SPATIAL_RES_ELEV_RNG = ['-30° to 30°','-45° to 45°',
+                         '-50° to 50° (WAV) or -60° to 60° (SOFA)','-40° to 40° (WAV) or -40° to 60° (SOFA)']
+SPATIAL_RES_AZIM_RNG = ['0° to 360°','0° to 360°',
+                         '0° to 360°','0° to 360°']
+SPATIAL_RES_ELEV_STP = ['15° steps','15° steps',
+                         '5° steps','2° steps']
+SPATIAL_RES_AZIM_STP = ['varying','varying',
+                         '5° steps','2° steps']
+
+
 NUM_SPATIAL_RES = len(SPATIAL_RES_LIST)
 SPATIAL_RES_ELEV_MIN=[-60, -60, -60, -40 ]#as per hrir dataset
 SPATIAL_RES_ELEV_MAX=[60, 60, 60, 60 ]#as per hrir dataset
@@ -234,9 +250,9 @@ PROVIDERS_CUDA=['CUDAExecutionProvider', 'CPUExecutionProvider']
 PROVIDERS_DML=['DmlExecutionProvider', 'CPUExecutionProvider']
 TRACK_SENSITIVITY = 4
 BRIR_SEL_WIN_WIDTH_RED=390
-BRIR_SEL_WIN_WIDTH_FULL=500
+BRIR_SEL_WIN_WIDTH_FULL=520
 BRIR_SEL_LIST_WIDTH_RED=370
-BRIR_SEL_LIST_WIDTH_FULL=480
+BRIR_SEL_LIST_WIDTH_FULL=500
 HP_SEL_WIN_WIDTH_RED=360
 HP_SEL_WIN_WIDTH_FULL=420
 HP_SEL_LIST_WIDTH_RED=217
@@ -278,10 +294,16 @@ AC_SPACE_LIST_SRC = [ 'audio_lab_a','audio_lab_b','audio_lab_c','audio_lab_d','a
                      'concert_hall_a','conference_room_a','control_room_a','hall_a','office_a', 'outdoors_a', 'seminar_room_a', 'studio_a', 'tatami_room_a']
 
 #estimated RT60 in ms, rough estimate only
-AC_SPACE_EST_R60 = [ 300,600,500,300,300,900,400,600, 1500,1400,
-                     1500,500,300,1500,300, 1500, 1000, 300,500]
+AC_SPACE_EST_R60 = [ 350,400,600,250,500,700,400,600, 1500,1400,
+                     1900,500,300,2300,400, 2600, 900, 400,550]
+
+#estimated RT60 in ms, measured
+AC_SPACE_MEAS_R60 = [ 312,400,567,208,471,648,370,531, 1455,1261,
+                     1809,506,291,2221,408, 2534, 884, 398,518]
+
+
 #estimated time in ms to start fade out
-AC_SPACE_FADE_START = [ 320,700,530,400,410,0,450,700, 0,1400,
+AC_SPACE_FADE_START = [ 320,700,530,400,410,0,450,700, 0,1450,
                      0,560,400,0,520, 0, 1100, 550,700]
 
 
@@ -290,7 +312,7 @@ AC_SPACE_LIST_LOWRT60 = ['audio_lab_a','audio_lab_b', 'audio_lab_c', 'audio_lab_
 
 AC_SPACE_LIST_COMP = ['generic_room_a', 'auditorium_a']
 AC_SPACE_LIST_KU100 = ['concert_hall_a','music_chamber_a','theater_a']
-AC_SPACE_LIST_SOFA_0 = ['audio_lab_a','office_a','control_room_a', 'control_room_b']
+AC_SPACE_LIST_SOFA_0 = ['audio_lab_a','office_a','control_room_a']
 AC_SPACE_LIST_SOFA_1 = ['']
 AC_SPACE_LIST_SOFA_2 = ['']
 AC_SPACE_LIST_SOFA_3 = ['conference_room_a']
@@ -305,14 +327,17 @@ AC_SPACE_LIST_LIM_SETS = ['hall_a', 'outdoors_a']
 AC_SPACE_CHAN_LIMITED=5#3,4
 AC_SPACE_LIST_NOROLL = ['auditorium_a', 'auditorium_b']
 AC_SPACE_LIST_NOCOMP = ['audio_lab_d']
+AC_SPACE_LIST_COMPMODE1 = ['control_room_a', 'tatami_room_a']
 AC_SPACE_LIST_WINDOW = ['hall_b']
 AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
-AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a']
-AC_SPACE_LIST_MID_FC = ['audio_lab_a', 'studio_a','hall_a','office_a']
-AC_SPACE_LIST_LOW_FC = ['broadcast_studio_a', 'outdoors_a','concert_hall_a']
+AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a']
+AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a']
+AC_SPACE_LIST_LOW_FC = [ 'outdoors_a']
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
+
+
 
 RT60_MIN=200
 RT60_MAX_S=1250

@@ -287,6 +287,12 @@ def main():
         else:
             primary_path = 'C:\Program Files\EqualizerAPO\config'
             primary_ash_path = 'C:\Program Files\EqualizerAPO\config\ASH-Custom-Set'
+    #hesuvi path
+    if 'EqualizerAPO' in primary_path:
+        primary_hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
+    else:
+        primary_hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
+
     
     #adjust window size if setting enabled
     if autosize_win_loaded == True:
@@ -923,9 +929,10 @@ def main():
         #run plot
         try:
             # load pinna comp filter (FIR)
-            mat_fname = pjoin(CN.DATA_DIR_INT, 'headphone_pinna_comp_fir.mat')
-            pinna_comp_mat = mat73.loadmat(mat_fname)
-            pinna_comp_fir = pinna_comp_mat['ash_hp_pinna_comp_fir'][0:4096]
+            npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_pinna_comp_fir.npy')
+            pinna_comp_fir = np.load(npy_fname)
+
+ 
             # load additional headphone eq
             apply_add_hp_eq = 0
             if pinna_comp == 2:
@@ -1313,7 +1320,14 @@ def main():
             ash_folder_selected=pjoin(base_folder_selected, CN.PROJECT_FOLDER)
             dpg.set_value('selected_folder_base', base_folder_selected)
             dpg.set_value('selected_folder_ash', ash_folder_selected)
-        
+            dpg.set_value('selected_folder_ash_tooltip', ash_folder_selected)
+            #hesuvi path
+            if 'EqualizerAPO' in base_folder_selected:
+                hesuvi_path_selected = pjoin(base_folder_selected,'HeSuVi')#stored outside of project folder (within hesuvi installation)
+            else:
+                hesuvi_path_selected = pjoin(base_folder_selected, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
+            dpg.set_value('selected_folder_hesuvi', hesuvi_path_selected)
+            dpg.set_value('selected_folder_hesuvi_tooltip', hesuvi_path_selected)
             save_settings()
             
     def reset_settings():
@@ -1369,7 +1383,9 @@ def main():
             primary_ash_path = 'C:\Program Files\EqualizerAPO\config\ASH-Custom-Set'
         dpg.set_value('selected_folder_base', primary_path)
         dpg.set_value('selected_folder_ash', primary_ash_path)
-        
+        dpg.set_value('selected_folder_ash_tooltip', primary_ash_path)
+        dpg.set_value('selected_folder_hesuvi', primary_hesuvi_path)
+        dpg.set_value('selected_folder_hesuvi_tooltip', primary_hesuvi_path)
         dpg.set_value("acoustic_space_combo", ac_space_default)
         
         reset_channel_config()
@@ -2093,7 +2109,6 @@ def main():
         """
         
         dataset_name=dpg.get_value('air_dataset_name_tag')
-        #desired_sets=dpg.get_value('air_output_sets_tag')#deprecated
         air_processing.irs_to_air_set(ir_set=dataset_name, gui_logger=logz)
         
     def run_air_to_brir(sender, app_data, user_data):
@@ -2102,7 +2117,6 @@ def main():
         """
         
         dataset_name=dpg.get_value('air_dataset_name_tag')
-        #desired_sets=dpg.get_value('air_output_sets_tag')
         air_processing.airs_to_brirs(ir_set=dataset_name, gui_logger=logz)
     
     def run_raw_to_brir(sender, app_data, user_data):
@@ -2110,9 +2124,23 @@ def main():
         GUI function to run AIR to BRIR dataset function
         """
         dataset_name=dpg.get_value('air_dataset_name_tag')
-        #desired_sets=dpg.get_value('air_output_sets_tag')
         air_processing.raw_brirs_to_brir_set(ir_set=dataset_name, gui_logger=logz)
     
+    def run_mono_cue(sender, app_data, user_data):
+        """ 
+        GUI function to run mono cues processing function
+        """
+        brir_generation.process_mono_cues(gui_logger=logz)
+        
+    def run_mono_cue_hp(sender, app_data, user_data):
+        """ 
+        GUI function to calculate new hpcfs
+        """
+        
+        measurement_folder_name = dpg.get_value('hp_measurements_tag')
+        in_ear_set = dpg.get_value('in_ear_set_tag')
+        hpcf_functions.process_mono_hp_cues(conn=conn, measurement_folder_name=measurement_folder_name, in_ear_set = in_ear_set, gui_logger=logz)
+        
     def generate_hrir_dataset(sender, app_data, user_data):
         """ 
         GUI function to run AIR to BRIR dataset function
@@ -2138,7 +2166,10 @@ def main():
         GUI function to run calc avg room target function
         """
         air_processing.calc_room_target_dataset(gui_logger=logz)
+     
+    
         
+     
     #
     ## GUI CODE
     #
@@ -2182,9 +2213,13 @@ def main():
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Medium.ttf')#SourceSansPro-Regular
         default_font = dpg.add_font(in_file_path, 14)    
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
-        bold_font = dpg.add_font(in_file_path, 14)    
+        bold_font = dpg.add_font(in_file_path, 14)
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
+        bold_small_font = dpg.add_font(in_file_path, 13) 
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
         large_font = dpg.add_font(in_file_path, 16)    
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Medium.ttf')#SourceSansPro-Regular
+        small_font = dpg.add_font(in_file_path, 13)
 
     dpg.create_viewport(title='Audio Spatialisation for Headphones', width=gui_win_width_loaded, height=gui_win_height_loaded, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
     
@@ -2333,6 +2368,7 @@ def main():
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded,min_clamped=True, max_clamped=True, callback=update_direct_gain)
                                 with dpg.tooltip("direct_gain_title"):
+                                    dpg.add_text("This will control the loudness of the direct signal")
                                     dpg.add_text("Higher values result in lower perceived distance, lower values result in higher perceived distance")
                                 dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded, width=140,clamped=True, no_input=True, format="", callback=update_direct_gain_slider, tag='direct_gain_slider')
                                 
@@ -2341,7 +2377,7 @@ def main():
                                 listbox_5 = dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, num_items=4, width=230, callback=select_hp_comp, tag='brir_hp_type')
                                 with dpg.tooltip("brir_hp_type_title"):
                                     dpg.add_text("This should align with the listener's headphone type")
-                                    dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised.")
+                                    dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised")
                                 
                                 dpg.add_text("Room Target", tag='rm_target_title')
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2389,48 +2425,81 @@ def main():
                 with dpg.group():    
                     #Section for plotting
                     with dpg.child_window(width=604, height=467):
-                        title_3 = dpg.add_text("Filter Preview")
-                        dpg.bind_item_font(title_3, bold_font)
-                        #plotting
-                        dpg.add_separator()
-                        dpg.add_text("Select a filter from list to preview")
-                        # create plot
-                        with dpg.plot(label="Magnitude Response Plot", height=390, width=585):
-                            # optionally create legend
-                            dpg.add_plot_legend()
-                    
-                            # REQUIRED: create x and y axes
-                            dpg.add_plot_axis(dpg.mvXAxis, label="Frequency (Hz)", tag="x_axis", log_scale=True)
-                            dpg.set_axis_limits("x_axis", 10, 20000)
-                            dpg.add_plot_axis(dpg.mvYAxis, label="Magnitude (dB)", tag="y_axis")
-                            dpg.set_axis_limits("y_axis", -20, 15)
-                    
-                            # series belong to a y axis
-                            dpg.add_line_series(default_x, default_y, label="Plot", parent="y_axis", tag="series_tag")
-                            #initial plot
-                            #hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
-                            hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
-                
+                        with dpg.tab_bar():
+                            with dpg.tab(label="Filter Preview"):
+                                # title_3 = dpg.add_text("Filter Preview")
+                                # dpg.bind_item_font(title_3, bold_font)
+                                #plotting
+                                #dpg.add_separator()
+                                dpg.add_text("Select a filter from list to preview")
+                                # create plot
+                                with dpg.plot(label="Magnitude Response Plot", height=390, width=585):
+                                    # optionally create legend
+                                    dpg.add_plot_legend()
+                            
+                                    # REQUIRED: create x and y axes
+                                    dpg.add_plot_axis(dpg.mvXAxis, label="Frequency (Hz)", tag="x_axis", log_scale=True)
+                                    dpg.set_axis_limits("x_axis", 10, 20000)
+                                    dpg.add_plot_axis(dpg.mvYAxis, label="Magnitude (dB)", tag="y_axis")
+                                    dpg.set_axis_limits("y_axis", -20, 15)
+                            
+                                    # series belong to a y axis
+                                    dpg.add_line_series(default_x, default_y, label="Plot", parent="y_axis", tag="series_tag")
+                                    #initial plot
+                                    #hpcf_functions.hpcf_to_plot(conn, headphone_default, sample_default, plot_type=1)
+                                    hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
+                            with dpg.tab(label="Supporting Information"):
+                                with dpg.group(horizontal=True):
+                                    with dpg.group():
+                                        dpg.add_text("Acoustic Properties")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
+                                            borders_outerH=True, borders_innerH=True, no_host_extendX=True,
+                                            borders_outerV=True, borders_innerV=True, delay_search=True):
+                                            #dpg.bind_item_font(dpg.last_item(), bold_font)
+                                            dpg.add_table_column(label="Name")
+                                            dpg.add_table_column(label="RT60 (ms)")
+                                            for i in range(len(CN.AC_SPACE_LIST_GUI)):
+                                                with dpg.table_row():
+                                                    for j in range(2):
+                                                        if j == 0:#name
+                                                            dpg.add_text(CN.AC_SPACE_LIST_GUI[i])
+                                                        else:#rt60
+                                                            dpg.add_text(CN.AC_SPACE_MEAS_R60[i])
+                                                    
+                                    with dpg.group():
+                                        dpg.add_text("Spatial Resolutions")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
+                                            borders_outerH=True, borders_innerH=True, no_host_extendX=True,
+                                            borders_outerV=True, borders_innerV=True, delay_search=True):
+                                            #dpg.bind_item_font(dpg.last_item(), bold_font)
+                                            dpg.add_table_column(label="Resolution")
+                                            dpg.add_table_column(label="Elevation Range")
+                                            dpg.add_table_column(label="Elev. Steps")
+                                            dpg.add_table_column(label="Azimuth Range")
+                                            dpg.add_table_column(label="Azim. Steps")
+                                            for i in range(len(CN.SPATIAL_RES_LIST)):
+                                                with dpg.table_row():
+                                                    for j in range(5):
+                                                        if j == 0:#Resolution
+                                                            dpg.add_text(CN.SPATIAL_RES_LIST[i])
+                                                        elif j == 1:#Elevation Range
+                                                            dpg.add_text(CN.SPATIAL_RES_ELEV_RNG[i],wrap =100)
+                                                        elif j == 2:#Elevation Steps
+                                                            dpg.add_text(CN.SPATIAL_RES_ELEV_STP[i])
+                                                        elif j == 3:#Azimuth Range
+                                                            dpg.add_text(CN.SPATIAL_RES_AZIM_RNG[i])
+                                                        elif j == 4:#Azimuth Steps
+                                                            dpg.add_text(CN.SPATIAL_RES_AZIM_STP[i])
+                                
+                                
+                                
+                                
                     #Section for Exporting files
                     with dpg.group(horizontal=True):
-                        with dpg.child_window(width=361, height=140):
-                            dpg.add_text("Output Directory", tag='out_dir_title')
-                            dpg.bind_item_font(dpg.last_item(), bold_font)
-                            dpg.add_separator()
-                            with dpg.group(horizontal=True):
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpge.add_file_browser(width=800,height=600,label='Change Folder',show_as_window=True, dirs_only=True,show_ok_cancel=True, allow_multi_selection=False, collapse_sequences=True,callback=show_selected_folder)
-                            dpg.add_text(tag='selected_folder_ash', wrap=330)
-                            dpg.add_text(tag='selected_folder_base',show=False)
-                            with dpg.tooltip("selected_folder_ash"):
-                                dpg.add_text("'EqualizerAPO\config' directory should be selected if using Equalizer APO.")
-                            with dpg.tooltip("selected_folder_ash"):
-                                dpg.add_text("Location to save HpCFs and BRIRs. Files will be saved under ASH-Custom-Set sub directory.")        
-                        dpg.set_value('selected_folder_ash', primary_ash_path)
-                        dpg.set_value('selected_folder_base', primary_path)
-                        
                         #Section for wav settings
-                        with dpg.child_window(width=235, height=140):
+                        with dpg.child_window(width=225, height=139):
                             title_4 = dpg.add_text("WAV Settings", tag='export_title')
                             dpg.bind_item_font(title_4, bold_font)
                             dpg.add_separator()
@@ -2443,6 +2512,39 @@ def main():
                                 dpg.add_text("Select Bit Depth")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "wav_bit_depth", default_value=bit_depth_loaded, callback=update_bit_depth)
+                        #output locations
+                        with dpg.child_window(width=371, height=139):
+                            with dpg.group(horizontal=True):
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_text("Output Locations", tag='out_dir_title')
+                                with dpg.tooltip("out_dir_title"):
+                                    dpg.add_text("'EqualizerAPO\config' directory should be selected if using Equalizer APO")
+                                    dpg.add_text("Main outputs will be saved under 'ASH-Custom-Set' sub directory") 
+                                    dpg.add_text("HeSuVi outputs will be saved in 'EqualizerAPO\config\HeSuVi'")  
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_text("                                         ")
+                                dpge.add_file_browser(width=800,height=600,label='Change Folder',show_as_window=True, dirs_only=True,show_ok_cancel=True, allow_multi_selection=False, collapse_sequences=True,callback=show_selected_folder)
+                            dpg.add_separator()
+                            dpg.add_text("Main Outputs:")
+                            dpg.bind_item_font(dpg.last_item(), bold_small_font)
+                            dpg.add_text(tag='selected_folder_ash')
+                            dpg.bind_item_font(dpg.last_item(), small_font)
+                            with dpg.tooltip("selected_folder_ash"):
+                                dpg.add_text("Location to save correction filters and binaural datasets",tag="selected_folder_ash_tooltip")
+                            dpg.add_text(tag='selected_folder_base',show=False)
+                            dpg.add_text("HeSuVi Outputs:")
+                            dpg.bind_item_font(dpg.last_item(), bold_small_font)
+                            dpg.add_text(tag='selected_folder_hesuvi')
+                            dpg.bind_item_font(dpg.last_item(), small_font)
+                            with dpg.tooltip("selected_folder_hesuvi"):
+                                dpg.add_text("Location to save HeSuVi files",tag="selected_folder_hesuvi_tooltip")
+                            
+                        dpg.set_value('selected_folder_ash', primary_ash_path)
+                        dpg.set_value('selected_folder_ash_tooltip', primary_ash_path)
+                        dpg.set_value('selected_folder_base', primary_path)
+                        dpg.set_value('selected_folder_hesuvi', primary_hesuvi_path)
+                        dpg.set_value('selected_folder_hesuvi_tooltip', primary_hesuvi_path)
+                        
   
         with dpg.collapsing_header(label="Equalizer APO Configuration",default_open = show_eapo_sect_loaded):
             #Section for managing E-APO configurations
@@ -2767,7 +2869,7 @@ def main():
                 with dpg.group():
             
                     #Section for HRIRs and BRIRs
-                    with dpg.child_window(width=400, height=110):
+                    with dpg.child_window(width=300, height=110):
                         dpg.add_text("Regenerate Generic Room Reverberation Data")
                         dpg.add_button(label="Click Here to Regenerate",user_data="",tag="brir_reverb_tag", callback=generate_brir_reverb)
                         with dpg.tooltip("brir_reverb_tag"):
@@ -2777,18 +2879,18 @@ def main():
                         with dpg.tooltip("hrir_dataset_tag"):
                             dpg.add_text("This will regenerate the HRIR dataset used to generate BRIRs. Requires hrir_dataset_compensated .mat files in data\interim folder.")
                     #Section for database
-                    with dpg.child_window(width=400, height=60):
+                    with dpg.child_window(width=300, height=60):
                         dpg.add_text("Rebuild HpCF Database from WAVs")
                         dpg.add_button(label="Click Here to Rebuild",user_data="",tag="hpcf_db_create", callback=create_db_from_wav)
                         with dpg.tooltip("hpcf_db_create"):
                             dpg.add_text("This will rebuild the HpCF database from WAV FIRs. Requires WAV FIRs in data\interim\hpcf_wavs folder")
                     #Section for detailing HpCFs
-                    with dpg.child_window(width=400, height=60):
+                    with dpg.child_window(width=300, height=60):
                         dpg.add_text("Print Summary of Recent HpCFs")
                         dpg.add_button(label="Click Here to Print",user_data="",tag="hpcf_print_summary_tag", callback=print_summary)
                 with dpg.group():
                     #Section for HpCF bulk functions
-                    with dpg.child_window(width=400, height=120):
+                    with dpg.child_window(width=340, height=120):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Calculate HpCF Averages")
@@ -2803,7 +2905,7 @@ def main():
                                 dpg.add_text("Calculate HpCF Variants")
                                 dpg.add_button(label="Click Here to Calculate",user_data="",tag="hpcf_variant_tag", callback=calc_hpcf_variants)
                     #Section for HpCFs
-                    with dpg.child_window(width=400, height=180):
+                    with dpg.child_window(width=340, height=180):
                         dpg.add_text("Enter Name of Headphone Measurements Folder")
                         dpg.add_input_text(label="input text", default_value="Folder Name",tag="hp_measurements_tag")
                         with dpg.tooltip("hp_measurements_tag"):
@@ -2821,16 +2923,16 @@ def main():
                             dpg.add_text("Calculates new HpCFs from measurements and adds to the database")
                 with dpg.group():
                     #Section for deleting HpCFs
-                    with dpg.child_window(width=400, height=120):
+                    with dpg.child_window(width=280, height=120):
                         dpg.add_text("Delete Headphone from DB (selected headphone)")
                         dpg.add_button(label="Click Here to Delete",user_data="",tag="hpcf_delete_hp_tag", callback=delete_hp)
                         dpg.add_text("Delete Sample from DB (selected sample)")
                         dpg.add_button(label="Click Here to Delete",user_data="",tag="hpcf_delete_sample_tag", callback=delete_sample)
 
                     #Section for modifying existing HpCFs
-                    with dpg.child_window(width=400, height=180):
+                    with dpg.child_window(width=280, height=180):
                         dpg.add_text("Enter New Name for Headphone")
-                        dpg.add_input_text(label="input text", default_value="Headphone Name",tag="hpcf_rename_tag")
+                        dpg.add_input_text(label="input text", default_value="Headphone Name",tag="hpcf_rename_tag",width=190)
                         dpg.add_text("Rename Headphone (selected headphone)")
                         dpg.add_button(label="Click Here to Rename",user_data="",tag="hpcf_rename_hp_tag", callback=rename_hp_hp)
                         with dpg.tooltip("hpcf_rename_hp_tag"):
@@ -2840,9 +2942,8 @@ def main():
                         with dpg.tooltip("hpcf_rename_sample_tag"):
                             dpg.add_text("Renames headphone field for the selected sample to the specified name")
                 with dpg.group():
-                    
                     #Section for renaming existing HpCFs - find and replace
-                    with dpg.child_window(width=450, height=120):
+                    with dpg.child_window(width=480, height=120):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Enter Sample Name to Replace")
@@ -2855,9 +2956,8 @@ def main():
                                 dpg.add_button(label="Click Here to Rename",user_data="",tag="bulk_rename_sample_tag", callback=bulk_rename_sample)
                                 with dpg.tooltip("bulk_rename_sample_tag"):
                                     dpg.add_text("Bulk renames sample name across all headphones")
-                        
                     #Section for running AIR processing functions
-                    with dpg.child_window(width=450, height=180):
+                    with dpg.child_window(width=480, height=180):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Enter name of AIR dataset")
@@ -2875,6 +2975,8 @@ def main():
                             with dpg.group():
                                 dpg.add_text("Raw BRIR Compensation")
                                 dpg.add_button(label="Click Here to Run",user_data="",tag="raw_brir_comp_tag", callback=run_raw_to_brir)
+                            dpg.add_text("  ")
+                            
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Calculate reverb target resp.")
@@ -2887,6 +2989,17 @@ def main():
                             with dpg.group():
                                 dpg.add_text("Generate room target set")
                                 dpg.add_button(label="Click Here to Run",user_data="",tag="calc_room_target_tag", callback=run_room_target_calc)
+
+    
+                with dpg.group():
+                    #Section for running HRTF processing functions
+                    with dpg.child_window(width=200, height=120):
+                        with dpg.group():
+                            dpg.add_text("Mono Cue Processing (DRIR)")
+                            dpg.add_button(label="Click Here to Run",user_data="",tag="mono_cue_tag", callback=run_mono_cue)
+                            dpg.add_text("Mono Cue Processing (HP)")
+                            dpg.add_button(label="Click Here to Run",user_data="",tag="mono_cue_hp_tag", callback=run_mono_cue_hp)
+
 
     dpg.setup_dearpygui()
     logz=logger.mvLogger(parent="console_window")

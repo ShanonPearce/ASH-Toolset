@@ -99,7 +99,7 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to extract AIRs from recording for stream: ' + ir_set 
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     
     
     
@@ -298,7 +298,7 @@ def td_average_airs(ir_set='fw', gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete TD averaging for: ' + ir_set 
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     
   
 def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None):
@@ -1556,7 +1556,7 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete AIR set processing for: ' + ir_set 
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
   
     
     
@@ -1824,38 +1824,23 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         #
         #optional: create compensation filter from average response and target, then equalise each BRIR
         #
+        
         if mag_comp == True:
+            
             print('FR Compensation enabled')
+            if ir_set in CN.AC_SPACE_LIST_COMPMODE1:
+                comp_mode=1#0 = compensate all directions together with a single filter, 1 = comp each direction separately
+            else:
+                comp_mode=0
             
-            num_bairs_avg = 0
-            brir_fft_avg_db = fr_flat.copy()
-            
-            #calculate average response
-            for direc in range(num_out_dirs):
-                for chan in range(total_chan_hrir):
-                    brir_current = np.copy(brir_reverberation[0,direc,chan,0:CN.N_FFT])#brir_out[elev][azim][chan][:]
-                    brir_current_fft = np.fft.fft(brir_current)#
-                    brir_current_mag_fft=np.abs(brir_current_fft)
-                    brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
-                    
-                    brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
-                    
-                    num_bairs_avg = num_bairs_avg+1
-            
-            #divide by total number of brirs
-            brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
-            #convert to mag
-            brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
             #level ends of spectrum
             high_freq=16000#16500,13500
-            low_freq=40
+            low_freq_in=40
             if ir_set in CN.AC_SPACE_LIST_SUB:
                 high_freq=12000
-                low_freq=46
+                low_freq_in=46
             if ir_set == 'broadcast_studio_a':
                 high_freq=15000
-            brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, low_freq, high_freq, smooth_win = 20)#150
-            brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag)
             
             #load target
             npy_file_name =  'reverb_target_mag_response.npy'
@@ -1867,27 +1852,99 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
                 low_freq=125
             brir_fft_target_mag = hf.level_spectrum_ends(brir_fft_target_mag, low_freq, high_freq, smooth_win = 20)#150
             
-            #create compensation filter
-            comp_mag = hf.db2mag(np.subtract(hf.mag2db(brir_fft_target_mag),hf.mag2db(brir_fft_avg_mag_sm)))
-            comp_mag = hf.smooth_fft_octaves(data=comp_mag)
-            #create min phase FIR
-            comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
- 
-            #equalise each brir with comp filter
-            for direc in range(num_out_dirs):
-                for chan in range(total_chan_hrir):
-                    #convolve BRIR with filters
-                    brir_eq_b = np.copy(brir_reverberation[0,direc,chan,:])#
-                    #apply DF eq
-                    brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
-                    brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
-
-            if CN.PLOT_ENABLE == 1:
-                print(str(num_bairs_avg))
-                hf.plot_data(brir_fft_target_mag,'brir_fft_target_mag', normalise=0)
-                hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=0)
-                hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=0)  
-                hf.plot_data(comp_mag,'comp_mag', normalise=0) 
+            if comp_mode == 0:
+                num_bairs_avg = 0
+                brir_fft_avg_db = fr_flat.copy()
+                
+                #calculate average response
+                for direc in range(num_out_dirs):
+                    for chan in range(total_chan_hrir):
+                        brir_current = np.copy(brir_reverberation[0,direc,chan,0:CN.N_FFT])#brir_out[elev][azim][chan][:]
+                        brir_current_fft = np.fft.fft(brir_current)#
+                        brir_current_mag_fft=np.abs(brir_current_fft)
+                        brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
+                        
+                        brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
+                        
+                        num_bairs_avg = num_bairs_avg+1
+                
+                #divide by total number of brirs
+                brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
+                #convert to mag
+                brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
+                
+                brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, low_freq_in, high_freq, smooth_win = 20)#150
+                brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag)
+        
+                #create compensation filter
+                comp_mag = hf.db2mag(np.subtract(hf.mag2db(brir_fft_target_mag),hf.mag2db(brir_fft_avg_mag_sm)))
+                comp_mag = hf.smooth_fft_octaves(data=comp_mag)
+                #create min phase FIR
+                comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
+     
+                #equalise each brir with comp filter
+                for direc in range(num_out_dirs):
+                    for chan in range(total_chan_hrir):
+                        #convolve BRIR with filters
+                        brir_eq_b = np.copy(brir_reverberation[0,direc,chan,:])#
+                        #apply DF eq
+                        brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
+                        brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
+    
+                if CN.PLOT_ENABLE == 1:
+                    print(str(num_bairs_avg))
+                    hf.plot_data(brir_fft_target_mag,'brir_fft_target_mag', normalise=0)
+                    hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=0)
+                    hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=0)  
+                    hf.plot_data(comp_mag,'comp_mag', normalise=0) 
+                    
+            else:
+         
+                
+                for direc in range(num_out_dirs):
+                    
+                    num_bairs_avg = 0
+                    brir_fft_avg_db = fr_flat.copy()
+                    
+                    #calculate average response
+                    for chan in range(total_chan_hrir):
+                        brir_current = np.copy(brir_reverberation[0,direc,chan,0:CN.N_FFT])#brir_out[elev][azim][chan][:]
+                        brir_current_fft = np.fft.fft(brir_current)#
+                        brir_current_mag_fft=np.abs(brir_current_fft)
+                        brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
+                        
+                        brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
+                        
+                        num_bairs_avg = num_bairs_avg+1
+                
+                    #divide by total number of brirs
+                    brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
+                    #convert to mag
+                    brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
+                    #level ends of spectrum
+                    brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, low_freq_in, high_freq, smooth_win = 20)#150
+                    brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag)
+            
+                    #create compensation filter
+                    comp_mag = hf.db2mag(np.subtract(hf.mag2db(brir_fft_target_mag),hf.mag2db(brir_fft_avg_mag_sm)))
+                    comp_mag = hf.smooth_fft_octaves(data=comp_mag)
+                    #create min phase FIR
+                    comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
+     
+                    #equalise each brir with comp filter
+                    for chan in range(total_chan_hrir):
+                        #convolve BRIR with filters
+                        brir_eq_b = np.copy(brir_reverberation[0,direc,chan,:])#
+                        #apply DF eq
+                        brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
+                        brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
+    
+                    if CN.PLOT_ENABLE == 1:
+                        print(str(num_bairs_avg))
+                        hf.plot_data(brir_fft_target_mag,str(direc)+'_brir_fft_target_mag', normalise=0)
+                        hf.plot_data(brir_fft_avg_mag,str(direc)+'_brir_fft_avg_mag', normalise=0)
+                        hf.plot_data(brir_fft_avg_mag_sm,str(direc)+'_brir_fft_avg_mag_sm', normalise=0)  
+                        hf.plot_data(comp_mag,str(direc)+'_comp_mag', normalise=0) 
 
         
         #
@@ -1953,7 +2010,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete AIR to BRIR processing for: ' + ir_set 
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     
     
  
@@ -2355,7 +2412,7 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete BRIR processing for: ' + ir_set 
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     
     
     
@@ -2509,7 +2566,7 @@ def calc_avg_room_target_mag(gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete reverb response processing'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
             
             
@@ -2621,7 +2678,7 @@ def calc_reverb_target_mag(gui_logger=None):
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete BRIR reverb response processing'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     
     
 def calc_subrir(gui_logger=None):
@@ -2660,6 +2717,16 @@ def calc_subrir(gui_logger=None):
     n_fade_out_win[0:n_fade_win_start] = data_pad_ones[0:n_fade_win_start]
     n_fade_out_win[n_fade_win_start:n_fade_win_start+int(n_fade_win_size/2)] = win_n_fade_out
     
+    #final window for late reflections
+    target_rt=400#ms
+    f_fade_win_start = int(((target_rt)/1000)*CN.FS)
+    f_fade_win_size=np.abs(20000)*2
+    wind_f_fade_full=np.bartlett(f_fade_win_size)
+    win_f_fade_out = np.split(wind_f_fade_full,2)[1]
+    #additional window to fade out noise
+    f_fade_out_win = data_pad_zeros.copy()
+    f_fade_out_win[0:f_fade_win_start] = data_pad_ones[0:f_fade_win_start]
+    f_fade_out_win[f_fade_win_start:f_fade_win_start+int(f_fade_win_size/2)] = win_f_fade_out
     
     try:
         
@@ -2694,7 +2761,7 @@ def calc_subrir(gui_logger=None):
         #section for loading estimated sub BRIR datasets and integrating into reference
         #
         
-        num_sub_sets=3 
+        num_sub_sets=4 
         
         #create numpy array for new BRIR dataset   
         subrir_sets=np.zeros((num_sub_sets,1,total_chan_brir,n_fft))
@@ -2709,10 +2776,41 @@ def calc_subrir(gui_logger=None):
                 ir_set='sub_set_c'
             elif sub_set_id == 2:
                 ir_set='sub_set_d'    
-            brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
-            npy_file_name =  'reverberation_dataset_' +ir_set+'.npy'
-            out_file_path = pjoin(brir_out_folder,npy_file_name)  
-            brir_reverberation = np.load(out_file_path)
+            elif sub_set_id == 3:
+                ir_set='sub_set_e'
+            if sub_set_id == 3:#wav
+                brir_reverberation=np.zeros((CN.INTERIM_ELEVS,1,2,n_fft))
+                #read wav files
+                brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
+                filename='BRIR_R32_C1_E0_A30_eq.wav'
+                wav_fname = pjoin(brir_out_folder, filename)
+                samplerate, data = wavfile.read(wav_fname)
+                #samp_freq=samplerate
+                fir_array = data / (2.**31)
+                fir_length = len(fir_array)
+                
+                #resample if sample rate is not 44100
+                if samplerate != samp_freq:
+                    fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
+                    log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
+                    if CN.LOG_INFO == 1:
+                        logging.info(log_string_a)
+                    if CN.LOG_GUI == 1 and gui_logger != None:
+                        gui_logger.log_info(log_string_a)
+
+                extract_legth = min(n_fft,fir_length)
+                #load into numpy array
+                brir_reverberation[0,0,0,0:extract_legth]=fir_array[0:extract_legth,0]#L
+                brir_reverberation[0,0,1,0:extract_legth]=fir_array[0:extract_legth,1]#R
+  
+            
+            else:
+                brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
+                npy_file_name =  'reverberation_dataset_' +ir_set+'.npy'
+                out_file_path = pjoin(brir_out_folder,npy_file_name)  
+                brir_reverberation = np.load(out_file_path)
+                
+            
 
             #set level of subrir set est brir to 0 at low freqs
             #set each AIR to 0 level
@@ -2794,7 +2892,7 @@ def calc_subrir(gui_logger=None):
             peak_to_peak_max_n = np.max(delay_eval_set_sub_n[:])
             index_shift_n = np.argmax(delay_eval_set_sub_n[:])
             
-            if peak_to_peak_max_p > peak_to_peak_max_n or CN.EVAL_POLARITY == False:
+            if peak_to_peak_max_p > peak_to_peak_max_n or CN.EVAL_POLARITY == False or sub_set_id == 3:
                 index_shift=index_shift_p
                 sub_polarity=1
             else:
@@ -3070,6 +3168,68 @@ def calc_subrir(gui_logger=None):
                     pyquad.set_params(filter_type, fc, q, gain_db)
                     sub_brir_ir_pre = np.copy(sub_brir_ir_new)
                     sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                
+                elif sub_set_id == 3:
+                    
+                    filter_type="peaking"
+                    fc=9
+                    sr=samp_freq
+                    q=2.5
+                    gain_db=-5
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=14
+                    sr=samp_freq
+                    q=10
+                    gain_db=-3
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=29
+                    sr=samp_freq
+                    q=2.5
+                    gain_db=-1
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=61
+                    sr=samp_freq
+                    q=2.5
+                    gain_db=-1
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=143
+                    sr=samp_freq
+                    q=9
+                    gain_db=-1
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=198
+                    sr=samp_freq
+                    q=9
+                    gain_db=-1
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
                     
             #save interim result
             out_file_name = str(sub_set_id) + '_after_eq_rolled_brir.wav'
@@ -3105,7 +3265,7 @@ def calc_subrir(gui_logger=None):
                 subrir_sets_interim[sub_set_id,set_num,chan,:] = np.copy(sub_brir_ir_new[chan][:])
   
         #ratios for merging
-        ratio_list = [0.70,0.10,0.10,0.10]#[0.70,0.10,0.10,0.10],[0.65,0.10,0.15,0.10]
+        ratio_list = [0.34,0.22,0.12,0.10,0.22]#
 
         sub_brir_ir_new = np.zeros((2,n_fft))
         #prepopulate with reference subrir
@@ -3138,10 +3298,10 @@ def calc_subrir(gui_logger=None):
         if additional_filt == 1:
   
             filter_type="lowshelf"
-            fc=20
+            fc=16
             sr=samp_freq
             q=1.0
-            gain_db=3#5.9
+            gain_db=13.5#13.6
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3149,10 +3309,10 @@ def calc_subrir(gui_logger=None):
             
             
             filter_type="peaking"
-            fc=53
+            fc=55
             sr=samp_freq
             q=6
-            gain_db=-0.4
+            gain_db=-0.5
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3161,8 +3321,8 @@ def calc_subrir(gui_logger=None):
             filter_type="peaking"
             fc=76
             sr=samp_freq
-            q=9
-            gain_db=-0.4
+            q=6
+            gain_db=-0.8
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3172,7 +3332,7 @@ def calc_subrir(gui_logger=None):
             fc=70
             sr=samp_freq
             q=2
-            gain_db=-0.2
+            gain_db=-0.4
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3182,7 +3342,7 @@ def calc_subrir(gui_logger=None):
             fc=112
             sr=samp_freq
             q=8
-            gain_db=-0.5
+            gain_db=-0.4
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3192,7 +3352,130 @@ def calc_subrir(gui_logger=None):
             fc=146
             sr=samp_freq
             q=8
+            gain_db=-0.4
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+  
+            filter_type="peaking"
+            fc=113
+            sr=samp_freq
+            q=7.5
+            gain_db=-0.4
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=133
+            sr=samp_freq
+            q=10.0
+            gain_db=-0.2
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=144
+            sr=samp_freq
+            q=10.0
             gain_db=-0.5
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=162
+            sr=samp_freq
+            q=10.0
+            gain_db=-0.25
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=38
+            sr=samp_freq
+            q=6
+            gain_db=0.7
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=83
+            sr=samp_freq
+            q=6
+            gain_db=0.2
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            #
+            filter_type="peaking"
+            fc=4
+            sr=samp_freq
+            q=2.5#3.0
+            gain_db=-4.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=6
+            sr=samp_freq
+            q=3.0#3.5
+            gain_db=-7.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            #
+            filter_type="peaking"
+            fc=3
+            sr=samp_freq
+            q=2.0#2.5
+            gain_db=-3.0#-2.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+  
+            #
+            filter_type="peaking"
+            fc=14
+            sr=samp_freq
+            q=2.5#3.0
+            gain_db=-1.5
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=20
+            sr=samp_freq
+            q=5#3.0
+            gain_db=-0.8
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=16
+            sr=samp_freq
+            q=6.0#
+            gain_db=-1.0
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3205,6 +3488,10 @@ def calc_subrir(gui_logger=None):
                 logging.info('q = ' + str(q))
                 logging.info('gain_db = ' + str(gain_db))
         
+    
+        #final windowing
+        sub_brir_ir_new[0][:] = np.multiply(sub_brir_ir_new[0][:],f_fade_out_win)#L
+        sub_brir_ir_new[1][:] = np.multiply(sub_brir_ir_new[1][:],f_fade_out_win)#R
     
         #
         #export wavs for testing
@@ -3247,9 +3534,9 @@ def calc_subrir(gui_logger=None):
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
-        log_string = 'Failed to complete BRIR reverb response processing'
+        log_string = 'Failed to complete sub BRIR processing'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
     
     
 
@@ -3400,8 +3687,8 @@ def calc_room_target_dataset(gui_logger=None):
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
-        log_string = 'Failed to complete reverb response processing'
+        log_string = 'Failed to complete room target response processing'
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_error(log_string)
             
                 

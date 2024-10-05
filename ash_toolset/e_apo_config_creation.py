@@ -562,7 +562,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to write config file: ' + out_file
         if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+            gui_logger.log_warning(log_string)
             
         return False
     
