@@ -37,6 +37,8 @@ def main():
     from time import sleep
     import threading
     import scipy as sp
+    import sys
+    import os
 
     #logging
     logging.basicConfig(
@@ -55,6 +57,11 @@ def main():
     with open(CN.METADATA_FILE) as fp:
         _info = json.load(fp)
     __version__ = _info['version']
+    
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
     
     #
     #program code
