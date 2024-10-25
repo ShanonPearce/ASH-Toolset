@@ -73,6 +73,13 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         #larger reverb times will need additional samples
         ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
         est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
+        ac_gain = CN.AC_SPACE_GAINS[ac_space_int]
+        if spatial_res == 3:
+            gain_list=CN.HRTF_GAIN_LIST_FULL_RES_NUM
+        else:
+            gain_list=CN.HRTF_GAIN_LIST_NUM
+        hrtf_index = hrtf_type-1
+        hrtf_gain = gain_list[hrtf_index]
         
         if est_rt60 <=400:
             out_wav_samples_44 = 33075
@@ -97,6 +104,8 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         #reduce gain if direct gain db is less than max value
         reduction_gain_db = (CN.DIRECT_GAIN_MAX-direct_gain_db)*-1/2
         reduction_gain = hf.db2mag(reduction_gain_db)
+        reduction_gain_db_he = (reduction_gain_db+ac_gain+hrtf_gain)
+        reduction_gain_he = hf.db2mag(reduction_gain_db_he)
         
         #
         ## write set of WAVs
@@ -217,8 +226,8 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
 
                 #load into zero pad array
                 data_pad=np.zeros((out_wav_samples_44,2))
-                data_pad[0:(out_wav_samples_44),0]=np.copy(brir_arr[elev_id][dezired_azim_id][0][0:out_wav_samples_44])/max_amp#L
-                data_pad[0:(out_wav_samples_44),1]=np.copy(brir_arr[elev_id][dezired_azim_id][1][0:out_wav_samples_44])/max_amp#R
+                data_pad[0:(out_wav_samples_44),0]=np.copy(brir_arr[elev_id][dezired_azim_id][0][0:out_wav_samples_44])*reduction_gain_he/max_amp#L
+                data_pad[0:(out_wav_samples_44),1]=np.copy(brir_arr[elev_id][dezired_azim_id][1][0:out_wav_samples_44])*reduction_gain_he/max_amp#R
       
                 #create a copy and resample to 48kHz
                 data_pad_48k=np.zeros((out_wav_samples_48,2))           
@@ -394,7 +403,7 @@ def generate_direction_matrix(hrtf_type, spatial_res=1, output_variant=1):
                 #reduced set of directions for post processing or WAV output
                 if output_variant >= 1:
                     #limited elevation range for HRTF type 4
-                    if hrtf_type == 4 and spatial_res < 3:
+                    if hrtf_type in CN.HRTF_TYPE_LIST_LIM_RES and spatial_res < 3:
                         if (elev_deg >= -30 and elev_deg <= 30 and elev_deg%15 == 0 and azim_deg%15 == 0):  
                             #populate matrix with 1 if direction applicable
                             direction_matrix[elev][azim][0][0] = 1
@@ -475,7 +484,7 @@ def find_nearest_direction(hrtf_type, target_elevation, target_azimuth, spatial_
                 
                 valid_dir = 0 
                 
-                if hrtf_type == 4 and spatial_res < 3:
+                if hrtf_type in CN.HRTF_TYPE_LIST_LIM_RES and spatial_res < 3:
                     if (elev_deg >= -30 and elev_deg <= 30 and elev_deg%15 == 0 and azim_deg%15 == 0):  
                         valid_dir = 1 
                 elif spatial_res == 0: 

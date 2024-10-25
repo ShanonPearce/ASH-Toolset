@@ -611,7 +611,7 @@ def mag_to_min_fir(data, n_fft=65536, out_win_size=4096, crop=0):
 
     #fade out window
     fade_hanning_size=out_win_size*2
-    fade_hanning_start=50
+    fade_hanning_start=100#50
     hann_fade_full=np.hanning(fade_hanning_size)
     hann_fade = np.split(hann_fade_full,2)[1]
     fade_out_win = data_pad_ones.copy()

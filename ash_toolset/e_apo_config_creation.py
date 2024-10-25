@@ -57,7 +57,7 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
         for m in elev_range:
             
             if m == '_Elevated_Front':
-                if hrtf_type == 4:
+                if hrtf_type in CN.HRTF_TYPE_LIST_LIM_RES:
                     elev='30'
                 else:
                     elev='15'
@@ -84,7 +84,7 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
                     f.write('\n')
                     f.write('Channel: ALL')
                     f.write('\n')
-                    f.write('Preamp: '+ CN.HRTF_GAIN_LIST[hrtf_type-1])#also adjust gain
+                    f.write('Preamp: '+ str(CN.HRTF_GAIN_LIST_NUM[hrtf_type-1]) +' dB')#also adjust gain
                     f.write('\n')
                     if CN.CHANNEL_CONFIGS[n][1] == '2.0' or CN.CHANNEL_CONFIGS[n][1] == '2.0W' or CN.CHANNEL_CONFIGS[n][1] == '2.0N':
                         copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R'
@@ -322,11 +322,10 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
         azim_rl=brir_dict.get('azim_rl')
         azim_rr=brir_dict.get('azim_rr')
         
-        #find nearest azimuth/elev in set list. Required for cases where hrtf has limited azimuth/elev range
-        if 'B&K 4128 ' in brir_set:
-            hrtf_type=4
-        else:
-            hrtf_type=1#default to 1
+        #get htrf type from file name
+        hrtf_type=get_hrtf_type_from_dir(brir_set, spatial_res=spatial_res)
+
+            
         nearest_dir_dict_fl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fl , target_azimuth=azim_fl, spatial_res=spatial_res)
         nearest_dir_dict_fr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fr , target_azimuth=azim_fr, spatial_res=spatial_res)
         nearest_dir_dict_c = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_c , target_azimuth=azim_c, spatial_res=spatial_res)
@@ -407,20 +406,18 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
             #assume -6dB is peak for all hpcfs
             max_level_db=max_level_db-6
         if enable_brir_conv == True:
-            #find HATS from file name
             #find gain to apply based on HATS
-            brir_gain=0
+            hrtf_gain=0
             if spatial_res == 3:
-                hrtf_list=CN.HRTF_LIST_FULL_RES_SHORT
                 gain_list=CN.HRTF_GAIN_LIST_FULL_RES_NUM
             else:
-                hrtf_list=CN.HRTF_LIST_SHORT
                 gain_list=CN.HRTF_GAIN_LIST_NUM
-            for idx, x in enumerate(hrtf_list):
-                if x in brir_set_formatted:
-                    brir_gain = gain_list[idx]*-1
+            hrtf_index = hrtf_type-1
+            hrtf_gain = gain_list[hrtf_index]*-1
+            #find gain to apply based on acoustic space
+            as_gain = get_as_gain_from_dir(brir_set)*-1
                     
-            max_level_db = max_level_db + brir_gain -1
+            max_level_db = max_level_db + hrtf_gain + as_gain
         if enable_hpcf_conv == False and enable_brir_conv == False:
             max_level_db=max_level_db+0
         max_level_db = max_level_db + additional_gain
@@ -581,7 +578,7 @@ def include_ash_e_apo_config(primary_path, enabled=False):
         #previously generated custom config file
         custom_file_name = 'ASH_Toolset_Config.txt'
         custom_file = pjoin(output_config_path, custom_file_name)
-        custom_file_rel = 'ASH-Custom-Set\\E-APO-Configs\\'+custom_file_name
+        custom_file_rel = CN.PROJECT_FOLDER + '\\E-APO-Configs\\'+custom_file_name
         
         if os.path.isfile(custom_file):
         
@@ -610,6 +607,10 @@ def include_ash_e_apo_config(primary_path, enabled=False):
                             #only if already commented out
                             elif enabled == True and '#' in line: 
                                 altered_line = line.replace("# ", "")
+                            #rename config from old version (pre v2.4.0)
+                            if CN.PROJECT_FOLDER_SSD in line: 
+                                altered_line = altered_line.replace(CN.PROJECT_FOLDER_SSD, CN.PROJECT_FOLDER)
+                                
                         altered_lines.append(altered_line)
                         
                         
@@ -619,7 +620,7 @@ def include_ash_e_apo_config(primary_path, enabled=False):
                     f.write(''.join(altered_lines))
                     #also write include line if enabled and not already included
                     if include_custom_exists == 0 and enabled == True:
-                        if 'EqualizerAPO\\config\\ASH-Custom-Set\\E-APO-Configs' in output_config_path:
+                        if 'EqualizerAPO\\config\\'+ CN.PROJECT_FOLDER +'\\E-APO-Configs' in output_config_path:
                             include_string = 'Include: '+custom_file_rel#use relative directory if project folder is in same folder as config.txt
                         else:
                             include_string = 'Include: '+custom_file#use full path
@@ -644,7 +645,17 @@ def get_exported_brir_list(primary_path):
     """    
     
     try:
-
+        
+        try:
+            #find previous location (pre v2.4.0) and rename folder if found
+            old_proj_path = pjoin(primary_path, CN.PROJECT_FOLDER_SSD)
+            new_proj_path = pjoin(primary_path, CN.PROJECT_FOLDER)
+            if os.path.exists(old_proj_path):
+                #rename folder
+                os.rename(old_proj_path, new_proj_path)
+        except Exception as ex:
+            logging.error("Error occurred", exc_info = ex)  
+ 
         brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS)
 
         #list all names in path 
@@ -664,7 +675,8 @@ def get_exported_brir_list(primary_path):
 def get_spatial_res_from_dir(primary_path, brir_set):
     """
     Function reads BRIR folders in output directory and returns int containing estimated spatial resolution.
-    :param primary_path: string, base path to save files to
+    :param primary_path: string, base path
+    :param brir_set: string, name of brir set
     :return: None
     """  
     
@@ -682,7 +694,6 @@ def get_spatial_res_from_dir(primary_path, brir_set):
         spatial_res_full=0
         
         #find specific directions to flag spatial res
-        
         for root, dirs, files in os.walk(brirs_path):
             for filename in files:
                 if '_E-50_' in filename:
@@ -702,14 +713,69 @@ def get_spatial_res_from_dir(primary_path, brir_set):
             spatial_res=1
         elif spatial_res_low == 1:
             spatial_res=0
- 
-        return spatial_res
+
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)   
+        
+    return spatial_res
+    
+def get_hrtf_type_from_dir(brir_set, spatial_res=1):
+    """
+    Function reads BRIR folders in output directory and returns int containing hrtf type.
+    :param brir_set: string, name of brir set
+    :param spatial_res: int, spatial resolution
+    :return: None
+    """  
+    
+    hrtf_type=1#default value
+    hrtf_index=0
+    
+    try:
+
+        #find hrtf type from file name
+        brir_set_formatted = brir_set.replace(" ", "_")
+        if spatial_res == 3:
+            hrtf_list=CN.HRTF_LIST_FULL_RES_SHORT
+        else:
+            hrtf_list=CN.HRTF_LIST_SHORT
+        for idx, x in enumerate(hrtf_list):
+                hrtf_name_delim = x+'_'
+                if hrtf_name_delim in brir_set_formatted:
+                    hrtf_type=idx+1
+                    hrtf_index=idx
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)   
-        return spatial_res
     
- 
+    return hrtf_type
+    
+def get_as_gain_from_dir(brir_set):
+    """
+    Function reads BRIR folders in output directory and returns float containing gain for acoustic space.
+    :param brir_set: string, name of brir set
+    :param spatial_res: int, spatial resolution
+    :return: None
+    """  
+    
+    gain=0#default value
+    
+    try:
+
+        #find hrtf type from file name
+        brir_set_formatted = brir_set.replace(" ", "_")       
+        ac_list=CN.AC_SPACE_LIST_SHORT
+
+        for idx, x in enumerate(ac_list):
+                ac_name_delim = '_'+x+'_'
+                if ac_name_delim in brir_set_formatted:
+                    gain=CN.AC_SPACE_GAINS[idx]
+    
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)   
+    
+    return gain
+     
+    
 def get_exported_hp_list(primary_path):
     """
     Function reads HpCF folders in output directory and returns list of headphones.

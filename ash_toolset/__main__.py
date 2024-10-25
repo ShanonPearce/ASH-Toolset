@@ -72,7 +72,7 @@ def main():
     hrtf_default=CN.HRTF_LIST_NUM[0]
     spatial_res_default=CN.SPATIAL_RES_LIST[0]
     room_target_default=CN.ROOM_TARGET_LIST[1]
-    direct_gain_default=3.0
+    direct_gain_default=2.0
     fir_hpcf_exp_default=True
     fir_st_hpcf_exp_default=False
     eapo_hpcf_exp_default=False
@@ -90,6 +90,7 @@ def main():
     audio_channels_default=CN.AUDIO_CHANNELS[0]
     show_filter_sect_default=True
     show_eapo_sect_default=True
+    auto_check_updates_default=False
     #E-APO config related settings
     e_apo_mute_default=False
     e_apo_gain_default=0
@@ -134,6 +135,7 @@ def main():
     audio_channels_loaded=audio_channels_default
     show_filter_sect_loaded=show_filter_sect_default
     show_eapo_sect_loaded=show_eapo_sect_default
+    auto_check_updates_loaded=auto_check_updates_default
     #E-APO config related settings
     e_apo_mute_fl_loaded=e_apo_mute_default
     e_apo_mute_fr_loaded=e_apo_mute_default
@@ -169,10 +171,8 @@ def main():
     e_apo_hp_selected_loaded = e_apo_hp_selected_default
     e_apo_sample_selected_loaded = e_apo_sample_selected_default
     e_apo_brir_selected_loaded = e_apo_brir_selected_default
-
     #acoustic space
     ac_space_loaded=ac_space_default
-    
     #thread variables
     e_apo_conf_lock = threading.Lock()
     
@@ -232,11 +232,10 @@ def main():
             autosize_win_loaded=ast.literal_eval(config['DEFAULT']['autosize_win'])
             show_filter_sect_loaded=ast.literal_eval(config['DEFAULT']['show_filter_section'])
             show_eapo_sect_loaded=ast.literal_eval(config['DEFAULT']['show_eapo_section'])
-            
+            auto_check_updates_loaded=ast.literal_eval(config['DEFAULT']['auto_check_updates'])
             base_folder_loaded = config['DEFAULT']['path']
             primary_path=base_folder_loaded
             primary_ash_path=pjoin(base_folder_loaded, CN.PROJECT_FOLDER)
-            
             #E-APO config related settings
             e_apo_mute_fl_loaded=ast.literal_eval(config['DEFAULT']['mute_fl'])
             e_apo_mute_fr_loaded=ast.literal_eval(config['DEFAULT']['mute_fr'])
@@ -285,8 +284,8 @@ def main():
             primary_path = e_apo_path
             primary_ash_path = pjoin(e_apo_path, CN.PROJECT_FOLDER)
         else:
-            primary_path = 'C:\Program Files\EqualizerAPO\config'
-            primary_ash_path = 'C:\Program Files\EqualizerAPO\config\ASH-Custom-Set'
+            primary_path = 'C:\\Program Files\\EqualizerAPO\\config'
+            primary_ash_path = 'C:\\Program Files\\EqualizerAPO\\config\\' + CN.PROJECT_FOLDER
     #hesuvi path
     if 'EqualizerAPO' in primary_path:
         primary_hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
@@ -334,6 +333,7 @@ def main():
         sofa_brir_tooltip_show=False
     else:
         hrtf_list_loaded = CN.HRTF_LIST_NUM
+    
  
     #
     # HpCF Database code
@@ -1164,7 +1164,6 @@ def main():
         """ 
         GUI function to process BRIR reverberation data
         """
-
         #Run BRIR reverb synthesis
         brir_generation.generate_reverberant_brir(gui_logger=logz)
 
@@ -1172,43 +1171,64 @@ def main():
         """ 
         GUI function to check app version
         """
-
         hpcf_functions.check_for_app_update(gui_logger=logz)
     
     def check_db_version(sender, app_data, user_data):
         """ 
         GUI function to check db version
         """
-
         hpcf_functions.check_for_database_update(conn=conn, gui_logger=logz)
 
     def download_latest_db(sender, app_data, user_data):
         """ 
         GUI function to download latest db
         """
-        
         hpcf_functions.downlod_latest_database(conn=conn, gui_logger=logz)
         
+    def check_as_versions(sender, app_data, user_data):
+        """ 
+        GUI function to check acoustic space versions
+        """
+        air_processing.acoustic_space_updates(download_updates=False, gui_logger=logz)
+
+    def download_latest_as_sets(sender, app_data, user_data):
+        """ 
+        GUI function to download latest acoustic spaces
+        """
+        air_processing.acoustic_space_updates(download_updates=True, gui_logger=logz)
+    
+    
+    def check_all_updates():
+        """ 
+        GUI function to check for all updates
+        """
+        hpcf_functions.check_for_app_update(gui_logger=logz)
+        hpcf_functions.check_for_database_update(conn=conn, gui_logger=logz)
+        air_processing.acoustic_space_updates(download_updates=False, gui_logger=logz)
+
+    
     def calc_hpcf_averages(sender, app_data, user_data):
         """ 
         GUI function to calculate hpcf averages
         """
-        
         hpcf_functions.hpcf_generate_averages(conn, gui_logger=logz)
      
     def calc_hpcf_variants(sender, app_data, user_data):
         """ 
         GUI function to calculate hpcf averages
         """
-        
         hpcf_functions.hpcf_generate_variants(conn, gui_logger=logz)
         
+    def crop_hpcfs(sender, app_data, user_data):
+        """ 
+        GUI function to calculate hpcf averages
+        """
+        hpcf_functions.crop_hpcf_firs(conn, gui_logger=logz)    
         
     def renumber_hpcf_samples(sender, app_data, user_data):
         """ 
         GUI function to renumber hpcf samples to remove gaps
         """
-        
         hpcf_functions.renumber_headphone_samples(conn, gui_logger=logz)
  
     def generate_hpcf_summary(sender, app_data, user_data):
@@ -1379,8 +1399,8 @@ def main():
             primary_path = e_apo_path
             primary_ash_path = pjoin(e_apo_path, CN.PROJECT_FOLDER)
         else:
-            primary_path = 'C:\Program Files\EqualizerAPO\config'
-            primary_ash_path = 'C:\Program Files\EqualizerAPO\config\ASH-Custom-Set'
+            primary_path = 'C:\\Program Files\\EqualizerAPO\\config'
+            primary_ash_path = 'C:\\Program Files\\EqualizerAPO\\config\\' + CN.PROJECT_FOLDER
         dpg.set_value('selected_folder_base', primary_path)
         dpg.set_value('selected_folder_ash', primary_ash_path)
         dpg.set_value('selected_folder_ash_tooltip', primary_ash_path)
@@ -1418,7 +1438,7 @@ def main():
         autosize_win_str = str(dpg.get_value('resize_window_tag'))
         show_filter_sect_str = str(dpg.get_value('show_filter_sect_tag'))
         show_eapo_sect_str = str(dpg.get_value('show_eapo_sect_tag'))
-        
+        auto_check_updates_str = str(dpg.get_value('check_updates_start_tag'))
         enable_e_apo_str=str(dpg.get_value('e_apo_live_config'))
         enable_hpcf_str=str(dpg.get_value('e_apo_hpcf_conv'))
         headphone_load_str=str(dpg.get_value('e_apo_load_hp'))
@@ -1486,7 +1506,7 @@ def main():
             config['DEFAULT']['autosize_win'] = autosize_win_str
             config['DEFAULT']['show_filter_section'] = show_filter_sect_str
             config['DEFAULT']['show_eapo_section'] = show_eapo_sect_str
-            
+            config['DEFAULT']['auto_check_updates'] = auto_check_updates_str
             config['DEFAULT']['enable_e_apo']=enable_e_apo_str
             config['DEFAULT']['enable_hpcf'] = enable_hpcf_str
             config['DEFAULT']['headphone_selected'] = headphone_load_str
@@ -1562,6 +1582,8 @@ def main():
         brir_list_out_latest = e_apo_config_creation.get_exported_brir_list(base_folder_selected)
         dpg.configure_item('e_apo_load_brir_set',items=brir_list_out_latest)
         dpg.set_value("e_apo_load_brir_set", '')
+        #update current BRIR set text
+        dpg.set_value("e_apo_curr_brir_set", '')
         
         #call main config writer function
         e_apo_config_acquire()
@@ -1600,6 +1622,8 @@ def main():
             #Whenever a brir set is selected, determine spatial resolution, then get elevation list and update list in gui element
             brir_out_sel=dpg.get_value('e_apo_load_brir_set')
             update_elevations_list(brir_out_sel)
+            #update current BRIR set text
+            dpg.set_value("e_apo_curr_brir_set", brir_out_sel)
             
             #call main config writer function
             e_apo_config_acquire()
@@ -2103,13 +2127,29 @@ def main():
         dpg.set_value("progress_bar_brir", value/100)
         dpg.configure_item("progress_bar_brir", overlay = str(value)+'%')
 
+    def run_extract_airs(sender, app_data, user_data):
+        """ 
+        GUI function to run extract airs from recording function
+        """
+        
+        dataset_name=dpg.get_value('air_dataset_name_tag')
+        air_processing.extract_airs_from_recording(ir_set=dataset_name, gui_logger=logz)
+
+    def run_split_airs_to_set(sender, app_data, user_data):
+        """ 
+        GUI function to run split airs to air set function
+        """
+        
+        dataset_name=dpg.get_value('air_dataset_name_tag')
+        air_processing.split_airs_to_set(ir_set=dataset_name, gui_logger=logz)
+
     def run_raw_air_to_dataset(sender, app_data, user_data):
         """ 
         GUI function to run RAW AIR to dataset function
         """
         
         dataset_name=dpg.get_value('air_dataset_name_tag')
-        air_processing.irs_to_air_set(ir_set=dataset_name, gui_logger=logz)
+        air_processing.prepare_air_set(ir_set=dataset_name, gui_logger=logz)
         
     def run_air_to_brir(sender, app_data, user_data):
         """ 
@@ -2232,17 +2272,17 @@ def main():
         with dpg.theme(tag="__theme_a"):
             i=4.2#i=3
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.6, 0.6))
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.40, 0.6))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.8))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.7, 0.7))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.6, 0.7))
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, i*5)
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 8)
         with dpg.theme(tag="__theme_b"):
-            i=3.6#i=2
+            i=3.8#i=2
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.6, 0.6))
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.40, 0.6))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.8))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.7, 0.7))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.6, 0.7))
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, i*5)
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 8)
         with dpg.theme(tag="__theme_c"):
@@ -2259,8 +2299,34 @@ def main():
         with dpg.theme(tag="__theme_e"):
             i=3.1
             with dpg.theme_component(dpg.mvAll):
-                dpg.add_theme_color(dpg.mvThemeCol_CheckMark, _hsv_to_rgb(i/7.0, 0.6, 0.6))
-
+                dpg.add_theme_color(dpg.mvThemeCol_CheckMark, _hsv_to_rgb(i/7.0, 0.6, 0.8))
+        with dpg.theme(tag="__theme_f"):
+            i=3.9
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_Text, _hsv_to_rgb(i/7.0, 0.05, 0.99))
+        with dpg.theme() as global_theme:
+            i=3.9
+            j=3.9
+            k=3.8
+            l=3.5
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, _hsv_to_rgb(i/7.0, 0.5, 0.5))   
+                dpg.add_theme_color(dpg.mvThemeCol_TabActive, _hsv_to_rgb(i/7.0, 0.5, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_CheckMark, _hsv_to_rgb(i/7.0, 0.5, 0.8)) 
+                dpg.add_theme_color(dpg.mvThemeCol_SliderGrab, _hsv_to_rgb(i/7.0, 0.5, 0.7)) 
+                dpg.add_theme_color(dpg.mvThemeCol_SliderGrabActive, _hsv_to_rgb(i/7.0, 0.5, 0.7))
+                dpg.add_theme_color(dpg.mvPlotCol_TitleText, _hsv_to_rgb(i/7.0, 0.5, 0.7))
+                dpg.add_theme_color(dpg.mvThemeCol_Header, _hsv_to_rgb(4.4/7.0, 0.1, 0.25))
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_TabHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_PlotHistogram, _hsv_to_rgb(l/7.0, 0.2, 0.5)) 
+                dpg.add_theme_color(dpg.mvPlotCol_Line, _hsv_to_rgb(k/7.0, 0.25, 0.6), category=dpg.mvThemeCat_Plots) 
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, _hsv_to_rgb(j/7.0, 0.7, 0.7))
+        
+        dpg.bind_theme(global_theme)
+        
         with dpg.collapsing_header(label="Filter Creation",default_open = show_filter_sect_loaded):
             with dpg.group(horizontal=True):
                 #Section for HpCF Export
@@ -2418,7 +2484,7 @@ def main():
                             dpg.bind_item_font(dpg.last_item(), large_font)
                             with dpg.tooltip("brir_tag"):
                                 dpg.add_text("This will generate the binaural dataset and export to the output directory. This may take some time to process")
-         
+                                
                             dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=32, width=340, overlay="Progress", tag="progress_bar_brir",user_data=CN.STOP_THREAD_FLAG)
             
                 #right most section
@@ -2492,10 +2558,7 @@ def main():
                                                             dpg.add_text(CN.SPATIAL_RES_AZIM_RNG[i])
                                                         elif j == 4:#Azimuth Steps
                                                             dpg.add_text(CN.SPATIAL_RES_AZIM_STP[i])
-                                
-                                
-                                
-                                
+                           
                     #Section for Exporting files
                     with dpg.group(horizontal=True):
                         #Section for wav settings
@@ -2519,7 +2582,7 @@ def main():
                                 dpg.add_text("Output Locations", tag='out_dir_title')
                                 with dpg.tooltip("out_dir_title"):
                                     dpg.add_text("'EqualizerAPO\config' directory should be selected if using Equalizer APO")
-                                    dpg.add_text("Main outputs will be saved under 'ASH-Custom-Set' sub directory") 
+                                    dpg.add_text("Main outputs will be saved under 'ASH-Outputs' sub directory") 
                                     dpg.add_text("HeSuVi outputs will be saved in 'EqualizerAPO\config\HeSuVi'")  
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_text("                                         ")
@@ -2564,7 +2627,7 @@ def main():
                     dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = e_apo_enable_brir_loaded,  tag='e_apo_brir_conv', callback=e_apo_enable_auto_conf)
                     dpg.bind_item_theme(dpg.last_item(), "__theme_e")
                     with dpg.tooltip("e_apo_brir_conv"):
-                        dpg.add_text("Enable convolution with selected BRIR WAV Files")
+                        dpg.add_text("Enable convolution with selected BRIR WAV files")
 
                 with dpg.group(horizontal=True):
                     with dpg.child_window(width=CN.HP_SEL_WIN_WIDTH_FULL, tag='e_apo_load_hp_win'):
@@ -2575,7 +2638,7 @@ def main():
                                     dpg.add_text("Select Headphone & Sample", tag='e_apo_hp_title')
                                     with dpg.tooltip("e_apo_hp_title"):
                                         dpg.add_text("Exported FIR filters will be shown below")
-                                    dpg.add_text("  ")
+                                    dpg.add_text("          ")
                                     dpg.add_button(label="  Delete Selected Headphone  ")
                                     with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_hp_popup"):
                                         dpg.add_text("Saved filters for selected headphone will be deleted.")
@@ -2591,7 +2654,7 @@ def main():
                     with dpg.child_window(width=CN.BRIR_SEL_WIN_WIDTH_FULL, tag='e_apo_load_brir_win'):
                         with dpg.group(horizontal=True):
                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                            dpg.add_text("Select Binaural Dataset", tag='e_apo_brir_title')
+                            dpg.add_text("Select Binaural Simulation", tag='e_apo_brir_title')
                             with dpg.tooltip("e_apo_brir_title"):
                                 dpg.add_text("Exported BRIR WAV datasets will be shown below")
                             dpg.add_text("                                            ")
@@ -2613,13 +2676,14 @@ def main():
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
                                     dpg.add_text("Channel Configuration                  ")
                                     dpg.add_button(label="Reset All", width=54, callback=reset_channel_config)
-                                    dpg.add_text("                    Select Audio Channels: ")
+                                    dpg.add_text("                    Audio Channels: ")
                                     dpg.add_combo(CN.AUDIO_CHANNELS, width=200, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=e_apo_select_channels)
                                 dpg.add_separator()
                                 
                                 with dpg.group(horizontal=True):
-                                    dpg.add_text("Current dataset: ")
+                                    dpg.add_text("Current Simulation: ")
                                     dpg.add_text(default_value=brir_out_default,  tag='e_apo_curr_brir_set')
+                                    dpg.bind_item_theme(dpg.last_item(), "__theme_f")
                                 with dpg.group(horizontal=True):
                                     with dpg.group():
                                         #dpg.add_text(" ")
@@ -2810,49 +2874,73 @@ def main():
                                                         dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1]))
                                                         dpg.draw_image('rr_image',[-12, -12],[12, 12])
    
-        with dpg.collapsing_header(label="Additional Tools & Settings"):
+        with dpg.collapsing_header(label="Additional Tools & Settings",default_open = True):
             with dpg.group(horizontal=True):
                 with dpg.group():  
                     with dpg.group(horizontal=True):
                         with dpg.group():
-                            #Section to reset settngs
-                            with dpg.child_window(width=200, height=81):
-                                dpg.add_text("Reset Settings to Default")
-                                dpg.add_button(label="Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)
-                            #Section for database
-                            with dpg.child_window(width=200, height=70):
-                                dpg.add_text("Check for App Updates")
-                                dpg.add_button(label="Check App Versions",user_data="",tag="app_version_tag", callback=check_app_version)
-                                with dpg.tooltip("app_version_tag"):
-                                    dpg.add_text("This will display version of local app and latest available version in the log")   
-                            with dpg.child_window(width=200, height=120):
-                                dpg.add_text("Check for HpCF Database Updates")
-                                dpg.add_button(label="Check Database Versions",user_data="",tag="hpcf_db_version_tag", callback=check_db_version)
-                                with dpg.tooltip("hpcf_db_version_tag"):
-                                    dpg.add_text("This will display version of local headphone correction filter database and latest version in the log")
-                                dpg.add_text("Download Latest HpCF Database")
-                                dpg.add_button(label="Download Latest Database",user_data="",tag="hpcf_db_download_tag", callback=download_latest_db)
-                                with dpg.tooltip("hpcf_db_download_tag"):
-                                    dpg.add_text("This will download latest version of HpcF database and replace local version")
                             
+                            #Section for database
+                            with dpg.child_window(width=224, height=318):
+                                dpg.add_text("Check for Updates on Start")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_checkbox(label="Auto Check for Updates", default_value = auto_check_updates_loaded,  tag='check_updates_start_tag', callback=save_settings)
+                                dpg.add_separator()
+                                dpg.add_text("Check for App Updates")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Check for Updates",user_data="",tag="app_version_tag", callback=check_app_version)
+                                with dpg.tooltip("app_version_tag"):
+                                    dpg.add_text("This will check for updates to the app and show versions in the log")   
+                            #with dpg.child_window(width=224, height=110):
+                                dpg.add_separator()
+                                dpg.add_text("Check for Headphone Filter Updates")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Check for Updates",user_data="",tag="hpcf_db_version_tag", callback=check_db_version)
+                                with dpg.tooltip("hpcf_db_version_tag"):
+                                    dpg.add_text("This will check for updates to the headphone correction filter dataset and show versions in the log")
+                                dpg.add_text("Download Latest Headphone Filters")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Download Latest Dataset",user_data="",tag="hpcf_db_download_tag", callback=download_latest_db)
+                                with dpg.tooltip("hpcf_db_download_tag"):
+                                    dpg.add_text("This will download latest version of the dataset and replace local version")
+                            #with dpg.child_window(width=224, height=135):
+                                dpg.add_separator()
+                                dpg.add_text("Check for Acoustic Space Updates")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Check for Updates",user_data="",tag="as_version_tag", callback=check_as_versions)
+                                with dpg.tooltip("as_version_tag"):
+                                    dpg.add_text("This will check for updates to acoustic space datasets and show new versions in the log")
+                                dpg.add_text("Download Acoustic Space Updates")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Download Latest Datasets",user_data="",tag="as_download_tag", callback=download_latest_as_sets)
+                                with dpg.tooltip("as_download_tag"):
+                                    dpg.add_text("This will download any updates to acoustic space datasets and replace local versions")
                         with dpg.group():
-                            with dpg.child_window(width=274, height=115):
+                            #Section to reset settngs
+                            with dpg.child_window(width=250, height=65):
+                                dpg.add_text("Reset Settings to Default")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)  
+                            with dpg.child_window(width=250, height=110):
                                 dpg.add_text("Delete All Exported Headphone Filters")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_button(label="Delete Headphone Filters",user_data="",tag="remove_hpcfs_tag", callback=remove_hpcfs)
                                 with dpg.tooltip("remove_hpcfs_tag"):
-                                    dpg.add_text("Warning: this will delete all headphone filters that have been generated and exported to output directory")
+                                    dpg.add_text("Warning: this will delete all headphone filters that have been exported to output directory")
                                 dpg.add_text("Delete All Exported Binaural Datasets")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_button(label="Delete Binaural Datasets",user_data="",tag="remove_brirs_tag", callback=remove_brirs)
                                 with dpg.tooltip("remove_brirs_tag"):
-                                    dpg.add_text("Warning: this will delete all BRIRs that have been generated and exported to output directory")
-                                
+                                    dpg.add_text("Warning: this will delete all BRIRs that have been generated and exported to output directory")  
                             #Section to reduce size of window
-                            with dpg.child_window(width=274, height=160):
+                            with dpg.child_window(width=250, height=135):
                                 dpg.add_text("Auto-size App Window on Start")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_checkbox(label="Auto-size Window", default_value = autosize_win_loaded,  tag='resize_window_tag', callback=save_settings)
                                 with dpg.tooltip("resize_window_tag"):
                                     dpg.add_text("Requires restart")
                                 dpg.add_text("Show/Hide Sections on Start")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_checkbox(label="Show Filter Creation", default_value = show_filter_sect_loaded,  tag='show_filter_sect_tag', callback=save_settings)
                                 with dpg.tooltip("show_filter_sect_tag"):
                                     dpg.add_text("Requires restart")
@@ -2861,7 +2949,7 @@ def main():
                                     dpg.add_text("Requires restart")
                         
                 #section for logging
-                with dpg.child_window(width=1200, height=280, tag="console_window"):
+                with dpg.child_window(width=1200, height=318, tag="console_window"):
                     dpg.add_text("Log")
                     
         with dpg.collapsing_header(label="Developer Tools",show=CN.SHOW_DEV_TOOLS):
@@ -2904,6 +2992,8 @@ def main():
                             with dpg.group():
                                 dpg.add_text("Calculate HpCF Variants")
                                 dpg.add_button(label="Click Here to Calculate",user_data="",tag="hpcf_variant_tag", callback=calc_hpcf_variants)
+                                dpg.add_text("Crop All HpCFs")
+                                dpg.add_button(label="Click Here to Crop",user_data="",tag="hpcf_crop_tag", callback=crop_hpcfs)
                     #Section for HpCFs
                     with dpg.child_window(width=340, height=180):
                         dpg.add_text("Enter Name of Headphone Measurements Folder")
@@ -2942,22 +3032,30 @@ def main():
                         with dpg.tooltip("hpcf_rename_sample_tag"):
                             dpg.add_text("Renames headphone field for the selected sample to the specified name")
                 with dpg.group():
-                    #Section for renaming existing HpCFs - find and replace
-                    with dpg.child_window(width=480, height=120):
-                        with dpg.group(horizontal=True):
+                    with dpg.group(horizontal=True):
+                        #Section for renaming existing HpCFs - find and replace
+                        with dpg.child_window(width=420, height=120):
+                            with dpg.group(horizontal=True):
+                                with dpg.group():
+                                    dpg.add_text("Enter Sample Name to Replace")
+                                    dpg.add_input_text(label="input text", default_value="Sample Name",tag="sample_find_tag",width=150)
+                                    dpg.add_text("Enter New Name for Sample")
+                                    dpg.add_input_text(label="input text", default_value="New Name",tag="sample_replace_tag",width=150)
+                                dpg.add_text("   ")    
+                                with dpg.group():
+                                    dpg.add_text("Bulk Rename Sample")
+                                    dpg.add_button(label="Click Here to Rename",user_data="",tag="bulk_rename_sample_tag", callback=bulk_rename_sample)
+                                    with dpg.tooltip("bulk_rename_sample_tag"):
+                                        dpg.add_text("Bulk renames sample name across all headphones")
+                        #Section for running HRTF processing functions
+                        with dpg.child_window(width=200, height=120):
                             with dpg.group():
-                                dpg.add_text("Enter Sample Name to Replace")
-                                dpg.add_input_text(label="input text", default_value="Sample Name",tag="sample_find_tag",width=150)
-                                dpg.add_text("Enter New Name for Sample")
-                                dpg.add_input_text(label="input text", default_value="New Name",tag="sample_replace_tag",width=150)
-                            dpg.add_text("   ")    
-                            with dpg.group():
-                                dpg.add_text("Bulk Rename Sample")
-                                dpg.add_button(label="Click Here to Rename",user_data="",tag="bulk_rename_sample_tag", callback=bulk_rename_sample)
-                                with dpg.tooltip("bulk_rename_sample_tag"):
-                                    dpg.add_text("Bulk renames sample name across all headphones")
+                                dpg.add_text("Mono Cue Processing (DRIR)")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="mono_cue_tag", callback=run_mono_cue)
+                                dpg.add_text("Mono Cue Processing (HP)")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="mono_cue_hp_tag", callback=run_mono_cue_hp)
                     #Section for running AIR processing functions
-                    with dpg.child_window(width=480, height=180):
+                    with dpg.child_window(width=720, height=180):
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Enter name of AIR dataset")
@@ -2976,7 +3074,14 @@ def main():
                                 dpg.add_text("Raw BRIR Compensation")
                                 dpg.add_button(label="Click Here to Run",user_data="",tag="raw_brir_comp_tag", callback=run_raw_to_brir)
                             dpg.add_text("  ")
-                            
+                            with dpg.group():
+                                dpg.add_text("Raw AIR extraction")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="air_extraction_tag", callback=run_extract_airs)
+                            dpg.add_text("  ")
+                            with dpg.group():
+                                dpg.add_text("Split AIRs to Set")
+                                dpg.add_button(label="Click Here to Run",user_data="",tag="split_air_set_tag", callback=run_split_airs_to_set)
+                            dpg.add_text("  ")
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Calculate reverb target resp.")
@@ -2991,14 +3096,6 @@ def main():
                                 dpg.add_button(label="Click Here to Run",user_data="",tag="calc_room_target_tag", callback=run_room_target_calc)
 
     
-                with dpg.group():
-                    #Section for running HRTF processing functions
-                    with dpg.child_window(width=200, height=120):
-                        with dpg.group():
-                            dpg.add_text("Mono Cue Processing (DRIR)")
-                            dpg.add_button(label="Click Here to Run",user_data="",tag="mono_cue_tag", callback=run_mono_cue)
-                            dpg.add_text("Mono Cue Processing (HP)")
-                            dpg.add_button(label="Click Here to Run",user_data="",tag="mono_cue_hp_tag", callback=run_mono_cue_hp)
 
 
     dpg.setup_dearpygui()
@@ -3008,14 +3105,22 @@ def main():
     #log results
     log_string = 'Audio Spatialisation for Headphones Toolset. Version: ' + __version__
     logz.log_info(log_string)
+    
+    #check for updates on start
+    if auto_check_updates_loaded == True:
+        #start thread
+        thread = threading.Thread(target=check_all_updates, args=(), daemon=True)
+        thread.start()
 
     dpg.show_viewport()
     dpg.set_primary_window("Primary Window", True)
     
     dpg.configure_item("Primary Window", horizontal_scrollbar=True)
     e_apo_select_channels(app_data=dpg.get_value('audio_channels_combo'))#update channel gui elements on load
+
     
     dpg.start_dearpygui()
+    
 
     dpg.destroy_context()
         

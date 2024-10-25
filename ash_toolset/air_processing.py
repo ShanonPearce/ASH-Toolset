@@ -19,10 +19,14 @@ import random
 import logging
 from SOFASonix import SOFAFile
 from ash_toolset import pyquadfilter
+from csv import DictReader
+import gdown
 if CN.SHOW_DEV_TOOLS == True:
     import noisereduce as nr
     import h5py
     import soundfile as sf
+    import sofar as sfr
+
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -35,15 +39,24 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
     """
     
     min_len_s=1.0
-    ampl_thresh=0.75#0.8
+    peak_mode=2#0=check amplitude peaks, 1= check gradient peaks, 2=both methods
+    amp_thresh_d=0.80#0.8
+    amp_thresh_l=amp_thresh_d*0.8
+    grad_thresh_d=0.1#
     output_wavs=1
-    peak_tshift=50
+    peak_tshift=250
     
     ir_data_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'stream',ir_set)
-    ir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'split_airs',ir_set)
+    ir_out_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'split_airs',ir_set)
     
     try:
+        log_string_a = 'Starting extract_airs_from_recording processing for: '+ir_set
+        if CN.LOG_INFO == 1:
+            logging.info(log_string_a)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string_a)
     
+        file_id=0
         for root, dirs, files in os.walk(ir_data_folder):
             for filename in files:
                 if '.wav' in filename:
@@ -58,25 +71,35 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
                         print('source samplerate: ' + str(samplerate))
                         print('resampled to 44100Hz')
                     
+                    
+                    #normalise IR
+                    fir_array=np.divide(fir_array,np.max(fir_array))
+                    fir_array_abs = np.abs(fir_array)
+                    #take gradient with x spacing
+                    fir_array_abs_combined = np.divide(np.add(np.abs(fir_array[:,0]),np.abs(fir_array[:,1])),2)
+                    fir_array_abs_grad = np.gradient(fir_array_abs_combined, 1)
+                    if CN.PLOT_ENABLE == 1:
+                        plot_name = 'fir_array_abs_grad_'+filename
+                        hf.plot_td(fir_array_abs_grad[0:20000],plot_name)
+                    
                     #find prominent peaks
-                    peaks_indices = np.where(np.abs(fir_array) > ampl_thresh)[0]
+                    if peak_mode == 0:
+                        peaks_indices = np.where(fir_array_abs_combined > amp_thresh_d)[0]
+                    elif peak_mode == 1:
+                        peaks_indices = np.where(fir_array_abs_grad > grad_thresh_d)[0]
+                    else:
+                        peaks_indices = np.where( np.logical_or(fir_array_abs_grad > grad_thresh_d,fir_array_abs_combined > amp_thresh_d))[0]
                     #get time values of above indices
                     peaks_time= np.divide(peaks_indices,samplerate)
                     #get time since previous peak
                     peaks_time_diff=np.zeros(len(peaks_time))
                     for i in range(len(peaks_time)):
-                        # #old method
-                        # if i > 0:
-                        #     peaks_time_diff[i]=peaks_time[i]-peaks_time[i-1]
-                        #new method
                         if i < len(peaks_time)-1:
                             peaks_time_diff[i]=peaks_time[i+1]-peaks_time[i]    
-                    #combine array
-                    c1 = np.expand_dims(peaks_indices, axis=1)
-                    c2 = np.expand_dims(peaks_time_diff, axis=1)
-                    peaks_ind_tdiff = np.hstack((c1,c2))
+
                     #find prominent peaks where delay between previous peak is sufficiently high
                     ir_start_indices = peaks_indices[peaks_time_diff >= min_len_s]
+
                     #shift to the right by x samples
                     ir_start_ind_shift=np.subtract(ir_start_indices,peak_tshift)
                     fir_array_split = np.split(fir_array,ir_start_ind_shift)
@@ -85,72 +108,120 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
                     dataset_name=filename.split('.wav')[0]
                     #loop through array to export wav files for testing
                     for idx, x in enumerate(fir_array_split):
-                        out_file_name = dataset_name+'_'+str(idx)+ '.wav'
+                        out_file_name = 'split_ir_'+str(file_id)+'_'+str(idx)+ '.wav'
                         out_file_path = pjoin(ir_out_folder,dataset_name,out_file_name)
                         
                         #create dir if doesnt exist
                         output_file = Path(out_file_path)
                         output_file.parent.mkdir(exist_ok=True, parents=True)
                         
-                        if output_wavs == 1 and idx>0:
-                            hf.write2wav(file_name=out_file_path, data=x, samplerate=44100)
+                        start_idx=1500
+                        end_idx=min(40000,len(x))
+                        if output_wavs == 1 and idx>0 and np.max(np.abs(x[start_idx:end_idx]))<amp_thresh_l:#ensure split ir does not have secondary peak
+                            hf.write2wav(file_name=out_file_path, data=x, samplerate=44100, prevent_clipping = 1)
+                            
+                    file_id=file_id+1
+                    
+        log_string_a = 'Completed extract_airs_from_recording processing for: '+ir_set
+        if CN.LOG_INFO == 1:
+            logging.info(log_string_a)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string_a)
                     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to extract AIRs from recording for stream: ' + ir_set 
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_error(log_string)
-    
-    
-    
-    
-    
-def td_average_airs(ir_set='fw', gui_logger=None):
+
+
+
+def split_airs_to_set(ir_set='fw', gui_logger=None):
     """
-    function to perform time domain averaging of multiple IRs
-    saves air_reverberation array. num_out_sets * 2 channels * CN.N_FFT samples
+    function to compile dataset of IRs
+    saves air_reverberation array. num_irs * 2 channels * n_fft samples
     :param ir_set: str, name of impulse response set. Must correspond to a folder in ASH-Toolset\data\interim\ir_data\split_irs
     :return: None
     """
+    
+    #set fft length based on AC space
+    if ir_set in CN.AC_SPACE_LIST_LOWRT60:
+        n_fft=CN.N_FFT
+    else:
+        n_fft=CN.N_FFT_L
     
     samp_freq=44100
     output_wavs=1
     
     #windows
-    data_pad_zeros=np.zeros(CN.N_FFT)
-    data_pad_ones=np.ones(CN.N_FFT)
+    data_pad_zeros=np.zeros(n_fft)
+    data_pad_ones=np.ones(n_fft)
     
+    total_chan_irs=2
     total_chan_air=1
-    lf_align=1
-    num_out_sets=7
-    
+
     #direct sound window for 2nd phase
     direct_hanning_size=300#350
-    direct_hanning_start=51#101
+    direct_hanning_start=5#101
     hann_direct_full=np.hanning(direct_hanning_size)
     hann_direct = np.split(hann_direct_full,2)[0]
     direct_removal_win_b = data_pad_zeros.copy()
     direct_removal_win_b[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
     direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
     
+    fade_hanning_size=int(60000)
+    fade_hanning_start=1000
+    hann_fade_full=np.hanning(fade_hanning_size)
+    hann_fade = np.split(hann_fade_full,2)[1]
+    fade_out_win_s = data_pad_ones.copy()
+    fade_out_win_s[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
+    fade_out_win_s[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
+    
+    fade_hanning_size=int(120000)
+    fade_hanning_start=5000
+    hann_fade_full=np.hanning(fade_hanning_size)
+    hann_fade = np.split(hann_fade_full,2)[1]
+    fade_out_win_l = data_pad_ones.copy()
+    fade_out_win_l[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
+    fade_out_win_l[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
+    
+    
+    
     #loop through folders
-    ir_in_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'split_airs',ir_set)
+    ir_in_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'split_airs',ir_set)
     
     try:
+        log_string_a = 'Starting split_airs_to_set processing for: '+ir_set
+        if CN.LOG_INFO == 1:
+            logging.info(log_string_a)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string_a)
+
     
         #get number of IRs
         ir_counter=0
         for root, dirs, files in os.walk(ir_in_folder):
             for filename in files:
                 if '.wav' in filename:
-                    ir_counter=ir_counter+1
+                    #read wav files
+                    wav_fname = pjoin(root, filename)
+                    samplerate, data = wavfile.read(wav_fname)
+                    samp_freq=samplerate
+                    fir_array = data / (2.**31)
+
+                    try:
+                        input_channels = len(fir_array[0])
+                    except:
+                        #reshape if mono
+                        input_channels=1
+                        fir_array=fir_array.reshape(-1, 1)
+                    ir_counter=ir_counter+input_channels
                     
         #numpy array, num sets x num irs in each set x 2 channels x NFFT max samples
-        irs_per_set=int(ir_counter/num_out_sets)+2
-        air_data=np.zeros((num_out_sets,irs_per_set,2,CN.N_FFT))
-        air_reverberation=np.zeros((num_out_sets,2,CN.N_FFT))
-        
-        set_counter=0
+        total_irs=int(ir_counter)+1
+        print(str(total_irs))
+        air_data=np.zeros((total_irs,n_fft))
+
         ir_counter=0
         for root, dirs, files in os.walk(ir_in_folder):
             for filename in files:
@@ -163,136 +234,52 @@ def td_average_airs(ir_set='fw', gui_logger=None):
                     samp_freq=samplerate
                     fir_array = data / (2.**31)
                     fir_length = len(fir_array)
+                    try:
+                        input_channels = len(fir_array[0])
+                    except:
+                        #reshape if mono
+                        input_channels=1
+                        fir_array=fir_array.reshape(-1, 1)
                     
                     #append into set list
-                    current_set = set_counter%num_out_sets
                     
-                    if current_set == 0 and set_counter>0:
-                        ir_counter=ir_counter+1#increments every num_out_sets
-                    
-                    set_counter=set_counter+1
-                    
-                    extract_legth = min(CN.N_FFT,fir_length)
+                    extract_legth = min(n_fft,fir_length)
                     #load into numpy array
-                    air_data[current_set,ir_counter,0,0:extract_legth]=fir_array[0:extract_legth,0]#L
-                    air_data[current_set,ir_counter,1,0:extract_legth]=fir_array[0:extract_legth,1]#R
-                    
-      
-        #perform time domain synchronous averaging
-        #align in low frequencies
-        if lf_align == 1:
- 
-            #contants for TD alignment of BRIRs
-            t_shift_interval = CN.T_SHIFT_INTERVAL
-            min_t_shift = CN.MIN_T_SHIFT_A
-            max_t_shift = CN.MAX_T_SHIFT_A
-            num_intervals = int(np.abs((max_t_shift-min_t_shift)/t_shift_interval))
-            order=7#default 6
-            delay_win_min_t = CN.DELAY_WIN_MIN_A
-            delay_win_max_t = CN.DELAY_WIN_MAX_A
-            delay_win_hop_size = CN.DELAY_WIN_HOP_SIZE
-            delay_win_hops = CN.DELAY_WIN_HOPS_A
-            
-            cutoff_alignment = CN.CUTOFF_ALIGNMENT_AIR
-            #peak to peak within a sufficiently small sample window
-            peak_to_peak_window = int(np.divide(samp_freq,cutoff_alignment)*0.95) #int(np.divide(samp_freq,cutoff_alignment)) 
-            
-            
-            delay_eval_set = np.zeros((num_out_sets,irs_per_set,num_intervals))
-            
-            for set_num in range(num_out_sets):
-                #go through each room in the ordered list
-                for ir in range(irs_per_set-1):#room in range(total_airs-1)
-                    this_air_orig_idx=ir
-                    next_air_orig_idx=ir+1
-    
-                    #method 2: take sum of all prior rooms and this room
-                    rooms_to_add = 0
-                    this_air = data_pad_zeros.copy()
-                    for cum_air in range(ir+1):
-                        cum_air_orig_idx = cum_air
-                        rooms_to_add = rooms_to_add+1
-                        this_air = np.add(this_air,air_data[set_num,cum_air_orig_idx,0,:])
-                    this_air = np.divide(this_air,rooms_to_add) 
-    
-                    calc_delay = 1
-                        
-                    if calc_delay == 1:
-                        next_air = np.copy(air_data[set_num,next_air_orig_idx,0,:])
-                        for delay in range(num_intervals):
+                    for chan in range(input_channels):
+                        air_data[ir_counter,0:extract_legth]=fir_array[0:extract_legth,chan]#L and R
+                        air_data[ir_counter,:] = np.multiply(air_data[ir_counter,:],direct_removal_win_b)#direct removal                
+                        if 'split_ir_' in filename:
+                            air_data[ir_counter,:] = np.multiply(air_data[ir_counter,:],fade_out_win_s)#late reflections fade out 
+                        else:
+                            air_data[ir_counter,:] = np.multiply(air_data[ir_counter,:],fade_out_win_l)#late reflections fade out 
                             
-                            #shift next room BRIR
-                            current_shift = min_t_shift+(delay*t_shift_interval)
-                            n_air_shift = np.roll(next_air,current_shift)
-                            #add current room BRIR to shifted next room BRIR
-                            sum_ir = np.add(this_air,n_air_shift)
-                            #calculate group delay
-         
-                            sum_ir_lp = hf.signal_lowpass_filter(sum_ir, cutoff_alignment, samp_freq, order)
-                            peak_to_peak_iter=0
-                            for hop_id in range(delay_win_hops):
-                                samples = hop_id*delay_win_hop_size
-                                peak_to_peak = np.abs(np.max(sum_ir_lp[delay_win_min_t+samples:delay_win_min_t+samples+peak_to_peak_window])-np.min(sum_ir_lp[delay_win_min_t+samples:delay_win_min_t+samples+peak_to_peak_window]))
-                                #if this window has larger pk to pk, store in iter var
-                                if peak_to_peak > peak_to_peak_iter:
-                                    peak_to_peak_iter = peak_to_peak
-                            #store largest pk to pk distance of all windows into delay set
-                            delay_eval_set[set_num,next_air_orig_idx,delay] = peak_to_peak_iter
-                        
-                        #shift next room by delay that has largest peak to peak distance (method 4 and 5)
-                        index_shift = np.argmax(delay_eval_set[set_num,next_air_orig_idx,:])
-        
-                    
-                    samples_shift=min_t_shift+(index_shift*t_shift_interval)
-                    air_data[set_num,next_air_orig_idx,0,:] = np.roll(air_data[set_num,next_air_orig_idx,0,:],samples_shift)#left
-                    air_data[set_num,next_air_orig_idx,1,:] = np.roll(air_data[set_num,next_air_orig_idx,1,:],samples_shift)#right
-                    
-                    #20240511: set end of array to zero to remove any data shifted to end of array
-                    if samples_shift < 0:
-                        air_data[set_num,next_air_orig_idx,0,min_t_shift:] = air_data[set_num,next_air_orig_idx,0,min_t_shift:]*0#left
-                        air_data[set_num,next_air_orig_idx,1,min_t_shift:] = air_data[set_num,next_air_orig_idx,1,min_t_shift:]*0#right
-                        
-     
-        #remove direction portion of signal?
-        #add RIRs into output RIR array
-        for set_num in range(num_out_sets):
-            #add RIRs into output RIR array
-            for ir in range(irs_per_set):
-                for chan in range(total_chan_air):
-                    air_reverberation[set_num,chan,:] = np.add(air_reverberation[set_num,chan,:],air_data[set_num,ir,chan,:])
-            for chan in range(total_chan_air):
-                # RIR has been shifted so apply fade in window again to remove any overlap with HRIR
-                air_reverberation[set_num,chan,:] = np.multiply(air_reverberation[set_num,chan,:],direct_removal_win_b)
-            
-       
-        #create dir if doesnt exist
-        air_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'avg_airs',ir_set)
-    
-        npy_file_name = ir_set+'_td_avg.npy'
-    
-        out_file_path = pjoin(air_out_folder,npy_file_name)      
-          
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        np.save(out_file_path,air_reverberation)
-        
-        #also save to wav for testing
-        for set_num in range(num_out_sets):
-            out_file_name = ir_set+'_'+str(set_num)+'_td_avg.wav'
-            out_file_path = pjoin(air_out_folder,out_file_name)
+                        ir_counter=ir_counter+1
+
+        if ir_counter >0:
             
             #create dir if doesnt exist
+            air_out_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'raw_airs',ir_set)
+        
+            npy_file_name = ir_set+'_td_avg.npy'
+        
+            out_file_path = pjoin(air_out_folder,npy_file_name)      
+              
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
             
-            out_wav_array=np.zeros((CN.N_FFT,2))
-            #grab BRIR
-            out_wav_array[:,0] = np.copy(air_reverberation[set_num,0,:])#L
-            out_wav_array[:,1] = np.copy(air_reverberation[set_num,1,:])#R
+            np.save(out_file_path,air_data)
             
-            if output_wavs == 1:
-                hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq)
+            log_string_a = 'Exported numpy file to: ' + out_file_path 
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_a)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string_a)
+                
+            log_string_a = 'Completed split_airs_to_set processing for: '+ir_set
+            if CN.LOG_INFO == 1:
+                logging.info(log_string_a)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string_a)
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
@@ -300,11 +287,14 @@ def td_average_airs(ir_set='fw', gui_logger=None):
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_error(log_string)
     
+    
   
-def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None):
+    
+  
+def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None):
     """
-    function to load individual WAV IR files and insert into numpy array for later use
-    saves air_reverberation array. num_out_sets * 2 channels * CN.N_FFT samples
+    function to load individual IR files and datasets and inserts into numpy array for later use
+    saves air_reverberation array. num_out_sets*irs_per_set*total_chan_air*n_fft
     :param ir_set: str, name of impulse response set. Must correspond to a folder in ASH-Toolset\data\raw\ir_data\raw_airs
     :param num_out_sets: int, number of output sets
     :return: None
@@ -355,9 +345,23 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
     direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
     
     #optional fade out window
-    if ir_set in CN.AC_SPACE_LIST_WINDOW and n_fft == CN.N_FFT_L:
-        fade_hanning_size=int(65536*2)
-        fade_hanning_start=int(65536/2)
+    if ir_set in CN.AC_SPACE_LIST_WINDOW:
+        if n_fft == CN.N_FFT_L:
+            fade_hanning_size=int(65536*2)
+        else:
+            fade_hanning_size=int(65536)
+        if ir_set == 'outdoors_a':
+            fade_hanning_start=32000#55000
+        elif ir_set == 'hall_a':
+            fade_hanning_start=23000#28000
+        elif ir_set == 'seminar_room_a' or ir_set == 'audio_lab_i':
+            fade_hanning_start=12000#28000
+        elif ir_set == 'broadcast_studio_a':
+            fade_hanning_start=20000#25000
+        elif n_fft == CN.N_FFT_L:
+            fade_hanning_start=35000#int(65536/2)
+        else:
+            fade_hanning_start=30000#
         hann_fade_full=np.hanning(fade_hanning_size)
         hann_fade = np.split(hann_fade_full,2)[1]
         fade_out_win = data_pad_ones.copy()
@@ -429,7 +433,10 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                     shape = fir_array.shape
                     n_dims= fir_array.ndim
                     # Sampling rate
-                    samplerate = 48000 #sample rate is assumed to be 48000Hz (MESHRIR)
+                    if ir_set in CN.AC_SPACE_LIST_44100:
+                        samplerate = 44100
+                    else:
+                        samplerate = 48000 #sample rate is assumed to be 48000Hz (MESHRIR)
                     
                     try:
                         input_channels = len(fir_array[0])
@@ -438,7 +445,7 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                         input_channels=1
                         fir_array=fir_array.reshape(-1, 1)
                     #case where array needs to be transposed
-                    if input_channels > 1000:
+                    if input_channels > 5000:
                         fir_array=np.transpose(fir_array)
                         #input_channels=1
                         input_channels = len(fir_array[0])
@@ -459,7 +466,7 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                     except:
                         data = sio.loadmat(mat_fname)
                         
-                    structs = list(data.keys())
+                    #structs = list(data.keys())
                     #print('structs in this dataset:', structs)
                     
                     if ir_set in CN.AC_SPACE_LIST_ISO:
@@ -468,6 +475,24 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                         fir_array = mat_struct
                         shape = fir_array.shape
                         n_dims= fir_array.ndim
+                    elif ir_set in CN.AC_SPACE_LIST_ANU:
+                        mat_struct=data['RIR']  
+                        samplerate = 48000
+                        
+                        #EM32 method
+                        #fir_array = mat_struct['IR_Data'][0][0]
+                        #B format
+                        fir_array_a = mat_struct['Bformat'][0][0][0]['W'][0]
+                        fir_array_b = mat_struct['Bformat'][0][0][0]['X'][0]
+                        fir_array_c = mat_struct['Bformat'][0][0][0]['Y'][0]
+                        fir_array_d = mat_struct['Bformat'][0][0][0]['Z'][0]
+                        fir_array_ab = np.append(fir_array_a,fir_array_b,1)
+                        fir_array_cd = np.append(fir_array_c,fir_array_d,1)
+                        fir_array = np.append(fir_array_ab,fir_array_cd,1)
+                        
+                        shape = fir_array.shape
+                        n_dims= fir_array.ndim
+                        
                     elif ir_set in CN.AC_SPACE_LIST_SUBRIRDB:
                         samplerate_m = 48000
                         mat_struct=data['db']  
@@ -511,9 +536,17 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                     
                     #read SOFA file
                     sofa_fname = pjoin(root, filename)
-                    loadsofa = SOFAFile.load(sofa_fname, verbose=False)
-                    data = loadsofa.data_ir
-                    samplerate = loadsofa.Data_SamplingRate
+          
+                    #try sofasonix or sofar if fails
+                    try:
+                        loadsofa = SOFAFile.load(sofa_fname, verbose=False)
+                        data = loadsofa.data_ir
+                        samplerate = loadsofa.Data_SamplingRate
+                    except:
+                        loadsofa = sfr.read_sofa(sofa_fname)
+                        data = loadsofa.Data_IR
+                        samplerate = loadsofa.Data_SamplingRate
+         
                     #calculate total number of IRs available in a sofa obj
                     shape = data.shape
                     n_dims= data.ndim
@@ -639,9 +672,16 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                 if '.sofa' in filename:
                     #read SOFA file
                     sofa_fname = pjoin(root, filename)
-                    loadsofa = SOFAFile.load(sofa_fname, verbose=False)
-                    data = loadsofa.data_ir
-                    samplerate = int(loadsofa.Data_SamplingRate[0])
+                    #try sofasonix or sofar if fails
+                    try:
+                        loadsofa = SOFAFile.load(sofa_fname, verbose=False)
+                        data = loadsofa.data_ir
+                        samplerate = loadsofa.Data_SamplingRate
+                    except:
+                        loadsofa = sfr.read_sofa(sofa_fname)
+                        data = loadsofa.Data_IR
+                        samplerate = loadsofa.Data_SamplingRate
+    
                     #calculate total number of IRs available in a sofa obj
                     shape = data.shape
                     n_dims= data.ndim
@@ -895,6 +935,21 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                         fir_array = mat_struct
                         shape = fir_array.shape
                         n_dims= fir_array.ndim
+                    elif ir_set in CN.AC_SPACE_LIST_ANU:
+                        mat_struct=data['RIR']  
+                        samplerate = 48000
+                        #EM32 method
+                        #fir_array = mat_struct['IR_Data'][0][0]
+                        #B format
+                        fir_array_a = mat_struct['Bformat'][0][0][0]['W'][0]
+                        fir_array_b = mat_struct['Bformat'][0][0][0]['X'][0]
+                        fir_array_c = mat_struct['Bformat'][0][0][0]['Y'][0]
+                        fir_array_d = mat_struct['Bformat'][0][0][0]['Z'][0]
+                        fir_array_ab = np.append(fir_array_a,fir_array_b,1)
+                        fir_array_cd = np.append(fir_array_c,fir_array_d,1)
+                        fir_array = np.append(fir_array_ab,fir_array_cd,1)
+                        shape = fir_array.shape
+                        n_dims= fir_array.ndim
                     elif ir_set in CN.AC_SPACE_LIST_SUBRIRDB:
                         samplerate_m = 48000
                         mat_struct=data['db']  
@@ -945,7 +1000,7 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                     #apply noise reduction if enabled
                     if noise_reduction == 1:#if noise_reduction == 1 and 'idxX' in filename:
                         print("Noise reduction enabled")
-                        noise_samples = 20000
+                        noise_samples = 15000#20000
                         #[shape=(# frames,) or (# channels, # frames)], real-valued
                         #One shape dimension can be -1. In this case, the value is inferred from the length of the array and remaining dimensions.
                         orig_shape = fir_array.shape
@@ -1014,7 +1069,10 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                     fir_array = np.load(npy_fname)
                     
                     # Sampling rate
-                    samplerate = 48000 #sample rate is assumed to be 48000
+                    if ir_set in CN.AC_SPACE_LIST_44100:
+                        samplerate = 44100
+                    else:
+                        samplerate = 48000 #sample rate is assumed to be 48000Hz (MESHRIR)
   
                     try:
                         input_channels = len(fir_array[0])
@@ -1023,7 +1081,7 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                         input_channels=1
                         fir_array=fir_array.reshape(-1, 1)
                     #case where array needs to be transposed
-                    if input_channels > 1000:
+                    if input_channels > 5000:
                         fir_array=np.transpose(fir_array)
                         #input_channels=1
                         input_channels = len(fir_array[0])
@@ -1307,10 +1365,12 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                         fir_array=fir_array.reshape(-1, 1)
                     
                     #apply noise reduction if enabled
-                    if noise_reduction == 1 and extract_legth > 60000:
+                    if (noise_reduction == 1 and extract_legth > 60000) or (noise_reduction == 1 and ir_set == 'lecture_room_a' and extract_legth > 40000):
                         print('noise reduction enabled')
                         if ir_set == 'audio_lab_e':
                             noise_samples = 100000#100000
+                        elif ir_set == 'lecture_room_a':
+                            noise_samples = 10000
                         else:
                             noise_samples = 44100
                         
@@ -1407,13 +1467,36 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                     for chan in range(total_chan_air):
                         air_data[set_num,ir,chan,:] = np.divide(air_data[set_num,ir,chan,:],average_mag)
         
+        
+        
         #optional fade out window
-        if ir_set in CN.AC_SPACE_LIST_WINDOW and n_fft == CN.N_FFT_L:
+        if ir_set in CN.AC_SPACE_LIST_WINDOW:
+            #get average level in late reflections across directions
+            average_mag_total = 0
+            total_irs=0
             for set_num in range(num_out_sets):
                 for ir in range(irs_per_set):
-                    for chan in range(total_chan_air):
-                        air_data[set_num,ir,chan,:] = np.multiply(air_data[set_num,ir,chan,:],fade_out_win)
-            
+                    data_fft = np.fft.fft(air_data[set_num,ir,0,44100:CN.N_FFT])
+                    if np.sum(np.abs(data_fft)) > 0:
+                        mag_fft=np.abs(data_fft)
+                        average_mag = np.mean(mag_fft[fb_start:fb_end])
+                        total_irs=total_irs+1
+                        average_mag_total=average_mag_total+average_mag
+            average_mag_total=average_mag_total/total_irs
+
+            #window only if late reflections are stronger than average
+            for set_num in range(num_out_sets):
+                for ir in range(irs_per_set):
+                    data_fft = np.fft.fft(air_data[set_num,ir,0,44100:CN.N_FFT])
+                    mag_fft=np.abs(data_fft)
+                    average_mag = np.mean(mag_fft[fb_start:fb_end])
+                    if average_mag > average_mag_total:
+                        for chan in range(total_chan_air):
+                            air_data[set_num,ir,chan,:] = np.multiply(air_data[set_num,ir,chan,:],fade_out_win)
+                        print('Window applied')
+        
+        
+        
         
         #if total input IRs is more than twice num out sets, synchronise in time domain
         if irs_per_set >= 2:
@@ -1468,18 +1551,23 @@ def irs_to_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=None
                         calc_delay = 1
                         
                     if calc_delay == 1:
+                        
                         this_air = np.copy(air_data[set_num,this_air_idx,0,:])
+     
                         if np.sum(np.abs(this_air)) > 0:
+                            
+                            #low pass of prior airs
+                            prior_air_lp = hf.signal_lowpass_filter(prior_airs, cutoff_alignment, samp_freq, order)
+                            #low pass of this ir
+                            this_air_lp = hf.signal_lowpass_filter(this_air, cutoff_alignment, samp_freq, order)
+                            
                             for delay in range(num_intervals):
                                 
-                                #shift next room BRIR
+                                #shift current air
                                 current_shift = min_t_shift+(delay*t_shift_interval)
-                                n_air_shift = np.roll(this_air,current_shift)
-                                #add current room BRIR to shifted next room BRIR
-                                sum_ir = np.add(prior_airs,n_air_shift)
-                                #calculate group delay
-             
-                                sum_ir_lp = hf.signal_lowpass_filter(sum_ir, cutoff_alignment, samp_freq, order)
+                                n_air_shift = np.roll(this_air_lp,current_shift)
+                                #add prior air to shifted current air
+                                sum_ir_lp = np.add(prior_air_lp,n_air_shift)
                                 peak_to_peak_iter=0
                                 for hop_id in range(delay_win_hops):
                                     samples = hop_id*delay_win_hop_size
@@ -1584,6 +1672,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
     
     output_wavs=1
     samp_freq=44100
+    spatial_res=3#3=max,1=med,2=high
     
     #impulse
     impulse=np.zeros(CN.N_FFT)
@@ -1615,7 +1704,10 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         #windows
         data_pad_zeros=np.zeros(n_fft)
         data_pad_ones=np.ones(n_fft)
-        direct_hanning_size=200#300,250
+        if ir_set in CN.AC_SPACE_LIST_SLOWRISE:
+            direct_hanning_size=1000#    
+        else:
+            direct_hanning_size=200
         direct_hanning_start=51#101
         hann_direct_full=np.hanning(direct_hanning_size)
         hann_direct = np.split(hann_direct_full,2)[0]
@@ -1626,10 +1718,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         #
         #load HRIR dataset
         #
-        #mat_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_high.mat')
-        mat_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.mat')
-        spatial_res=3
-        
+ 
         elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
         elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
         elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
@@ -1637,13 +1726,18 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
         azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         
-        #new format MATLAB 7.3 files
-        hrirs = mat73.loadmat(mat_fname)
-        #load matrix, get list of numpy arrays
-        hrir_list = [[element for element in upperElement] for upperElement in hrirs['ash_input_hrir']]
-        #grab desired hrtf. by default returns 9x72x2x65536 array
-        hrtf_type=1
-        hrir_selected = hrir_list[hrtf_type-1]
+        if spatial_res <= 2:
+            #this dataset includes all hrirs up to high spatial resolution. Elevations from -60 to 60deg in 5 deg steps, Azimuths from 0 to 360dg in 5deg steps
+            npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_high.npy')
+            #npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_lfa_high.npy')
+        elif spatial_res == 3:
+            npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.npy')
+            #npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_lfa_max.npy')
+
+        #load npy files
+        hrir_list = np.load(npy_fname)
+        hrir_selected = hrir_list[0]
+        
         total_elev_hrir = len(hrir_selected)
         total_azim_hrir = len(hrir_selected[0])
         total_chan_hrir = len(hrir_selected[0][0])
@@ -1652,42 +1746,40 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         base_elev_idx_offset=total_elev_hrir//8
         
         #define desired angles
-        if ir_set in CN.AC_SPACE_LIST_VARIED_R:#reduced directions if variable reverb time
-            azim_src_range_a=np.arange(0,60,2)
-            azim_src_range_b=np.arange(120,240,2)
-            azim_src_range_c=np.arange(300,360,2)
-        else:
-            azim_src_range_a=np.arange(0,70,2)
-            azim_src_range_b=np.arange(110,250,2)
-            azim_src_range_c=np.arange(290,360,2)
+        nearest_deg=2
         
-        azim_src_range_ab = np.append(azim_src_range_a,azim_src_range_b)
-        azim_src_range_abc = np.append(azim_src_range_ab,azim_src_range_c)
-        azim_src_set=azim_src_range_abc
+        if spatial_res <= 2:
+            hrtf_idx = 0 
+            elev_src_set = np.arange(-40,55,elev_nearest)
+            if CN.DIRECTION_MODE == 2:#or CN.DIRECTION_MODE == 1
+                azim_src_set=np.arange(0,360,azim_nearest)
+            else:
+                azim_src_range_a=np.arange(0,75,azim_nearest)
+                azim_src_range_b=np.arange(110,255,azim_nearest)
+                azim_src_range_c=np.arange(290,360,azim_nearest)
+                azim_src_range_ab = np.append(azim_src_range_a,azim_src_range_b)
+                azim_src_range_abc = np.append(azim_src_range_ab,azim_src_range_c)
+                azim_src_set=azim_src_range_abc
+        else:
+            hrtf_idx = 0 
+            elev_src_set = np.arange(-40,58,elev_nearest)#np.arange(-40,56,elev_nearest)
+            if CN.DIRECTION_MODE == 2:#or CN.DIRECTION_MODE == 1
+                azim_src_set=np.arange(0,360,azim_nearest)
+            else:
+                azim_src_range_a=np.arange(0,72,2)
+                azim_src_range_b=np.arange(114,248,2)
+                azim_src_range_c=np.arange(290,360,2)
+                azim_src_range_ab = np.append(azim_src_range_a,azim_src_range_b)
+                azim_src_range_abc = np.append(azim_src_range_ab,azim_src_range_c)
+                azim_src_set=azim_src_range_abc
 
-        elev_src_set = np.arange(-40,50,2)
+        
 
         num_azim_src = len(azim_src_set)
+        num_azim_src_hem = int(num_azim_src/2)
+        num_azim_src_quad = int(num_azim_src/4)
         num_elev_src = len(elev_src_set)
-        
-        #
-        # align HRIRs in time domain
-        #
-        if align_hrirs == True:
-            # take 0 deg azim as reference
-            index_peak_ref = np.argmax(np.abs(hrir_selected[base_elev_idx][0][0][:]))
-            for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    azim_deg = int(azim*azim_nearest)
-                    #take left channel if azim < 180 deg, otherwise take right channel
-                    if azim_deg < 180:
-                        index_peak_cur = np.argmax(np.abs(hrir_selected[elev][azim][0][:]))
-                    else:
-                        index_peak_cur = np.argmax(np.abs(hrir_selected[elev][azim][1][:]))    
-                    hrir_shift = index_peak_ref-index_peak_cur
-                    for chan in range(total_chan_hrir):
-                        hrir_selected[elev][azim][chan][:] = np.roll(hrir_selected[elev][azim][chan][:],hrir_shift)
-        
+
         
         #set number of output directions
         if out_directions == None:
@@ -1716,17 +1808,8 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         curr_elev_in_set=0
         curr_azim_in_set=0
         curr_direction=0
-        curr_polarity=1
-        fip_polarity=1
-        
-        #hrir sections
-        hrir_seg_len = hf.round_down_even(n_fft//source_directions)
-        #create window for overlap add
-        wind_r_fade_full=np.bartlett(hrir_seg_len)
-        win_r_fade_out = np.split(wind_r_fade_full,2)[1]
-        #twice as many overlap windows as source directions due to 100% overlap
-        overlap_wins=source_directions*2
-
+        curr_hem=1
+        hrtf_idx=0
         log_string_a = 'BRIR estimation loop running'
         if CN.LOG_INFO == 1:
             logging.info(log_string_a)
@@ -1750,8 +1833,8 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
                         curr_azim_id=int(curr_azim_deg/azim_nearest)
                         curr_elev_id=int((curr_elev_deg-elev_min)/elev_nearest)
 
-                        curr_hrir_l=np.copy(hrir_selected[curr_elev_id][curr_azim_id][0][:])
-                        curr_hrir_r=np.copy(hrir_selected[curr_elev_id][curr_azim_id][1][:])
+                        curr_hrir_l=np.copy(hrir_list[hrtf_idx][curr_elev_id][curr_azim_id][0][:])
+                        curr_hrir_r=np.copy(hrir_list[hrtf_idx][curr_elev_id][curr_azim_id][1][:])
                         
                         #convolve with windowed AIR
                         curr_brir_l = sp.signal.convolve(curr_air,curr_hrir_l, 'full', 'auto')
@@ -1762,23 +1845,20 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
                         brir_reverberation[0,curr_direction,0,:] = np.add(brir_reverberation[0,curr_direction,0,:],curr_brir_l[0:n_fft])
                         brir_reverberation[0,curr_direction,1,:] = np.add(brir_reverberation[0,curr_direction,1,:],curr_brir_r[0:n_fft])
   
-                        #increment elev and azim so that direction varies across IRs
-                        if rand_sources == True:
+                        #random elev and azim so that direction varies across IRs
+                        if CN.DIRECTION_MODE == 0:#0=one set of azimuths for each source
                             curr_azim_in_set=random.randint(0, num_azim_src-1)
                             curr_elev_in_set=random.randint(0, num_elev_src-1)
-                        else:
-                            curr_azim_in_set=curr_azim_in_set+(1*curr_polarity)
-                            if curr_azim_in_set >= num_azim_src:
-                                curr_azim_in_set=0
-                                curr_elev_in_set=curr_elev_in_set+1
-                            if curr_azim_in_set < 0:
-                                curr_azim_in_set=num_azim_src-1
-                                curr_elev_in_set=curr_elev_in_set+1
-                            if curr_elev_in_set >= num_elev_src:
-                                curr_elev_in_set=0 
-                                
-                    if fip_polarity == 1:
-                        curr_polarity=curr_polarity*-1
+                        else:#1 = separate set of azimuths for left and right hem
+                            curr_elev_in_set=random.randint(0, num_elev_src-1)
+                            
+                            curr_hem=random.randint(0, 1)
+                            if curr_hem == 0:#0=left,1=right
+                                curr_azim_in_set=random.randint(0, num_azim_src_hem-1)
+                            else:
+                                curr_azim_in_set=random.randint(num_azim_src_hem, num_azim_src-1)
+                       
+                            
     
             #increment direction to store results in brir array
             curr_direction=curr_direction+1
@@ -1828,10 +1908,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         if mag_comp == True:
             
             print('FR Compensation enabled')
-            if ir_set in CN.AC_SPACE_LIST_COMPMODE1:
-                comp_mode=1#0 = compensate all directions together with a single filter, 1 = comp each direction separately
-            else:
-                comp_mode=0
+            comp_mode=1#0 = compensate all directions together with a single filter, 1 = comp each direction separately
             
             #level ends of spectrum
             high_freq=16000#16500,13500
@@ -2537,31 +2614,7 @@ def calc_avg_room_target_mag(gui_logger=None):
             hf.plot_data(air_fft_avg_mag,'air_fft_avg_mag', normalise=0)
             hf.plot_data(air_fft_avg_mag_sm,'air_fft_avg_mag_sm', normalise=0)    
   
-    
-        #todo:
-        #load existing room targets from .mat
-        #create new array including old and new target
-        # #
-        # #save numpy array for later use in BRIR generation functions
-        # #
-        # npy_file_name =  'avg_room_target_mag_response.npy'
-        # brir_out_folder = pjoin(CN.DATA_DIR_INT, 'reverberation')
-        # out_file_path = pjoin(brir_out_folder,npy_file_name)      
-          
-        # output_file = Path(out_file_path)
-        # output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        # np.save(out_file_path,air_fft_avg_mag_sm)    
-        
-        # log_string_a = 'Exported numpy file to: ' + out_file_path 
-        # if CN.LOG_INFO == 1:
-        #     logging.info(log_string_a)
-        # if CN.LOG_GUI == 1 and gui_logger != None:
-        #     gui_logger.log_info(log_string_a)
-    
-    
-    
-    
+  
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete reverb response processing'
@@ -2651,8 +2704,8 @@ def calc_reverb_target_mag(gui_logger=None):
  
         if CN.PLOT_ENABLE == 1:
             print(str(num_bairs_avg))
-            hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=0)
-            hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=0)    
+            hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=2)
+            hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=2)    
   
         #
         #save numpy array for later use in BRIR generation functions
@@ -3692,3 +3745,168 @@ def calc_room_target_dataset(gui_logger=None):
             gui_logger.log_error(log_string)
             
                 
+def acoustic_space_updates(download_updates=False, gui_logger=None):
+    """ 
+    Function finds latest versions of acoustic spaces, compares with current versions
+    """
+    
+    
+    try:
+        
+        #log results
+        log_string = 'Checking for acoustic space updates'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
+        #read local metadata from reverberation_metadata.csv
+        #place rows into dictionary list
+        local_meta_dict_list = []
+
+        #directories
+        csv_directory = pjoin(CN.DATA_DIR_INT, 'reverberation')
+        #read metadata from csv. Expects reverberation_metadata.csv 
+        metadata_file_name = 'reverberation_metadata.csv'
+        metadata_file = pjoin(csv_directory, metadata_file_name)
+        with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+            reader = DictReader(inputfile)
+            for row in reader:#rows 2 and onward
+                #store each row as a dictionary
+                #append to list of dictionaries
+                local_meta_dict_list.append(row)
+                    
+                
+        #download latest metadata file from gdrive
+        #read metadata file
+        #place into dictionary list
+        web_meta_dict_list = []
+        
+        #get version of online database
+        url = "https://drive.google.com/file/d/14eX5wLiyMCuS4-2aYBfbWRMXFgYc6Bm-/view?usp=drive_link"
+        dl_file = pjoin(csv_directory, 'reverberation_metadata_latest.csv')
+        gdown.download(url, dl_file, fuzzy=True)
+
+        with open(dl_file, encoding='utf-8-sig', newline='') as inputfile:
+            reader = DictReader(inputfile)
+            for row in reader:#rows 2 and onward
+                #store each row as a dictionary
+                #append to list of dictionaries
+                web_meta_dict_list.append(row)
+ 
+        mismatches=0
+        updates_perf=0
+        if not web_meta_dict_list:
+            raise ValueError('latest metadata is empty')
+        if not local_meta_dict_list:
+            raise ValueError('local metadata is empty') 
+            
+        #for each space in latest dict list
+        for space_w in web_meta_dict_list:
+            name_w = space_w.get('name_src')
+            name_gui_w = space_w.get('name_gui')
+            vers_w = space_w.get('version')
+            gdrive_link = space_w.get('gdrive_link')
+            rev_folder = space_w.get('folder')
+            file_name = space_w.get('file_name')
+            dl_file = pjoin(csv_directory,rev_folder, file_name+'.npy')
+            match_found=0
+            update_required=0
+            for space_l in local_meta_dict_list:
+                name_l = space_l.get('name_src')
+                vers_l = space_l.get('version')
+                #find matching space in local version
+                if name_w == name_l:
+                    match_found=1
+                    #compare version with local version
+                    #case for mismatching versions for matching name
+                    if vers_w != vers_l:
+                        mismatches=mismatches+1 
+                        update_required=1
+                        #if not matching, print details
+                        log_string = 'New version ('+vers_w+') available for: ' + name_gui_w
+                        if CN.LOG_INFO == 1:
+                            logging.info(log_string)
+                        if CN.LOG_GUI == 1 and gui_logger != None:
+                            gui_logger.log_info(log_string)
+
+                            
+            #this space not found in local metadata, must be new space
+            if match_found==0:
+                mismatches=mismatches+1 
+                update_required=1
+                log_string = 'New acoustic space available: ' + name_gui_w
+                if CN.LOG_INFO == 1:
+                    logging.info(log_string)
+                if CN.LOG_GUI == 1 and gui_logger != None:
+                    gui_logger.log_info(log_string)
+                    
+            #if download updates enabled
+            #for each version mismatch, download latest dataset from gdrive and place into relevant folder
+            if download_updates == True and update_required > 0:
+                log_string = 'Downloading update'
+                if CN.LOG_INFO == 1:
+                    logging.info(log_string)
+                if CN.LOG_GUI == 1 and gui_logger != None:
+                    gui_logger.log_info(log_string)
+   
+                gdown.download(gdrive_link, dl_file, fuzzy=True)
+                
+                log_string = 'Latest version of dataset: ' + name_gui_w + ' downloaded and saved to: ' + dl_file
+                if CN.LOG_INFO == 1:
+                    logging.info(log_string)
+                if CN.LOG_GUI == 1 and gui_logger != None:
+                    gui_logger.log_info(log_string)
+                updates_perf=updates_perf+1
+                    
+        #finally, download latest metadata file and replace local file
+        if updates_perf >=1: 
+            url = "https://drive.google.com/file/d/14eX5wLiyMCuS4-2aYBfbWRMXFgYc6Bm-/view?usp=drive_link"
+            dl_file = pjoin(csv_directory, 'reverberation_metadata.csv')
+            gdown.download(url, dl_file, fuzzy=True)
+        
+        
+        #if no mismatches flagged, print message
+        if mismatches == 0:
+            log_string = 'No updates available'
+            if CN.LOG_INFO == 1:
+                logging.info(log_string)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string)
+
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Failed to validate versions or update data'
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_error(log_string)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    #print message
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

@@ -1687,7 +1687,7 @@ def hpcf_generate_averages(conn, gui_logger=None):
                 #convert to mag
                 hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
                 #create min phase FIR
-                hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=1000)
+                hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
                 #store in cropped array
                 hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
                 hpcf_avg_fir_array[:] = np.copy(hpcf_avg_fir_full[0:CN.HPCF_FIR_LENGTH])
@@ -2137,7 +2137,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                 hpcf_fft_out_mag = hpcf_fft_out_mag*0.5
                 
                 #create min phase FIR
-                hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=1000)
+                hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=CN.HPCF_FIR_LENGTH)
                 
                 #store in cropped array
                 hpcf_out_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
@@ -2250,98 +2250,6 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         
 
 
-def check_for_database_update(conn, gui_logger=None):
-    """ 
-    Function finds version of latest database, compares with current version
-    """
-    
-    try:
-        
-        #get version of local database
-        json_fname = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
-        with open(json_fname) as fp:
-            _info = json.load(fp)
-        local_db_version = _info['version']
-        
-        
-        #log results
-        log_string = 'Local HpCF database version: ' + str(local_db_version)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
-            
-        #get version of online database
-        url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
-        output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata_latest.json')
-        gdown.download(url, output, fuzzy=True)
-        
-        #read json
-        json_fname = output
-        with open(json_fname) as fp:
-            _info = json.load(fp)
-        web_db_version = _info['version']
-        
-        #log results
-        log_string = 'Latest HpCF database version: ' + str(web_db_version)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
-        
-        return True
-    
-
-        
-    except Error as e:
-        logging.error("Error occurred", exc_info = e)
-        
-        log_string = 'Failed to check HpCF versions'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
-            
-        return False
-
-
-def downlod_latest_database(conn, gui_logger=None):
-    """ 
-    Function downloads and replaces current database
-    """
-    
-    try:
-  
-        log_string = 'Downloading latest HpCF database'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
-  
-    
-        #download latest version of database
-        url = "https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link"
-        output = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_database.db')
-        gdown.download(url, output, fuzzy=True)
-
-        #log results
-        log_string = 'Latest HpCF database downloaded to: ' + str(output)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
-
-        return True
-    
-    except Error as e:
-        logging.error("Error occurred", exc_info = e)
-        
-        log_string = 'Failed to download latest HpCF database'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
-            
-        return False
-            
-            
-            
             
             
 
@@ -2544,7 +2452,7 @@ def hpcf_generate_variants(conn, gui_logger=None):
                             #convert to mag
                             hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
                             #create min phase FIR
-                            hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=1000)
+                            hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
                             #store in cropped array
                             hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
                             hpcf_avg_fir_array[:] = np.copy(hpcf_avg_fir_full[0:CN.HPCF_FIR_LENGTH])
@@ -2592,7 +2500,7 @@ def hpcf_generate_variants(conn, gui_logger=None):
     
 
 
-def get_recent_hpcfs(conn, date_str ='2024-06-20', gui_logger=None):
+def get_recent_hpcfs(conn, date_str ='2024-10-10', gui_logger=None):
     """
     Function get_recent_hpcfs
         searches DB for HpCFs created after a certain date
@@ -2622,6 +2530,127 @@ def get_recent_hpcfs(conn, date_str ='2024-06-20', gui_logger=None):
     except Error as e:
         logging.error("Error occurred", exc_info = e)
 
+
+def check_for_database_update(conn, gui_logger=None):
+    """ 
+    Function finds version of latest database, compares with current version
+    """
+    
+    try:
+        
+        #get version of local database
+        json_fname = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
+        with open(json_fname) as fp:
+            _info = json.load(fp)
+        local_db_version = _info['version']
+        
+        #log results
+        log_string = 'Checking for Headphone Correction Filter dataset updates'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
+        #log results
+        log_string = 'Current dataset version: ' + str(local_db_version)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        #log results
+        log_string = 'Finding latest version'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        #get version of online database
+        url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
+        output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata_latest.json')
+        gdown.download(url, output, fuzzy=True)
+        
+        #read json
+        json_fname = output
+        with open(json_fname) as fp:
+            _info = json.load(fp)
+        web_db_version = _info['version']
+        
+        #log results
+        log_string = 'Latest dataset version: ' + str(web_db_version)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        if local_db_version == web_db_version:
+            #log results
+            log_string = 'No update available'
+        else:
+            log_string = "New version available. Click 'Download Latest Dataset' to update"
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
+        return True
+    
+
+        
+    except Error as e:
+        logging.error("Error occurred", exc_info = e)
+        
+        log_string = 'Failed to check HpCF versions'
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_error(log_string)
+            
+        return False
+
+
+def downlod_latest_database(conn, gui_logger=None):
+    """ 
+    Function downloads and replaces current database
+    """
+    
+    try:
+  
+        log_string = 'Downloading latest HpCF database'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+  
+        #download latest version of database
+        url = "https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link"
+        output = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_database.db')
+        gdown.download(url, output, fuzzy=True)
+
+        #also download metadata
+        url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
+        output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
+        gdown.download(url, output, fuzzy=True)
+
+        #log results
+        log_string = 'Latest HpCF database downloaded to: ' + str(output)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+
+        return True
+    
+    except Error as e:
+        logging.error("Error occurred", exc_info = e)
+        
+        log_string = 'Failed to download latest HpCF database'
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_error(log_string)
+            
+        return False
+            
+            
+            
+
 def check_for_app_update(gui_logger=None):
     """ 
     Function finds version of latest app, compares with current version
@@ -2634,7 +2663,21 @@ def check_for_app_update(gui_logger=None):
         __version__ = _info['version']
         
         #log results
-        log_string = 'Local ASH Toolset version: ' + str(__version__)
+        log_string = 'Checking for app updates'
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+        
+        #log results
+        log_string = 'Current ASH Toolset version: ' + str(__version__)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        #log results
+        log_string = 'Finding latest version...'
         if CN.LOG_INFO == 1:
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
@@ -2652,7 +2695,17 @@ def check_for_app_update(gui_logger=None):
         web_app_version = _info['version']
         
         #log results
-        log_string = 'Latest ASH Toolset version available: ' + str(web_app_version)
+        log_string = 'Latest ASH Toolset version: ' + str(web_app_version)
+        if CN.LOG_INFO == 1:
+            logging.info(log_string)
+        if CN.LOG_GUI == 1 and gui_logger != None:
+            gui_logger.log_info(log_string)
+            
+        if __version__ == web_app_version:
+            #log results
+            log_string = 'No update required'
+        else:
+            log_string = "New version available at https://sourceforge.net/projects/ash-toolset/"
         if CN.LOG_INFO == 1:
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
@@ -2739,6 +2792,71 @@ def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
             gui_logger.log_error(log_string)
             
  
+    
+def crop_hpcf_firs(conn, gui_logger=None):
+    """
+    Function iterates through all FIRs in the database and crops to 512 samples
+    """
+    
+    try:
+        #fade out window
+        data_pad_ones=np.ones(CN.HPCF_FIR_LENGTH)
+        data_pad_zeros=np.zeros(CN.HPCF_FIR_LENGTH)
+        out_win_size=50
+        fade_hanning_size=out_win_size*2
+        fade_hanning_start=CN.HPCF_FIR_LENGTH-60
+        hann_fade_full=np.hanning(fade_hanning_size)
+        hann_fade = np.split(hann_fade_full,2)[1]
+        fade_out_win = data_pad_ones.copy()
+        fade_out_win[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
+        fade_out_win[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
+        
+        #for each hpcf in database
+
+        #get list of all headphones in the DB
+        headphone_list = get_all_headphone_list(conn)
+      
+        #for each headphone, grab all samples
+        for h in headphone_list:
+            sample_list = get_hpcf_samples_dicts(conn, h)
+            #for each sample
+            for s in sample_list:
+                
+                sample_dict = dict(s)
+                #grab fir
+                sample_fir_json = sample_dict['fir']
+                sample_name = sample_dict['sample']
+                created_on = sample_dict['created_on']
+                geq_str = sample_dict['graphic_eq']
+                geq_31_str = sample_dict['graphic_eq_31']
+                geq_103_str = sample_dict['graphic_eq_103']
+                sample_fir_list = json.loads(sample_fir_json) 
+                sample_fir = np.array(sample_fir_list)
+
+                #check length
+                if sample_fir.size > CN.HPCF_FIR_LENGTH:
+ 
+                    #crop to 512 samples
+                    hpcf_new_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
+                    hpcf_new_fir_array[:] = np.copy(sample_fir[0:CN.HPCF_FIR_LENGTH])
+        
+                    #apply window
+                    hpcf_new_fir_array = np.multiply(hpcf_new_fir_array,fade_out_win)
+        
+                    #replace existing hpcf
+                    # convert from array to list
+                    fir_list = hpcf_new_fir_array.tolist()
+                    # convert from list to Json
+                    fir_json_str = json.dumps(fir_list)
+   
+                    #case for updating existing hpcf
+                    hpcf_data = (fir_json_str,geq_str,geq_31_str,geq_103_str,created_on)
+                    replace_hpcf_filter_data(conn,hpcf_data,h,sample_name, gui_logger=gui_logger)
+                    
+        conn.commit()
+    
+    except Error as e:
+        logging.error("Error occurred", exc_info = e)
     
 
 def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logger=None):

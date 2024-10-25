@@ -12,7 +12,7 @@ from os.path import join as pjoin
 from os import path
 import sys
 from pathlib import Path
-
+from csv import DictReader
 
 ################################ 
 #Constants
@@ -63,6 +63,10 @@ GRP_DELAY_MAX_F = 150
 CUTOFF_ALIGNMENT = 130#140
 #peak to peak within a sufficiently small sample window
 PEAK_TO_PEAK_WINDOW = int(np.divide(SAMP_FREQ,CUTOFF_ALIGNMENT)*0.95) 
+#new constants
+DELAY_WIN_HOP_SIZE = 5
+DELAY_WIN_HOPS = int((DELAY_WIN_MAX_T-DELAY_WIN_MIN_T)/DELAY_WIN_HOP_SIZE)
+EVAL_POLARITY=True#True
 
 #constants to perform td alignment of BRIRs with sub brir
 T_SHIFT_INTERVAL_C = 25
@@ -81,12 +85,14 @@ T_SHIFT_INTERVAL_P = 25
 MIN_T_SHIFT_P = -200#-250
 MAX_T_SHIFT_P = 50#50
 NUM_INTERVALS_P = int(np.abs((MAX_T_SHIFT_P-MIN_T_SHIFT_P)/T_SHIFT_INTERVAL_P))
-
-#new constants
-DELAY_WIN_HOP_SIZE = 5
-DELAY_WIN_HOPS = int((DELAY_WIN_MAX_T-DELAY_WIN_MIN_T)/DELAY_WIN_HOP_SIZE)
-EVAL_POLARITY=True#True
-
+#hrir alignment
+T_SHIFT_INTERVAL_H = 5
+MIN_T_SHIFT_H = -30#
+MAX_T_SHIFT_H = 50
+NUM_INTERVALS_H = int(np.abs((MAX_T_SHIFT_H-MIN_T_SHIFT_H)/T_SHIFT_INTERVAL_H))
+DELAY_WIN_MIN_H = 0
+DELAY_WIN_MAX_H = 150
+DELAY_WIN_HOPS_H = int((DELAY_WIN_MAX_H-DELAY_WIN_MIN_H)/DELAY_WIN_HOP_SIZE)
 #AIR alignment
 MIN_T_SHIFT_A = -1000#-1000,-800
 MAX_T_SHIFT_A = 250#50,250
@@ -116,6 +122,8 @@ ROLL_ROOM = 0
 ROOM_WEIGHTING_DESC=1
 SPECT_SNAP_F0=160
 SPECT_SNAP_F1=3500#1500
+SPECT_SNAP_M_F0=1200
+SPECT_SNAP_M_F1=1800#1500
 
 #window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
 WINDOW_TYPE=2#1
@@ -136,13 +144,16 @@ DATA_DIR_RAW = pjoin(BASE_DIR_OS, 'data','raw')
 DATA_DIR_RAW_HP_MEASRUEMENTS = pjoin(BASE_DIR_OS, 'data','raw','headphone_measurements')
 DATA_DIR_ROOT = pjoin(BASE_DIR_OS, 'data')
 DATA_DIR_OUTPUT = pjoin(BASE_DIR_OS, 'data','processed')
-PROJECT_FOLDER = 'ASH-Custom-Set'    
+PROJECT_FOLDER = 'ASH-Outputs'   
+PROJECT_FOLDER_SSD = 'ASH-Custom-Set' 
 PROJECT_FOLDER_BRIRS = pjoin(PROJECT_FOLDER, 'BRIRs')  
+PROJECT_FOLDER_BRIRS_SSD = pjoin(PROJECT_FOLDER_SSD, 'BRIRs')  
 PROJECT_FOLDER_BRIRS_SOFA = pjoin(PROJECT_FOLDER, 'BRIRs', 'SOFA')  
 PROJECT_FOLDER_CONFIGS = pjoin(PROJECT_FOLDER, 'E-APO-Configs') 
 PROJECT_FOLDER_CONFIGS_BRIR = pjoin(PROJECT_FOLDER, 'E-APO-Configs','BRIR-Convolution') 
 PROJECT_FOLDER_CONFIGS_HPCF = pjoin(PROJECT_FOLDER, 'E-APO-Configs','HpCF-Convolution') 
 PROJECT_FOLDER_HPCFS = pjoin(PROJECT_FOLDER, 'HpCFs')  
+PROJECT_FOLDER_HPCFS_SSD = pjoin(PROJECT_FOLDER, 'HpCFs')
 ICON_LOCATION= pjoin(DATA_DIR_RAW, 'ash_icon_1.ico')  
 SETTINGS_FILE = pjoin(BASE_DIR_OS, 'settings.ini')
 METADATA_FILE = pjoin(BASE_DIR_OS, 'metadata.json')
@@ -154,24 +165,11 @@ MAX_ELEV_WAV=0
 ELEV_OFFSET_WAV = np.abs(MIN_ELEV_WAV)
 OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
 
-#Strings
-#HRTF_LIST_NUM = ['01: Neumann KU 100 (SADIE)', '02: Neumann KU 100 (TH Köln)', '03: FABIAN HATS', '04: B&K Type 4128', '05: B&K Type 4128C (MMHR-HRIR)', '06: DADEC (MMHR-HRIR)', '07: HEAD acoustics HMSII.2 (MMHR-HRIR)', '08: KEMAR (MMHR-HRIR)', '09: KEMAR-N (MIT)', '10: KEMAR-L (MIT)', '11: KEMAR (SADIE)', '12: KEMAR-N (PKU-IOA)', '13: KEMAR-L (PKU-IOA)']
-HRTF_LIST_NUM = ['Neumann KU 100 (SADIE)', 'Neumann KU 100 (TH Köln)', 'FABIAN HATS', 'B&K Type 4128', 'B&K Type 4128C (MMHR-HRIR)', 'DADEC (MMHR-HRIR)', 'HEAD acoustics HMSII.2 (MMHR-HRIR)', 'KEMAR (MMHR-HRIR)', 'KEMAR-N (MIT)', 'KEMAR-L (MIT)', 'KEMAR (SADIE)', 'KEMAR-N (PKU-IOA)', 'KEMAR-L (PKU-IOA)']
-HRTF_LIST_SHORT = ['KU_100_SADIE', 'KU_100_THK', 'FABIAN', 'B&K_4128', 'B&K_4128C_MMHR', 'DADEC_MMHR', 'HMSII.2_MMHR', 'KEMAR_MMHR', 'KEMAR-N_MIT', 'KEMAR-L_MIT', 'KEMAR_SADIE', 'KEMAR-N_PKU', 'KEMAR-L_PKU']
-HRTF_GAIN_LIST = ['-11.0 dB', '-12.0 dB', '-11.0 dB', '-9.0 dB', '-8.0 dB', '-10.5 dB', '-9.5 dB', '-8.0 dB', '-12.0 dB', '-12.9 dB', '-10.8 dB', '-7.8 dB', '-11.0 dB']
-HRTF_GAIN_LIST_NUM = [-7.0, -9.0, -8.0, -3.8, -2.3,-6.0,-5.5,-3.0,-7.5,-8.3,-5.0,-7.8,-7.8]
-HRTF_GAIN_ADDIT = 3
-
-HRTF_LIST_FULL_RES_NUM = ['Neumann KU 100 (TH Köln)', 'FABIAN HATS']
-HRTF_LIST_FULL_RES_SHORT = ['KU_100_THK', 'FABIAN']
-HRTF_GAIN_LIST_FULL_RES_NUM = [-9.0, -8.0]
+# #Strings
 
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
 
-# ROOM_TARGET_LIST = ['Flat','ASH Target','Harman Target','HATS Target','Toole Target','rtings Target']
-# ROOM_TARGET_LIST_SHORT = ['Flat','ASH-Target','Harman-Target','HATS-Target','Toole-Target','rtings-Target']
-# ROOM_TARGET_LIST_FIRS = ['Flat','ash_room_target_fir','harman_b_room_target_fir','hats_room_target_fir','toole_trained_room_target_fir','rtings_target_fir']
 ROOM_TARGET_LIST = ['Flat','ASH Target','Harman Target','HATS Target','Toole Target','rtings Target',
                     'ASH Target - Low End','Harman Target - Low End','HATS Target - Low End','Toole Target - Low End','rtings Target - Low End',
                     'ASH Target - Flat Highs','Harman Target - Flat Highs','HATS Target - Flat Highs','Toole Target - Flat Highs','rtings Target - Flat Highs']
@@ -179,8 +177,6 @@ ROOM_TARGET_LIST_SHORT = ['Flat','ASH-Target','Harman-Target','HATS-Target','Too
                           'ASH-Target-Low-End','Harman-Target-Low-End','HATS-Target-Low-End','Toole-Target-Low-End','rtings-Target-Low-End',
                           'ASH-Target-Flat-Highs','Harman-Target-Flat-Highs','HATS-Target-Flat-Highs','Toole-Target-Flat-Highs','rtings-Target-Flat-Highs']
 ROOM_TARGET_LIST_FIRS = ['Flat','ash_room_target_fir','harman_b_room_target_fir','hats_room_target_fir','toole_trained_room_target_fir','rtings_target_fir']
-
-
 
 #BRIR writing
 #number of directions to grab to built HESUVI IR
@@ -203,8 +199,8 @@ ELEV_ANGLES_WAV_MAX = [40,30,20,15,10,5,0,-5,-10,-15,-20,-30,-40]
 AZ_ANGLES_FL_WAV = [-90,-75,-60,-45,-40,-35,-30,-25,-20,-15,0]
 AZ_ANGLES_FR_WAV = [90,75,60,45,40,35,30,25,20,15,0]
 AZ_ANGLES_C_WAV = [-5,5,0]
-AZ_ANGLES_SL_WAV = [-120,-105,-90,-75,-60]
-AZ_ANGLES_SR_WAV = [120,105,90,75,60]
+AZ_ANGLES_SL_WAV = [-150,-135,-120,-105,-90,-75,-60]
+AZ_ANGLES_SR_WAV = [150,135,120,105,90,75,60]
 AZ_ANGLES_RL_WAV = [180,-165,-150,-135,-120,-105,-90]
 AZ_ANGLES_RR_WAV = [180,165,150,135,120,105,90]
 AZ_ANGLES_FL_WAV.reverse()
@@ -259,14 +255,14 @@ HP_SEL_LIST_WIDTH_RED=217
 HP_SEL_LIST_WIDTH_FULL=277
 
 #hpcf related
-NUM_ITER = 8 #4
-PARAMS_PER_ITER = 4 #8
+NUM_ITER = 8 #was 4
+PARAMS_PER_ITER = 4 #was 8
 SENSITIVITY = 0.003 #0.003
 FREQ_CUTOFF = 20000#f in bins
 FREQ_CUTOFF_GEQ = 29000
 EAPO_GAIN_ADJUST = 0.9*1.1*1.1*1.1
 EAPO_QF_ADJUST = 0.5*0.8
-HPCF_FIR_LENGTH = 1024
+HPCF_FIR_LENGTH = 512#was 1024
 DIRECT_GAIN_MAX=8#6
 DIRECT_GAIN_MIN=-8#-6
 
@@ -277,70 +273,131 @@ BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}
 
 HEAD_TRACK_RUNNING = False
 PROCESS_BRIRS_RUNNING = False
-SHOW_DEV_TOOLS=True
+SHOW_DEV_TOOLS=False
 STOP_THREAD_FLAG = False
 
 #AIR and BRIR reverberation processing
 LIMIT_REBERB_DIRS=True
 MIN_REVERB_DIRS=1
-MAX_IRS=1050#980
-AC_SPACE_LIST_GUI = [ 'Audio Lab A','Audio Lab B','Audio Lab C','Audio Lab D','Audio Lab E','Audio Lab F','Audio Lab G','Audio Lab H', 'Auditorium','Broadcast Studio',
-                     'Concert Hall','Conference Room','Control Room','Hall','Office', 'Outdoors', 'Seminar Room', 'Studio', 'Tatami Room']
+MAX_IRS=2520#1260
+DIRECTION_MODE=1#0=one set of azimuths for each source, 1 = separate set of azimuths for left and right hem,2 = random using triangle distribution
+MAG_COMP=True#enables DF compensation in AIR processing
+RISE_WINDOW=True#enables windowing of initial rise in AIR processing
 
-AC_SPACE_LIST_SHORT = [ 'Audio-Lab-A','Audio-Lab-B','Audio-Lab-C','Audio-Lab-D','Audio-Lab-E','Audio-Lab-F','Audio-Lab-G','Audio-Lab-H', 'Auditorium','Bc-Studio', 
-                     'Concert-Hall','Conference-Rm','Control-Rm','Hall','Office', 'Outdoors', 'Seminar-Rm', 'Studio', 'Tatami-Rm']
+#deprecated
+RT60_MIN=200
+RT60_MAX_S=1250
+RT60_MAX_L=2250
 
-AC_SPACE_LIST_SRC = [ 'audio_lab_a','audio_lab_b','audio_lab_c','audio_lab_d','audio_lab_e','audio_lab_f','audio_lab_g','audio_lab_h', 'auditorium_a','broadcast_studio_a',
-                     'concert_hall_a','conference_room_a','control_room_a','hall_a','office_a', 'outdoors_a', 'seminar_room_a', 'studio_a', 'tatami_room_a']
-
-#estimated RT60 in ms, rough estimate only
-AC_SPACE_EST_R60 = [ 350,400,600,250,500,700,400,600, 1500,1400,
-                     1900,500,300,2300,400, 2600, 900, 400,550]
-
-#estimated RT60 in ms, measured
-AC_SPACE_MEAS_R60 = [ 312,400,567,208,471,648,370,531, 1455,1261,
-                     1809,506,291,2221,408, 2534, 884, 398,518]
-
-
-#estimated time in ms to start fade out
-AC_SPACE_FADE_START = [ 320,700,530,400,410,0,450,700, 0,1450,
-                     0,560,400,0,520, 0, 1100, 550,700]
-
-
-AC_SPACE_LIST_LOWRT60 = ['audio_lab_a','audio_lab_b', 'audio_lab_c', 'audio_lab_d','audio_lab_e','audio_lab_f','audio_lab_g','audio_lab_h', 'auditorium_a',
-                         'conference_room_a','control_room_a','office_a','seminar_room_a', 'studio_a','sub_set_a','sub_set_b','sub_set_c','sub_set_d', 'tatami_room_a']
-
+#Acoustic space related
 AC_SPACE_LIST_COMP = ['generic_room_a', 'auditorium_a']
 AC_SPACE_LIST_KU100 = ['concert_hall_a','music_chamber_a','theater_a']
-AC_SPACE_LIST_SOFA_0 = ['audio_lab_a','office_a','control_room_a']
+AC_SPACE_LIST_SOFA_0 = ['audio_lab_a','office_a','studio_a']
 AC_SPACE_LIST_SOFA_1 = ['']
 AC_SPACE_LIST_SOFA_2 = ['']
-AC_SPACE_LIST_SOFA_3 = ['conference_room_a']
-AC_SPACE_LIST_SOFA_4 = ['audio_lab_g','audio_lab_h', 'audio_lab_b','broadcast_studio_a','sub_set_d']
-AC_SPACE_LIST_SOFA_5 = ['']
-AC_SPACE_LIST_ISO = ['studio_b','sub_set_a','sub_set_b']
+AC_SPACE_LIST_SOFA_3 = ['','broadcast_studio_a']
+AC_SPACE_LIST_SOFA_4 = ['audio_lab_g','audio_lab_h', 'audio_lab_b','sub_set_d','audio_lab_i']
+AC_SPACE_LIST_SOFA_5 = ['','control_room_a','conference_room_a']
+AC_SPACE_LIST_ISO = ['sub_set_a','sub_set_b']
+AC_SPACE_LIST_ANU = ['studio_b']
+AC_SPACE_LIST_44100 = ['outdoors_b']
 AC_SPACE_LIST_SUBRIRDB = ['sub_set_c']
 AC_SPACE_LIST_NR = ['tatami_room_a']
 AC_SPACE_LIST_CUTOFF = ['concert_hall_a']
 AC_SPACE_LIST_LIM_CHANS = ['concert_hall_a']
-AC_SPACE_LIST_LIM_SETS = ['hall_a', 'outdoors_a']
+AC_SPACE_LIST_LIM_SETS = ['hall_a', 'outdoors_a','broadcast_studio_a','concert_hall_a', 'outdoors_b','seminar_room_a']
 AC_SPACE_CHAN_LIMITED=5#3,4
 AC_SPACE_LIST_NOROLL = ['auditorium_a', 'auditorium_b']
 AC_SPACE_LIST_NOCOMP = ['audio_lab_d']
-AC_SPACE_LIST_COMPMODE1 = ['control_room_a', 'tatami_room_a']
-AC_SPACE_LIST_WINDOW = ['hall_b']
+AC_SPACE_LIST_COMPMODE1 = ['control_room_a', 'tatami_room_a', 'office_a','studio_b']
+AC_SPACE_LIST_WINDOW = ['hall_a', 'outdoors_a','seminar_room_a','broadcast_studio_a', 'outdoors_b']
+AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i']
 AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
-AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a']
-AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a']
-AC_SPACE_LIST_LOW_FC = [ 'outdoors_a']
+AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','concert_hall_a','conference_room_a']
+AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a','broadcast_studio_a']
+AC_SPACE_LIST_LOW_FC = [' ']#
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
 
+#load other lists from csv file
+AC_SPACE_LIST_GUI = []
+AC_SPACE_LIST_SHORT = []
+AC_SPACE_LIST_SRC = []
+#estimated RT60 in ms, rough estimate only
+AC_SPACE_EST_R60 = []
+#estimated RT60 in ms, measured
+AC_SPACE_MEAS_R60 = []
+#estimated time in ms to start fade out
+AC_SPACE_FADE_START = []
+AC_SPACE_LIST_LOWRT60 = []
+AC_SPACE_GAINS = []
+
+try:
+    #directories
+    csv_directory = pjoin(DATA_DIR_INT, 'reverberation')
+    #read metadata from csv. Expects reverberation_metadata.csv 
+    metadata_file_name = 'reverberation_metadata.csv'
+    metadata_file = pjoin(csv_directory, metadata_file_name)
+    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+        reader = DictReader(inputfile)
+        for row in reader:#rows 2 and onward
+            #store each row as a dictionary
+            #append to list of dictionaries
+            AC_SPACE_LIST_GUI.append(row.get('name_gui'))  
+            AC_SPACE_LIST_SHORT.append(row.get('name_short'))  
+            AC_SPACE_LIST_SRC.append(row.get('name_src'))  
+            AC_SPACE_EST_R60.append(int(row.get('est_rt60')))  
+            AC_SPACE_MEAS_R60.append(int(row.get('meas_rt60')))  
+            AC_SPACE_FADE_START.append(int(row.get('fade_start')))
+            AC_SPACE_GAINS.append(float(row.get('gain'))) 
+            low_flag = row.get('low_rt60')
+            name_src = row.get('name_src')
+            if low_flag == "Yes":
+                AC_SPACE_LIST_LOWRT60.append(name_src)
+
+except Exception:
+    pass
 
 
-RT60_MIN=200
-RT60_MAX_S=1250
-RT60_MAX_L=2250
-MAG_COMP=True#enables DF compensation in AIR processing
-RISE_WINDOW=True#enables windowing of initial rise in AIR processing
+#HRTF related
+#Strings
+HRTF_LIST_NUM = []
+HRTF_LIST_SHORT = []
+HRTF_GAIN_LIST_NUM = []
+HRTF_GAIN_ADDIT = 2.5#
+HRTF_LIST_FULL_RES_NUM = []
+HRTF_LIST_FULL_RES_SHORT = []
+HRTF_GAIN_LIST_FULL_RES_NUM = []
+HRTF_TYPE_LIST_LIM_RES=[]
+HRTF_TYPE_LIST_FLIP_POL=[]
+#load lists from csv file
+try:
+
+    #directories
+    csv_directory = DATA_DIR_INT
+    #read metadata from csv. Expects reverberation_metadata.csv 
+    metadata_file_name = 'hrir_metadata.csv'
+    metadata_file = pjoin(csv_directory, metadata_file_name)
+    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+        reader = DictReader(inputfile)
+        for row in reader:#rows 2 and onward
+            #store each row as a dictionary
+            #append to list of dictionaries
+            HRTF_LIST_NUM.append(row.get('name_gui'))  
+            HRTF_LIST_SHORT.append(row.get('name_short'))  
+            HRTF_GAIN_LIST_NUM.append(float(row.get('gain')))  
+            spat_res = row.get('highest_res')
+            if spat_res == "max":
+                HRTF_LIST_FULL_RES_NUM.append(row.get('name_gui'))   
+                HRTF_LIST_FULL_RES_SHORT.append(row.get('name_short'))    
+                HRTF_GAIN_LIST_FULL_RES_NUM.append(float(row.get('gain')))
+            lim_res = row.get('limited_res')
+            if lim_res == "yes":
+                HRTF_TYPE_LIST_LIM_RES.append(int(row.get('hrtf_type')))  
+            flip_pol = row.get('flip_polarity')
+            if flip_pol == "yes":
+                HRTF_TYPE_LIST_FLIP_POL.append(int(row.get('hrtf_type'))) 
+except Exception:
+    pass
+
