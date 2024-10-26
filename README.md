@@ -108,14 +108,16 @@ This part of the app is used to generate a set of correction filters for a speci
 ### Generate Binaural Dataset for Room Simulation over Headphones
 This part of the app is used to create a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation over headphones.
 1. Select acoustic space from below environments. This will determine the listening environment of the simulation.
-   - Audio lab
+   - Audio labs
+   - Auditorium
    - Conference room
    - Control room
-   - Hall
+   - Halls
+   - Lecture room
    - Office
    - Outdoors
-   - Seminar room
-   - Studio
+   - Seminar rooms
+   - Studios
    - Tatami room
 2. Select spatial resolution from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size. Low' is recommended unless additional directions or SOFA export is required.
    - Low: Elevation angles ranging from -30 to 30 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
