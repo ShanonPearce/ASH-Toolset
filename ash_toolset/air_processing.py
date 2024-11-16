@@ -3318,7 +3318,7 @@ def calc_subrir(gui_logger=None):
                 subrir_sets_interim[sub_set_id,set_num,chan,:] = np.copy(sub_brir_ir_new[chan][:])
   
         #ratios for merging
-        ratio_list = [0.28,0.22,0.12,0.10,0.28]#0.34,0.22,0.12,0.10,0.22, 0.32,0.22,0.12,0.10,0.24 0.30,0.22,0.12,0.10,0.26 0.29,0.22,0.12,0.10,0.27
+        ratio_list = [0.20,0.22,0.16,0.14,0.28]#[0.28,0.22,0.12,0.10,0.28]
 
         sub_brir_ir_new = np.zeros((2,n_fft))
         #prepopulate with reference subrir
@@ -3372,10 +3372,10 @@ def calc_subrir(gui_logger=None):
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
             
             filter_type="peaking"
-            fc=76
+            fc=77
             sr=samp_freq
             q=6
-            gain_db=-0.8
+            gain_db=-1.0
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3486,7 +3486,7 @@ def calc_subrir(gui_logger=None):
             fc=6
             sr=samp_freq
             q=3.0#3.5
-            gain_db=-7.0
+            gain_db=-4.0
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3497,7 +3497,7 @@ def calc_subrir(gui_logger=None):
             fc=3
             sr=samp_freq
             q=2.0#2.5
-            gain_db=-3.0#-2.0
+            gain_db=-4.0#-2.0
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
