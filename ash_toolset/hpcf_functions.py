@@ -197,7 +197,28 @@ def search_headphone_list(conn,search_str=None):
         logging.error("Error occurred", exc_info = e)
         return None     
         
-       
+def search_headphones_in_list(conn,search_list=None):
+    """
+    Function retrieves list of headphones from database based on list of search strings
+    """
+    try:
+
+        if search_list == None or not search_list:
+            return []
+        else:
+            sql = f"select DISTINCT headphone from hpcf_table where headphone in ({','.join(['?']*len(search_list))})"
+            cur = conn.cursor()
+            cur.execute(sql, search_list)
+ 
+            rows = cur.fetchall()
+            cur.close()
+            if rows:
+                rows_list = [i[0] for i in rows]#convert from list of tuples to list
+                return sorted(rows_list, key=str.casefold) #sort list before returning
+ 
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info = e)
+        return None            
 
 def get_headphone_list(conn, brand):
     """
@@ -250,7 +271,7 @@ def get_samples_list(conn, headphone):
         cur.close()
         if rows:
             rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return rows_list
+            return sorted(rows_list, key=str.casefold)
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None     
@@ -1281,7 +1302,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
 
 
 
-def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, geq_json = 1, eapo_export=1, gui_logger=None, samp_freq=44100, bit_depth='PCM_24'):
+def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=True, gui_logger=None, samp_freq=44100, bit_depth='PCM_24', force_output=False):
     """
     Function exports filter to a wav or txt file
     To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 103 Band
@@ -1339,24 +1360,24 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         
         out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
         
-        if fir_export == 1:
+        if fir_export == True:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
             
+            #dont write if file already exists
+            if force_output == True or not output_file.is_file():
+                hf.write2wav(file_name=out_file_path, data=hpcf_fir, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
             
-
-            hf.write2wav(file_name=out_file_path, data=hpcf_fir, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
-            
-            log_string = 'HpCF (WAV FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_wav)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+                log_string = 'HpCF (WAV FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_wav)
+                if CN.LOG_INFO == 1:
+                    logging.info(log_string)
+                if CN.LOG_GUI == 1 and gui_logger != None:
+                    gui_logger.log_info(log_string)
             
         
         #also create E-APO config for this sample
-        if eapo_export == 1:
+        if eapo_export == True:
             e_apo_config_creation.write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path)
         
         #
@@ -1369,7 +1390,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
         out_file_path = pjoin(out_file_dir_st_wav, hpcf_name_wav)
         
-        if fir_stereo_export == 1:
+        if fir_stereo_export == True:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1390,13 +1411,13 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
         out_file_path = pjoin(out_file_dir_geq, hpcf_name_geq)
         
-        if geq_export == 1:
+        if geq_export == True:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
         
             #if geq string type is JSON string, convert to GEQ string
-            if geq_json == 1:
+            if geq_json == True:
                 dictionary = json.loads(hpcf_geq)
                 # split dictionary into keys and values
                 keys = list(dictionary.keys())
@@ -1426,13 +1447,13 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
         out_file_path = pjoin(out_file_dir_geq_31, hpcf_name_geq)
         
-        if geq_31_export == 1:
+        if geq_31_export == True:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
         
             #if geq string type is JSON string, convert to GEQ string
-            if geq_json == 1:
+            if geq_json == True:
                 dictionary = json.loads(hpcf_geq_31)
                 # split dictionary into keys and values
                 keys = list(dictionary.keys())
@@ -1462,13 +1483,13 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
         out_file_path = pjoin(out_file_dir_geq_103, hpcf_name_geq)
         
-        if geq_103_export == 1:
+        if geq_103_export == True:
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
         
             #if geq string type is JSON string, convert to GEQ string
-            if geq_json == 1:
+            if geq_json == True:
                 dictionary = json.loads(hpcf_geq_103)
                 # split dictionary into keys and values
                 keys = list(dictionary.keys())
@@ -1493,7 +1514,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
         
 
         #also export graphic eq to hesuvi folder
-        if hesuvi_export == 1:
+        if hesuvi_export == True:
             out_file_folder = pjoin(hesuvi_path, 'eq','_HpCFs',brand_folder)
             out_file_path = pjoin(out_file_folder,hpcf_name_geq)
             
@@ -1502,7 +1523,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
             output_file.parent.mkdir(exist_ok=True, parents=True)
             
             #if geq string type is JSON string, convert to GEQ string
-            if geq_json == 1:
+            if geq_json == True:
                 dictionary = json.loads(hpcf_geq_103)
                 # split dictionary into keys and values
                 keys = list(dictionary.keys())
@@ -1533,7 +1554,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = 1, fir_stereo_export = 1,
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_stereo_export = 1, geq_export = 1, geq_31_export = 1, geq_103_export = 0, hesuvi_export = 1, eapo_export=1, report_progress=False, gui_logger=None, samp_freq=44100, bit_depth='PCM_24'):
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=True, report_progress=0, gui_logger=None, samp_freq=44100, bit_depth='PCM_24', force_output=False):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1569,12 +1590,19 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = 1, fir_st
             #for s in sample_list:
                 sample_dict = dict(s)
                 hpcf_to_file(sample_dict, primary_path=primary_path, fir_export=fir_export, fir_stereo_export=fir_stereo_export, geq_export=geq_export, 
-                             geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger, samp_freq=samp_freq, bit_depth=bit_depth)
+                             geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger, samp_freq=samp_freq, bit_depth=bit_depth, force_output=force_output)
 
-                if report_progress == True:
+                if report_progress > 0:
                     progress = ((index+1)/num_samples)
-                    dpg.set_value("progress_bar_hpcf", progress)
-                    dpg.configure_item("progress_bar_hpcf", overlay = str(int(progress*100))+'%')
+                    if report_progress == 2:
+                        dpg.set_value("progress_bar_hpcf", progress)
+                        dpg.configure_item("progress_bar_hpcf", overlay = str(int(progress*100))+'%')
+                    else:
+                        dpg.set_value("qc_progress_bar_hpcf", progress)
+                        dpg.configure_item("qc_progress_bar_hpcf", overlay = str(int(progress*100))+'%')
+                        if progress == 1:
+                            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_FIN)
+                    
 
     except Error as e:
         logging.error("Error occurred", exc_info = e)
@@ -1749,7 +1777,7 @@ def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_
     :param sample: string, name of sample to plot
     :param primary_path: string, path to save plots to if save_to_file == 1
     :param save_to_file: int, 1 = save plot to a file
-    :param plot_type: int, 0 = plot all filter types including graphic eq and graphic eq 32 band filters, 1 = plot only fir
+    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 1 = dearpygui (series 2 - quick config)
     """
     
     try:
@@ -1779,17 +1807,7 @@ def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_
         plot_tile = hpcf_name 
         hf.plot_data(hpcf_fr_mag, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=save_to_file, plot_path=out_file_dir_plot, plot_type=plot_type)
         
-        if plot_type == 0:
-            #get GEQ
-            hpcf_geq = hpcf_dict.get('graphic_eq')
-            geq_dictionary = json.loads(hpcf_geq)
-            #run plot
-            plot_tile = hpcf_name + ' Grahpic EQ frequency response'
-            hf.plot_geq(geq_dict=geq_dictionary, title_name=plot_tile, y_lim_adjust = 1, save_plot=save_to_file, plot_path=out_file_dir_plot)
-            
   
-        
-       
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
         

@@ -157,6 +157,7 @@ PROJECT_FOLDER_HPCFS_SSD = pjoin(PROJECT_FOLDER, 'HpCFs')
 ICON_LOCATION= pjoin(DATA_DIR_RAW, 'ash_icon_1.ico')  
 SETTINGS_FILE = pjoin(BASE_DIR_OS, 'settings.ini')
 METADATA_FILE = pjoin(BASE_DIR_OS, 'metadata.json')
+FOLDER_BRIRS_LIVE = 'live_dataset'
 
 #constants for writing WAVs
 NEAREST_AZ_WAV = 15
@@ -165,7 +166,13 @@ MAX_ELEV_WAV=0
 ELEV_OFFSET_WAV = np.abs(MIN_ELEV_WAV)
 OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
 
-# #Strings
+#GUI related
+TOOLTIP_GAIN = 'Positive values may result in clipping'
+TOOLTIP_ELEVATION = 'Positive values are above the listener while negative values are below the listener'
+RADIUS=85
+X_START=110
+Y_START=100
+
 
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
@@ -185,7 +192,7 @@ NUM_OUT_CHANNELS_HE = NUM_SOURCE_AZIM*2
 NUM_OUT_CHANNELS_TS = 4
 
 #Equalizer APO constants
-BRIR_EXPORT_ENABLE = 1
+BRIR_EXPORT_ENABLE = True
 AZIM_DICT = {'WIDE_BL':'-135','WIDE_BR':'135','NARROW_BL':'-150','NARROW_BR':'150','WIDEST_BL':'-120','WIDEST_BR':'120','SL':'-90','SR':'90','FL':'-30','FR':'30','FC':'0','WIDE_FL':'-35','WIDE_FR':'35','NARROW_FL':'-25','NARROW_FR':'25'}
 CHANNEL_CONFIGS = [['2.0_Stereo','2.0','2.0 Stereo'],['2.0_Stereo_Narrow','2.0N','2.0 Stereo (narrow placement)'],['2.0_Stereo_Wide','2.0W','2.0 Stereo (wide placement)'],['7.1_Surround_Narrow_Back','7.1N','7.1 surround (narrow back placement)'],['7.1_Surround_Wide_Back','7.1W','7.1 surround (wide back placement)'],['5.1_Surround','5.1','5.1 surround']]
 AUDIO_CHANNELS = ['2.0 Stereo','5.1 Surround','7.1 Surround','7.1 Downmix to Stereo']
@@ -226,8 +233,6 @@ SPATIAL_RES_ELEV_STP = ['15° steps','15° steps',
                          '5° steps','2° steps']
 SPATIAL_RES_AZIM_STP = ['varying','varying',
                          '5° steps','2° steps']
-
-
 NUM_SPATIAL_RES = len(SPATIAL_RES_LIST)
 SPATIAL_RES_ELEV_MIN=[-60, -60, -60, -40 ]#as per hrir dataset
 SPATIAL_RES_ELEV_MAX=[60, 60, 60, 60 ]#as per hrir dataset
@@ -265,6 +270,7 @@ EAPO_QF_ADJUST = 0.5*0.8
 HPCF_FIR_LENGTH = 512#was 1024
 DIRECT_GAIN_MAX=8#6
 DIRECT_GAIN_MIN=-8#-6
+EAPO_ERROR_CODE=501
 
 SAMPLE_RATE_LIST = ['44.1 kHz', '48 kHz', '96 kHz']
 SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}  
@@ -315,8 +321,8 @@ AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i']
 AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
-AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','concert_hall_a','conference_room_a']
-AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a','broadcast_studio_a']
+AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a']
+AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a','broadcast_studio_a','concert_hall_a']
 AC_SPACE_LIST_LOW_FC = [' ']#
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
 
@@ -401,3 +407,12 @@ try:
 except Exception:
     pass
 
+#GUI
+PROGRESS_FIN=' Active   '
+PROGRESS_START=' Ready to Apply'
+PROGRESS_START_HPCF='Ready to Apply Selection'
+PROGRESS_START_BRIR='Ready to Apply Parameters'
+PROGRESS_FIN_ALT=' Finished   '
+PROGRESS_START_ALT=' Ready to Start'
+PROCESS_BUTTON_BRIR='Apply Parameters'
+PROCESS_BUTTON_HPCF='Apply Selection'

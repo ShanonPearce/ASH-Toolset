@@ -23,6 +23,7 @@ from scipy.io import wavfile
 import dearpygui.dearpygui as dpg
 import os
 from pathlib import Path
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -392,7 +393,7 @@ def generate_reverberant_brir(gui_logger=None):
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
 
-def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=False, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0]):   
+def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0]):   
     """
     Function to generate customised BRIR from below parameters
 
@@ -403,7 +404,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
     :param reduce_reverb: bool, True = enable reverb reduction, False = no reverb reduction
     :param target_rt60: int, value in ms for target reverberation time, only applicable if reduce_reverb == True
     :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
-    :param report_progress: bool, True = update progress to progress bar in gui, set to False if no gui
+    :param report_progress: int, 1 = update progress to progress bar (1st tab) in gui, 2 = 2nd tab, set to 0 if not using the gui
     :param gui_logger: gui logger object for dearpygui
     :return: numpy array containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
     """ 
@@ -415,8 +416,9 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
     try:
         
         #exit if stop thread flag is true
-        stop_thread = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread:
+        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
+        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+        if stop_thread_1 == True or stop_thread_2 == True:
             brir_out= np.array([])
             log_string = 'BRIR Processing cancelled by user'
             if CN.LOG_INFO == 1:
@@ -492,7 +494,9 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
             room_target_mat = np.load(npy_fname)
             room_target_fir = room_target_mat[room_target]
-                
+        else:
+            room_target_fir = np.copy(impulse[0:512])
+            
         #
         # load pinna comp filter (FIR)
         #
@@ -514,6 +518,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         # load additional headphone eq
         #
         apply_add_hp_eq = 0
+        data_addit_eq = np.copy(impulse[0:512])
         if CN.APPLY_ADD_HP_EQ > 0:
             if pinna_comp == 2:
                 filename = 'additional_comp_for_over_&_on_ear_headphones.wav'
@@ -523,8 +528,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
                 apply_add_hp_eq = 1
             if apply_add_hp_eq > 0:
                 wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-                samplerate, data_addit_eq = wavfile.read(wav_fname)
-                data_addit_eq = data_addit_eq / (2.**31)
+                samplerate, data_addit_eq = hf.read_wav_file(wav_fname)
 
 
         log_string = 'Input filters loaded'
@@ -532,10 +536,6 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
-            progress = 2/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
         
         #
         # load sub bass BRIR (FIR)
@@ -554,10 +554,14 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
+        if report_progress > 0:
             progress = 5/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
             
         #
         # Load BRIR reverberation data
@@ -596,10 +600,10 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
             if spatial_res <= 2:
                 #this dataset includes all hrirs up to high spatial resolution. Elevations from -60 to 60deg in 5 deg steps, Azimuths from 0 to 360dg in 5deg steps
-                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_high.npy')
+                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_hp_high.npy')#_hp_ = high pass filter applied
             elif spatial_res == 3:
                 #this dataset includes all hrirs at full spatial resolution. Elevations from -40 to 60deg in 2 deg steps, Azimuths from 0 to 360dg in 2deg steps
-                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.npy')
+                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_hp_max.npy')
             elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
             elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
             elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
@@ -643,10 +647,14 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
-            progress = 7/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+        if report_progress > 0:
+            progress = 10/100
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
             
 
       
@@ -673,15 +681,20 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
 
-        if report_progress == True:
-            progress = 15/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+        if report_progress > 0:
+            progress = 20/100
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
             
         
         #exit if stop thread flag is true
-        stop_thread = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread:
+        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
+        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+        if stop_thread_1 == True or stop_thread_2 == True:
             brir_out= np.array([])
             log_string = 'BRIR Processing cancelled by user'
             if CN.LOG_INFO == 1:
@@ -693,18 +706,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         #
         ## Integration of BRIRs with HRIRs through TD interpolation and DRR scaling
         #
-        
-        #
-        #apply high pass filter to hrirs
-        #
-        for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir):
-                for chan in range(total_chan_hrir):  
-                    hrir_eq_a_h = np.copy(hrir_selected[elev][azim][chan][:])
-                    #apply hp filter
-                    hrir_eq_b_h = hf.signal_highpass_filter(hrir_eq_a_h, f_crossover_var, CN.FS, CN.ORDER)
-                    hrir_selected[elev][azim][chan][0:total_samples_hrir] = hrir_eq_b_h[0:total_samples_hrir] 
-
+ 
         #
         ## Reverberation shaping and EQ
         #
@@ -797,10 +799,14 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
-            progress = 40/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+        if report_progress > 0:
+            progress = 30/100
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
 
         #
         # grab BRIRs from interim matrix and place in output matrix
@@ -869,12 +875,16 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
     
         #
         #add HRIR into output BRIR array
-        #
+        #use multiple threads to integrate HRIRs into output BRIR rray
+        ts = []
         for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir):
-                for chan in range(total_chan_hrir):      
-                    brir_out[elev][azim][chan][0:total_samples_hrir] = brir_out[elev][azim][chan][0:total_samples_hrir] + hrir_selected[elev][azim][chan][0:total_samples_hrir]
+            t = threading.Thread(target=combine_hrirs_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, hrir_selected, total_samples_hrir))
+            ts.append(t)
+            t.start()
+        for t in ts:
+           t.join()
         
+
         
         #clear out hrir array since no longer used
         hrir_selected = None
@@ -893,15 +903,20 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
-            progress = 45/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+        if report_progress > 0:
+            progress = 40/100
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
         
         
         #exit if stop thread flag is true
-        stop_thread = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread:
+        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
+        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+        if stop_thread_1 == True or stop_thread_2 == True:
             brir_out= np.array([])
             log_string = 'BRIR Processing cancelled by user'
             if CN.LOG_INFO == 1:
@@ -1053,10 +1068,14 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
                 logging.info('peak_to_peak_max_n = ' + str(peak_to_peak_max_n))
                 logging.info('peak_to_peak_max_p = ' + str(peak_to_peak_max_p))
             
-            if report_progress == True:
-                progress = 60/100
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            if report_progress > 0:
+                progress = 50/100
+                if report_progress == 2:
+                    dpg.set_value("progress_bar_brir", progress)
+                    dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+                else:
+                    dpg.set_value("qc_progress_bar_brir", progress)
+                    dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
             
             #
             #apply low pass filter to sub BRIR
@@ -1088,27 +1107,18 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
                 plot_name = 'Sub IR after shifting before int'
                 hf.plot_td(sample_sub_lp[0:1024],plot_name)
             
-            #
-            #apply high pass filter to hrir+brir
-            #
+
+            
+            #use multiple threads to integrate sub brir into output array
+            ts = []
             for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    for chan in range(total_chan_hrir):  
-                        #only apply equalisation if direction is in direction matrix
-                        if direction_matrix_process[elev][azim][0][0] == 1: 
-                        
-                            brir_eq_a_h = np.copy(brir_out[elev][azim][chan][:])
-                            #apply hp filter
-                            brir_eq_b_h = hf.signal_highpass_filter(brir_eq_a_h, f_crossover_var, CN.FS, CN.ORDER)
-                            brir_out[elev][azim][chan][:] = brir_eq_b_h[0:n_fft] 
-  
-            #add SUB BRIR into output BRIR array
-            for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    for chan in range(total_chan_hrir):
-                        #only apply if direction is in direction matrix
-                        if direction_matrix_process[elev][azim][0][0] == 1: 
-                            brir_out[elev][azim][chan][:] = brir_out[elev][azim][chan][:] + sub_brir_ir[chan][:]
+                t = threading.Thread(target=integrate_sub_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, f_crossover_var, sub_brir_ir))
+                ts.append(t)
+                t.start()
+            for t in ts:
+               t.join()
+
+        
         
             #plot BRIR after adding SUB 
             if CN.PLOT_ENABLE == 1:
@@ -1123,15 +1133,20 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
-            progress = 70/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+        if report_progress > 0:
+            progress = 60/100
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
          
             
         #exit if stop thread flag is true
-        stop_thread = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread:
+        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
+        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+        if stop_thread_1 == True or stop_thread_2 == True:
             brir_out= np.array([])
             log_string = 'BRIR Processing cancelled by user'
             if CN.LOG_INFO == 1:
@@ -1140,48 +1155,46 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
                 gui_logger.log_info(log_string)
             return brir_out
             
+        # HRIR has been filtered, so apply window to remove any aliasing
+        #use multiple threads to perform windowing
+        ts = []
+        for elev in range(total_elev_hrir):
+            t = threading.Thread(target=initial_rise_window, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, initial_removal_win))
+            ts.append(t)
+            t.start()
+        for t in ts:
+           t.join()
+           
+
+
+
         #
         ## EQ correction
         #
         
-        # HRIR has been filtered, so apply window to remove any aliasing
-        for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir):
-                for chan in range(total_chan_hrir):
-                    #only apply if direction is in direction matrix
-                    if direction_matrix_process[elev][azim][0][0] == 1: 
-                        brir_out[elev][azim][chan][:] = np.multiply(brir_out[elev][azim][chan][:],initial_removal_win)
 
-        
-        #determine magnitude response, assume 0 phase
-        #set magnitude to 0dB
-        #invert response
-        #convert to IR
-        #if using IFFT, result will be 0 phase and symmetric
-        #if using ifftshift, result will be linear phase
-        #get linear phase FIR, window, and convert to minimum phase
-        #window min phase FIR again to remove artefacts
-        
-        num_brirs_avg = 0
-        brir_fft_avg_db = fr_flat.copy()
-        
-        #get diffuse field spectrum
+        #use multiple threads to calculate EQ
+        results_list = []
+        ts = []
         for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir):
-                for chan in range(total_chan_hrir):
-                    #only apply if direction is in direction matrix
-                    if direction_matrix_process[elev][azim][0][0] == 1: 
-                        brir_current = np.copy(brir_out[elev,azim,chan,0:CN.N_FFT])
-                        brir_current_fft = np.fft.fft(brir_current)
-                        brir_current_mag_fft=np.abs(brir_current_fft)
-                        brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
-                        
-                        brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
-                        
-                        num_brirs_avg = num_brirs_avg+1
+            list_indx=elev
+            results_list.append(0)
+            t = threading.Thread(target=calc_eq_for_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, fr_flat, results_list, list_indx))
+            ts.append(t)
+            t.start()
+        for t in ts:
+           t.join()
+        #results_list will be populated with numpy arrays representing db response for each elevation
+        num_results_avg = 0
+        brir_fft_avg_db = fr_flat.copy()
+        for result in results_list:
+            if np.sum(np.abs(result)) > 0:#some results might be flat 0 db
+                num_results_avg = num_results_avg+1
+                brir_fft_avg_db = np.add(brir_fft_avg_db,result)
+        #divide by total number of elevations
+        brir_fft_avg_db = brir_fft_avg_db/num_results_avg
         
-        #divide by total number of brirs
-        brir_fft_avg_db = brir_fft_avg_db/num_brirs_avg
+        
         #convert to mag
         brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
         #level ends of spectrum
@@ -1196,66 +1209,58 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         #create min phase FIR
         brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1, out_win_size=2048, n_fft=CN.N_FFT)
         
-        if report_progress == True:
+        if report_progress > 0:
             progress = 75/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
         
         #get matrix of desired output directions
         direction_matrix_out = brir_export.generate_direction_matrix(hrtf_type, spatial_res=spatial_res, output_variant=1)
 
-        
+        #exit if stop thread flag is true
+        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
+        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+        if stop_thread_1 == True or stop_thread_2 == True:
+            brir_out= np.array([])
+            log_string = 'BRIR Processing cancelled by user'
+            if CN.LOG_INFO == 1:
+                logging.info(log_string)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string)
+            return brir_out
+
+
+        #use multiple threads to perform EQ
+        ts = []
         for elev in range(total_elev_hrir):
-            
-            #exit if stop thread flag is true
-            stop_thread = dpg.get_item_user_data("progress_bar_brir")
-            if stop_thread:
-                brir_out= np.array([])
-                log_string = 'BRIR Processing cancelled by user'
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
-                return brir_out
-            
-            #update progress
-            if elev > total_elev_hrir/2:
-                if report_progress == True:
-                    progress = 82/100
-                    dpg.set_value("progress_bar_brir", progress)
-                    dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            
-            for azim in range(total_azim_hrir):
-                for chan in range(total_chan_hrir):  
-                    
-                    #only apply equalisation if direction is in direction matrix
-                    if direction_matrix_out[elev][azim][0][0] == 1: 
-                    
-                        #convolve BRIR with filters
-                        brir_eq_b = np.copy(brir_out[elev,azim,chan,:])#brir_eq_a = np.copy(brir_out[elev][azim][chan][:])
-                        #apply DF eq
-                        brir_eq_b = sp.signal.convolve(brir_eq_b,brir_df_inv_fir, 'full', 'auto')
-                        #apply room target
-                        if room_target >= 1:
-                            brir_eq_b = sp.signal.convolve(brir_eq_b,room_target_fir, 'full', 'auto')
-                        #apply pinna compensation
-                        if pinna_comp >= 2:
-                            brir_eq_b = sp.signal.convolve(brir_eq_b,pinna_comp_fir, 'full', 'auto')
-                        #apply additional eq for headphones
-                        if CN.APPLY_ADD_HP_EQ > 0 and apply_add_hp_eq > 0:
-                            brir_eq_b = sp.signal.convolve(brir_eq_b,data_addit_eq, 'full', 'auto')
-                        brir_out[elev,azim,chan,:] = np.copy(brir_eq_b[0:n_fft])
-                    
-                    else:
-                        brir_out[elev,azim,chan,:] = np.zeros(n_fft)#zero out directions that wont be exported
+            t = threading.Thread(target=apply_eq_to_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_out, brir_df_inv_fir, room_target, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq))
+            ts.append(t)
+            t.start()
+        for t in ts:
+           t.join()
 
 
         if CN.PLOT_ENABLE == 1:
             hf.plot_data(mag_fft,'mag_fft SUBRIR')
             hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag')
-            hf.plot_data(brir_current_mag_fft,'brir_current_mag_fft')
             hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm')
             hf.plot_data(brir_fft_avg_mag_inv,'brir_fft_avg_mag_inv')
+
+        #exit if stop thread flag is true
+        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
+        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+        if stop_thread_1 == True or stop_thread_2 == True:
+            brir_out= np.array([])
+            log_string = 'BRIR Processing cancelled by user'
+            if CN.LOG_INFO == 1:
+                logging.info(log_string)
+            if CN.LOG_GUI == 1 and gui_logger != None:
+                gui_logger.log_info(log_string)
+            return brir_out
 
 
         log_string = 'Frequency response calibrated'
@@ -1263,10 +1268,14 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             logging.info(log_string)
         if CN.LOG_GUI == 1 and gui_logger != None:
             gui_logger.log_info(log_string)
-        if report_progress == True:
+        if report_progress > 0:
             progress = 90/100
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            if report_progress == 2:
+                dpg.set_value("progress_bar_brir", progress)
+                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
+            else:
+                dpg.set_value("qc_progress_bar_brir", progress)
+                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
 
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
@@ -1286,6 +1295,124 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
     return brir_out
 
 
+def combine_hrirs_brirs(brir_out, elev, n_fft, total_azim_hrir, hrir_selected, total_samples_hrir):
+    """
+    Function integrates HRIRs into BRIR dataset
+    :param brir_out: numpy array containing brirs
+    :return: None
+    """ 
+    
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):      
+            brir_out[elev][azim][chan][0:total_samples_hrir] = brir_out[elev][azim][chan][0:total_samples_hrir] + hrir_selected[elev][azim][chan][0:total_samples_hrir]
+    
+
+def initial_rise_window(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, initial_removal_win):
+    """
+    Function performs initial rise windowing on brirs
+    :param brir_out: numpy array containing brirs
+    :return: None
+    """ 
+    
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):
+            #only apply if direction is in direction matrix
+            if direction_matrix_process[elev][azim][0][0] == 1: 
+                brir_out[elev][azim][chan][:] = np.multiply(brir_out[elev][azim][chan][:],initial_removal_win)
+    
+    
+
+def calc_eq_for_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, fr_flat, results_list, list_indx):
+    """
+    Function calculates equalisation filter in parts
+    :param brir_out: numpy array containing brirs
+    :return: None
+    """ 
+    
+    num_brirs_avg = 0
+    brir_fft_avg_db = fr_flat.copy()
+    
+    #get diffuse field spectrum
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):
+            #only apply if direction is in direction matrix
+            if direction_matrix_process[elev][azim][0][0] == 1: 
+                brir_current = np.copy(brir_out[elev,azim,chan,0:CN.N_FFT])
+                brir_current_fft = np.fft.fft(brir_current)
+                brir_current_mag_fft=np.abs(brir_current_fft)
+                brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
+                
+                brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
+                
+                num_brirs_avg = num_brirs_avg+1
+    
+    #divide by total number of brirs
+    if num_brirs_avg > 0:
+        brir_fft_avg_db = brir_fft_avg_db/num_brirs_avg
+    
+    results_list[list_indx]=brir_fft_avg_db
+    
+    
+
+def apply_eq_to_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_out, brir_df_inv_fir, room_target, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq):
+    """
+    Function applies equalisation to brirs in numpy array
+    :param brir_out: numpy array containing brirs
+    :return: None
+    """ 
+ 
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):  
+            
+            #only apply equalisation if direction is in direction matrix
+            if direction_matrix_out[elev][azim][0][0] == 1: 
+            
+                #convolve BRIR with filters
+                brir_eq_b = np.copy(brir_out[elev,azim,chan,:])#brir_eq_a = np.copy(brir_out[elev][azim][chan][:])
+                #apply DF eq
+                brir_eq_b = sp.signal.convolve(brir_eq_b,brir_df_inv_fir, 'full', 'auto')
+                #apply room target
+                brir_eq_b = sp.signal.convolve(brir_eq_b,room_target_fir, 'full', 'auto')
+                #apply pinna compensation
+                if pinna_comp >= 2:
+                    brir_eq_b = sp.signal.convolve(brir_eq_b,pinna_comp_fir, 'full', 'auto')
+                #apply additional eq for headphones
+                brir_eq_b = sp.signal.convolve(brir_eq_b,data_addit_eq, 'full', 'auto')
+                brir_out[elev,azim,chan,:] = np.copy(brir_eq_b[0:n_fft])
+            
+            else:
+                brir_out[elev,azim,chan,:] = np.zeros(n_fft)#zero out directions that wont be exported
+
+def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, f_crossover_var, sub_brir_ir):
+    """
+    Function applies final stages of sub brir integration
+    :param brir_out: numpy array containing brirs
+    :return: None
+    """ 
+
+    #
+    #apply high pass filter to hrir+brir
+    #
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):  
+            #only apply equalisation if direction is in direction matrix
+            if direction_matrix_process[elev][azim][0][0] == 1: 
+            
+                brir_eq_a_h = np.copy(brir_out[elev][azim][chan][:])
+                #apply hp filter
+                brir_eq_b_h = hf.signal_highpass_filter(brir_eq_a_h, f_crossover_var, CN.FS, CN.ORDER)
+                brir_out[elev][azim][chan][:] = brir_eq_b_h[0:n_fft] 
+  
+    #add SUB BRIR into output BRIR array
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):
+            #only apply if direction is in direction matrix
+            if direction_matrix_process[elev][azim][0][0] == 1: 
+                brir_out[elev][azim][chan][:] = brir_out[elev][azim][chan][:] + sub_brir_ir[chan][:]
+
+
+
+
 
 def preprocess_hrirs(spatial_res=1, gui_logger=None):
     """
@@ -1298,6 +1425,7 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
     st = time.time()
     n_fft=CN.N_FFT
     lf_align=False#False
+    h_pass=False
 
     try:
     
@@ -1398,6 +1526,21 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
                     for chan in range(total_chan_hrir):
                         hrir_selected[elev][azim][chan][:] = np.roll(hrir_selected[elev][azim][chan][:],hrir_shift)
 
+
+            #
+            #apply high pass filter to hrirs
+            #
+            if h_pass == True:
+                f_crossover_var=CN.F_CROSSOVER
+                for elev in range(total_elev_hrir):
+                    for azim in range(total_azim_hrir):
+                        for chan in range(total_chan_hrir):  
+                            hrir_eq_a_h = np.copy(hrir_selected[elev][azim][chan][:])
+                            #apply hp filter
+                            hrir_eq_b_h = hf.signal_highpass_filter(hrir_eq_a_h, f_crossover_var, CN.FS, CN.ORDER)
+                            hrir_selected[elev][azim][chan][0:total_samples_hrir] = hrir_eq_b_h[0:total_samples_hrir] 
+
+
             if lf_align == True:
                 #after aligning in high freqs, align in low freqs
                 fc_alignment=1000#500
@@ -1475,6 +1618,8 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
         #save resulting dataset to a numpy file
         if lf_align == True:
             npy_file_name =  'hrir_dataset_compensated_lfa_' +spatial_res_str+'.npy'
+        elif h_pass == True:
+            npy_file_name =  'hrir_dataset_compensated_hp_' +spatial_res_str+'.npy'
         else:
             npy_file_name =  'hrir_dataset_compensated_' +spatial_res_str+'.npy'
     

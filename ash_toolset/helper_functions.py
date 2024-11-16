@@ -8,6 +8,7 @@ Created on Sun Aug  6 14:02:51 2023
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal as sps
+from scipy.io import wavfile
 import soundfile as sf
 from scipy.signal import butter
 import scipy as sp
@@ -86,7 +87,7 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
     :param save_plot: int, 1 = save plot to file, 0 = dont save plot
     :param plot_path: string, path to save plot 
     :param normalise: int, 0 = dont normalise, 1 = normalise low frequencies to 0db
-    :param plot_type: int, 0 = matplotlib, 1 = dearpygui
+    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 1 = dearpygui (series 2 - quick config)
     :return: None
     """
 
@@ -131,7 +132,9 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
     elif plot_type == 1:
         dpg.set_value('series_tag', [freqArray, mag_response_log])
         dpg.set_item_label('series_tag', title_name)
-
+    elif plot_type == 2:
+        dpg.set_value('qc_series_tag', [freqArray, mag_response_log])
+        dpg.set_item_label('qc_series_tag', title_name)
 
 
 def plot_geq(geq_dict, title_name = 'Output', y_lim_adjust = 0, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT):
@@ -284,6 +287,25 @@ def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_dep
     #new method using PySoundFile 
     #soundfile expects data in frames x channels, or one-dimensional data for mono files. librosa does it the other way around.
     sf.write(file_name, data, samplerate, bit_depth)
+    
+    
+def read_wav_file(audiofilename):
+    """
+    function to open a wav file
+    """
+    
+    samplerate, x = wavfile.read(audiofilename)  # x is a numpy array of integers, representing the samples 
+    # scale to -1.0 -- 1.0
+    if x.dtype == 'int16':
+        nb_bits = 16  # -> 16-bit wav files
+    elif x.dtype == 'int32':
+        nb_bits = 32  # -> 32-bit wav files
+    max_nb_bit = float(2 ** (nb_bits - 1))
+    samples = x / (max_nb_bit + 1)  # samples is a numpy array of floats representing the samples 
+    
+    #print(x.dtype)
+    
+    return samplerate, samples
     
     
 def resample_signal(signal, original_rate = 44100, new_rate = 48000, axis=0):

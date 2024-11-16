@@ -3318,7 +3318,7 @@ def calc_subrir(gui_logger=None):
                 subrir_sets_interim[sub_set_id,set_num,chan,:] = np.copy(sub_brir_ir_new[chan][:])
   
         #ratios for merging
-        ratio_list = [0.34,0.22,0.12,0.10,0.22]#
+        ratio_list = [0.28,0.22,0.12,0.10,0.28]#0.34,0.22,0.12,0.10,0.22, 0.32,0.22,0.12,0.10,0.24 0.30,0.22,0.12,0.10,0.26 0.29,0.22,0.12,0.10,0.27
 
         sub_brir_ir_new = np.zeros((2,n_fft))
         #prepopulate with reference subrir

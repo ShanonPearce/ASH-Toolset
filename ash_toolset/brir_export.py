@@ -29,7 +29,7 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, brir_dir_export=1, brir_ts_export=1, hesuvi_export=1, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=44100, bit_depth='PCM_24', spatial_res=1, sofa_export=0):
+def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=44100, bit_depth='PCM_24', spatial_res=1, sofa_export=False):
     """
     Function to export a customised BRIR to WAV files
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
@@ -117,7 +117,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         brir_folder = brir_name
         out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS,brir_folder)
  
-        if brir_dir_export == 1:
+        if brir_dir_export == True:
             
             direction_matrix_out = generate_direction_matrix(hrtf_type, spatial_res=spatial_res, output_variant=2)
             
@@ -170,19 +170,19 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
                 logging.info(log_string)
             if CN.LOG_GUI == 1 and gui_logger != None:
                 gui_logger.log_info(log_string)
- 
+
         #
         ## write SOFA file
         #
          
-        if sofa_export == 1:
+        if sofa_export == True:
             export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, est_rt60=est_rt60, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
     
         #
         ## write set of HESUVI WAVs
         #
         
-        if brir_ts_export == 1 or hesuvi_export == 1:
+        if brir_ts_export == True or hesuvi_export == True:
         
             if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
                 elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
@@ -280,7 +280,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
                     brir_out_44_ts[3,:]=data_pad[0:out_wav_samples_44,1]
             
             
-        if brir_ts_export == 1:
+        if brir_ts_export == True:
             #
             #true stereo
             #
@@ -306,7 +306,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
             if CN.LOG_GUI == 1 and gui_logger != None:
                 gui_logger.log_info(log_string)
         
-        if hesuvi_export == 1:
+        if hesuvi_export == True:
             
             #
             #hesuvi 44khz
