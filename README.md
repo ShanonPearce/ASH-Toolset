@@ -174,9 +174,10 @@ In the 'Quick Configuration’ tab, this section is used to apply customised bin
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
 ### Apply Filters in Equalizer APO (new method)
-V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will auto-configure 'config.txt' to apply selected filters and binaural simulations in Equalizer APO. Ensure 'Enable Headphone Correction' and/or 'Enable Binaural Room Simulation' are ticked for the changes to apply. The audio channels can be configured in the 'Channel Configuration' tab on the right.
+V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will auto-configure 'config.txt' to apply selected filters and binaural simulations in Equalizer APO. Ensure 'Enable Headphone Correction' and/or 'Enable Binaural Room Simulation' are ticked for the changes to apply. The audio channels can be configured in the 'Channel Configuration' tab on the right side of the app.
 - The preamplification control will apply the specified gain to all channels.
-- The number of input audio channels can be selected using the drop down. The selected channel configuration must be supported by the sound device.
+- The estimated peak gain table can be used to identify potential clipping that may occur for different input channel configurations
+- The input audio channel configuration can be selected using the drop down. The selected channel configuration must be supported by the sound device.
 - The gains and source directions of each audio channel can be configured separately.
 
 ![Equalizer APO example](docs/images/e_apo_steps.png)
