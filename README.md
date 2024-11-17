@@ -34,7 +34,7 @@ A significant source of spectral colouration impacting the quality of binaural s
 
 Although diffuse-field calibrated headphones are common, differences in frequency responses across headphones are considerably large. Individual headphone equalisation is therefore recommended to compensate for the unique and undesired spectral colouration introduced by the listener's headphones.  
 
-The ASH Toolset can be used to generate Headphone Correction Filters (s) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
+The ASH Toolset can be used to generate Headphone Correction Filters (HpCFs) for a set of commonly used headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
 
 
 
