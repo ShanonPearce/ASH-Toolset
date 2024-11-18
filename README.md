@@ -93,8 +93,8 @@ The app contains the following 3 tabs:
 - The ‘Filter & Dataset export’ tab can be used to export correction filters and binaural datasets to a local directory
 - The ‘Additional Tools & Log’ tab contains some miscellaneous options and log messages
 
-### Generate Headphone Correction Filters
-In the 'Quick Configuration’ tab, this section is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
+### Headphone Correction
+In the 'Quick Configuration’ tab, this tool is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
 1. Select a headphone brand to filter down on the headphone list.
 2. Select a specific headphone.
 3. Select a specific sample. Note that in the ‘Filter & Dataset export’ tab, all samples will be exported for the selected headphone.
@@ -111,8 +111,8 @@ In the 'Quick Configuration’ tab, this section is used to apply headphone corr
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
-### Generate Binaural Dataset for Room Simulation over Headphones
-In the 'Quick Configuration’ tab, this section is used to apply customised binaural room simulation over headphones in equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation.
+### Binaural Room Simulation over Headphones
+In the 'Quick Configuration’ tab, this tool is used to apply customised binaural room simulations over headphones in equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation.
 1. Select acoustic space from below environments. This will determine the listening environment of the simulation.
    - Audio labs
    - Auditorium
@@ -169,11 +169,11 @@ In the 'Quick Configuration’ tab, this section is used to apply customised bin
 
 ![brir steps](docs/images/brir_steps.png)
 
-### Using the Filters
+### Using the Correction Filters and Binaural Simulations
 
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
-### Apply Filters in Equalizer APO (new method)
+### Apply Filters and Simulations in Equalizer APO (new method)
 V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will auto-configure 'config.txt' to apply selected filters and binaural simulations in Equalizer APO. Ensure 'Enable Headphone Correction' and/or 'Enable Binaural Room Simulation' are ticked for the changes to apply. The audio channels can be configured in the 'Channel Configuration' tab on the right side of the app.
 - The preamplification control will apply the specified gain to all channels.
 - The estimated peak gain table can be used to identify potential clipping that may occur for different input channel configurations
@@ -182,7 +182,7 @@ V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will 
 
 ![Equalizer APO example](docs/images/e_apo_steps.png)
 
-### Apply Filters in Equalizer APO (old method - V2.0.0 to V2.4.0)
+### Apply Filters and Simulations in Equalizer APO (old method - V2.0.0 to V2.4.0)
 V2.0.0 to V2.4.0 of the toolset includes a section to browse exported filters and auto-configure 'config.txt' to apply selected filters in Equalizer APO. This method removes the need for manual interaction with the configuration editor.
 
 1. Select a headphone from the list of exported filters. 
@@ -192,7 +192,7 @@ V2.0.0 to V2.4.0 of the toolset includes a section to browse exported filters an
 5. Configure the gain and source direction of each audio channel.
 
 
-### Apply Filters in Equalizer APO (old method - V1.0.0 to V1.2.0)
+### Apply Filters and Simulations in Equalizer APO (old method - V1.0.0 to V1.2.0)
 
 1. In the Windows sound settings, set the default format of the output sound device to the sample rate of the generated filters. In Windows 11 the playback device settings can be found in Settings -> System -> Sound -> (your output device) -> Properties. The sample rate of the sound device must match the sample rate of the filters.
 2. Generated filters will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Outputs) by default. Move the ASH-Outputs folder to this location if it was saved elsewhere.
@@ -206,7 +206,7 @@ V2.0.0 to V2.4.0 of the toolset includes a section to browse exported filters an
 
 If your audio device does not support a 7.1 surround channel configuration, a virtual audio device such as [VB-Audio Virtual Cable](https://www.vb-audio.com/Cable/index.htm) or [Voicemeeter](https://www.vb-audio.com/Voicemeeter/index.htm) can be used for audio processing in place of your regular audio playback device. Equalizer APO can be installed on the virtual audio device which can be configured for 7.1 audio, and the output of the virtual audio device can be sent to your regular audio playback device.
 
-### Apply Filters in HeSuVi
+### Apply Filters and Simulations in HeSuVi
 
 As an alternative to above method in Equalizer APO, the generated filters can be applied using HeSuVi.
 
