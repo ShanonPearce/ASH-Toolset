@@ -126,7 +126,7 @@ def main():
     e_apo_brir_curr_default=''
     e_apo_brir_sel_default=''
     tab_selected_default=0
-    
+    hrtf_symmetry_default=CN.HRTF_SYM_LIST[0]
     qc_brir_hp_type_default='Over/On-Ear Headphones - High Strength'
     qc_hrtf_default=CN.HRTF_LIST_NUM[0]
     qc_room_target_default=CN.ROOM_TARGET_LIST[1]
@@ -160,6 +160,7 @@ def main():
     sofa_brir_exp_loaded=sofa_brir_exp_default
     audio_channels_loaded=audio_channels_default
     auto_check_updates_loaded=auto_check_updates_default
+    hrtf_symmetry_loaded=hrtf_symmetry_default
     #E-APO config related settings
     e_apo_mute_fl_loaded=e_apo_mute_default
     e_apo_mute_fr_loaded=e_apo_mute_default
@@ -257,6 +258,7 @@ def main():
             eapo_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['eapo_brir_exp'])
             sofa_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['sofa_brir_exp'])
             auto_check_updates_loaded=ast.literal_eval(config['DEFAULT']['auto_check_updates'])
+            hrtf_symmetry_loaded=config['DEFAULT']['force_hrtf_symmetry']
             base_folder_loaded = config['DEFAULT']['path']
             primary_path=base_folder_loaded
             primary_ash_path=pjoin(base_folder_loaded, CN.PROJECT_FOLDER)
@@ -1554,20 +1556,21 @@ def main():
         samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str)
         bit_depth_str = dpg.get_value('qc_wav_bit_depth')
         bit_depth = CN.BIT_DEPTH_DICT.get(bit_depth_str)
+        hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
         spat_res_int = 0
 
         """
         #Run BRIR integration
         """
         brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, 
-                                                            pinna_comp=pinna_comp, report_progress=1, gui_logger=logz, acoustic_space=ac_space_src)
+                                                            pinna_comp=pinna_comp, report_progress=1, gui_logger=logz, acoustic_space=ac_space_src, hrtf_symmetry=hrtf_symmetry)
         
         """
         #Run BRIR export
         """
         #calculate name
-        brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp]
-        brir_name_full = brir_name + ' '+samp_freq_str + ' '+bit_depth_str 
+        brir_name = calc_brir_set_name(full_name=False)
+        brir_name_full = calc_brir_set_name(full_name=True)
         dataset_name = CN.FOLDER_BRIRS_LIVE 
 
         if brir_gen.size != 0:
@@ -1643,8 +1646,9 @@ def main():
         hrtf_type = CN.HRTF_LIST_NUM.index(hrtf)+1
         sample_rate = dpg.get_value('qc_wav_sample_rate')
         bit_depth = dpg.get_value('qc_wav_bit_depth')
+        hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
         if full_name==True:
-            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth
+            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry
         else:
             brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp]
     
@@ -1739,11 +1743,15 @@ def main():
         dpg.set_value("hesuvi_brir_toggle", hesuvi_brir_exp_default)
         dpg.set_value("eapo_brir_toggle", eapo_brir_exp_default)
         dpg.set_value("sofa_brir_toggle", sofa_brir_exp_default)
-
+        dpg.set_value("force_hrtf_symmetry", hrtf_symmetry_default)
+        dpg.set_value("e_apo_brir_conv", e_apo_enable_brir_default)
+        dpg.set_value("e_apo_hpcf_conv", e_apo_enable_hpcf_default)
         #reset progress bars
         reset_hpcf_progress()
         reset_brir_progress()
         qc_reset_progress()
+        e_apo_toggle_hpcf(app_data=False)
+        e_apo_toggle_brir(app_data=False)
         
         #reset output directory
         if e_apo_path is not None:
@@ -1762,10 +1770,9 @@ def main():
             hesuvi_path_selected = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
         dpg.set_value('selected_folder_hesuvi', hesuvi_path_selected)
         dpg.set_value('selected_folder_hesuvi_tooltip', hesuvi_path_selected)
-        
-        
+
         reset_channel_config()
-        
+
         save_settings()
         
     def save_settings():
@@ -1795,7 +1802,7 @@ def main():
         hesuvi_brir_exp_str= str(dpg.get_value('hesuvi_brir_toggle'))
         eapo_brir_exp_str= str(dpg.get_value('eapo_brir_toggle'))
         sofa_brir_exp_str= str(dpg.get_value('sofa_brir_toggle'))
-        
+        hrtf_symmetry_str = str(dpg.get_value('force_hrtf_symmetry'))
         auto_check_updates_str = str(dpg.get_value('check_updates_start_tag'))
         enable_hpcf_str=str(dpg.get_value('e_apo_hpcf_conv'))
         autoapply_hpcf_str=str(dpg.get_value('qc_auto_apply_hpcf_sel'))
@@ -1878,7 +1885,7 @@ def main():
             config['DEFAULT']['eapo_brir_exp'] = eapo_brir_exp_str
             config['DEFAULT']['sofa_brir_exp'] = sofa_brir_exp_str
             config['DEFAULT']['auto_check_updates'] = auto_check_updates_str
-
+            config['DEFAULT']['force_hrtf_symmetry'] = hrtf_symmetry_str
             config['DEFAULT']['mute_fl'] = mute_fl_str
             config['DEFAULT']['mute_fr'] = mute_fr_str
             config['DEFAULT']['mute_c'] = mute_c_str
@@ -2102,25 +2109,15 @@ def main():
         
         #run function to write custom config
         gain_conf = e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_dict=brir_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel)
-        #if failed, try again
-        # if gain_conf == CN.EAPO_ERROR_CODE:
-        #     #print('write config failed')
-        #     sleep(0.1)
-        #     gain_conf = e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_dict=brir_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel)
-    
+ 
         #run function to load the custom config file in config.txt
         if enable_hpcf_selected == True or enable_brir_selected == True:
             load_config = True
         else:
             load_config = False
         #if true, edit config.txt to include the custom config
-        status_code = e_apo_config_creation.include_ash_e_apo_config(primary_path=base_folder_selected, enabled=load_config)
-        #if failed, try again
-        # if status_code == CN.EAPO_ERROR_CODE:
-        #     #print('include config failed')
-        #     sleep(0.1)
-        #     status_code = e_apo_config_creation.include_ash_e_apo_config(primary_path=base_folder_selected, enabled=load_config)
-            
+        e_apo_config_creation.include_ash_e_apo_config(primary_path=base_folder_selected, enabled=load_config)
+
         #also save settings
         save_settings()
      
@@ -3869,6 +3866,14 @@ def main():
                                 dpg.add_button(label="Download Latest Datasets",user_data="",tag="as_download_tag", callback=download_latest_as_sets)
                                 with dpg.tooltip("as_download_tag"):
                                     dpg.add_text("This will download any updates to acoustic space datasets and replace local versions")
+                            #Section to reset settngs
+                            with dpg.child_window(width=200, height=150):
+                                dpg.add_text("Inputs")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_separator()
+                                dpg.add_text("Reset All Settings to Default")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)  
                             with dpg.child_window(width=250, height=150):
                                 dpg.add_text("Outputs")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -3883,14 +3888,17 @@ def main():
                                 dpg.add_button(label="Delete Binaural Datasets",user_data="",tag="remove_brirs_tag", callback=remove_brirs)
                                 with dpg.tooltip("remove_brirs_tag"):
                                     dpg.add_text("Warning: this will delete all BRIRs that have been generated and exported to the output directory")  
-                            #Section to reset settngs
-                            with dpg.child_window(width=250, height=150):
-                                dpg.add_text("Settings")
+                            #Section for misc settings
+                            with dpg.child_window(width=200, height=150):
+                                dpg.add_text("Misc. Settings")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_separator()
-                                dpg.add_text("Reset Settings to Default")
+                                dpg.add_separator()    
+                                dpg.add_text("Force Left/Right Symmetry")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_button(label="Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)  
+                                dpg.add_combo(CN.HRTF_SYM_LIST, default_value=hrtf_symmetry_loaded, width=130, callback=qc_update_brir_param, tag='force_hrtf_symmetry')
+                                with dpg.tooltip("force_hrtf_symmetry"):
+                                    dpg.add_text("This will mirror the left or right sides of the HATS / dummy head") 
+                                
                 #section for logging
                 with dpg.child_window(width=1690, height=482, tag="console_window"):
                     dpg.add_text("Log")

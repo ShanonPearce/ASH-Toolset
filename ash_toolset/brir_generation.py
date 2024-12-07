@@ -393,7 +393,7 @@ def generate_reverberant_brir(gui_logger=None):
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
 
-def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0]):   
+def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0]):   
     """
     Function to generate customised BRIR from below parameters
 
@@ -665,15 +665,32 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         if direct_gain_db > CN.DIRECT_GAIN_MAX:
             direct_gain_db = CN.DIRECT_GAIN_MAX
         elif direct_gain_db < CN.DIRECT_GAIN_MIN:
-            direct_gain_db = CN.DIRECT_GAIN_MIN
-        
+            direct_gain_db = CN.DIRECT_GAIN_MIN   
         direct_gain = hf.db2mag(direct_gain_db)
-        
         for elev in range(total_elev_hrir):
             for azim in range(total_azim_hrir):
                 for chan in range(total_chan_hrir):
                     hrir_selected[elev][azim][chan][:] = np.multiply(hrir_selected[elev][azim][chan][:],CN.DIRECT_SCALING_FACTOR)
                     hrir_selected[elev][azim][chan][:] = np.multiply(hrir_selected[elev][azim][chan][:],direct_gain)
+        
+        #apply left right symmetry if enabled
+        if hrtf_symmetry != CN.HRTF_SYM_LIST[0]:
+            for elev in range(total_elev_hrir):
+                for azim in range(total_azim_hrir):
+                    if ('Left' in hrtf_symmetry and azim <= int((total_azim_hrir)/2)) or ('Right' in hrtf_symmetry and (azim >= int((total_azim_hrir)/2) or azim==0)):
+                        #get id of mirrored azimuth
+                        azim_mirror=total_azim_hrir-azim
+                        if azim_mirror==total_azim_hrir:
+                            azim_mirror=0
+                        for chan in range(total_chan_hrir):
+                            #get id of mirrored channel
+                            chan_mirror = total_chan_hrir-1-chan
+                            #replace hrir with mirrored hrir
+                            hrir_selected[elev][azim][chan][:] = np.copy(hrir_selected[elev][azim_mirror][chan_mirror][:])
+        
+        
+        
+        
         
         log_string = 'HRIR levels adjusted'
         if CN.LOG_INFO == 1:

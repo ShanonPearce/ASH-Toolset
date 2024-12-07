@@ -35,7 +35,10 @@ HRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
 SUBRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
 ROOM_TARGET_MODE=1#0= load .mat dataset, 1=load .npy dataset
 PINNA_COMP_MODE=1#0= load .mat dataset, 1=load .npy dataset
-
+HEAD_TRACK_RUNNING = False
+PROCESS_BRIRS_RUNNING = False
+SHOW_DEV_TOOLS=False
+STOP_THREAD_FLAG = False
 
 #control level of direct sound
 DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
@@ -276,11 +279,8 @@ SAMPLE_RATE_LIST = ['44.1 kHz', '48 kHz', '96 kHz']
 SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}  
 BIT_DEPTH_LIST = ['24 bit', '32 bit']
 BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  
+HRTF_SYM_LIST = ['Disabled', 'Mirror Left Side', 'Mirror Right Side']
 
-HEAD_TRACK_RUNNING = False
-PROCESS_BRIRS_RUNNING = False
-SHOW_DEV_TOOLS=False
-STOP_THREAD_FLAG = False
 
 #AIR and BRIR reverberation processing
 LIMIT_REBERB_DIRS=True
@@ -310,19 +310,20 @@ AC_SPACE_LIST_44100 = ['outdoors_b']
 AC_SPACE_LIST_SUBRIRDB = ['sub_set_c']
 AC_SPACE_LIST_NR = ['tatami_room_a']
 AC_SPACE_LIST_CUTOFF = ['concert_hall_a']
-AC_SPACE_LIST_LIM_CHANS = ['concert_hall_a']
+AC_SPACE_LIST_LIM_CHANS = ['concert_hall_a','hall_a']
 AC_SPACE_LIST_LIM_SETS = ['hall_a', 'outdoors_a','broadcast_studio_a','concert_hall_a', 'outdoors_b','seminar_room_a']
 AC_SPACE_CHAN_LIMITED=5#3,4
 AC_SPACE_LIST_NOROLL = ['auditorium_a', 'auditorium_b']
 AC_SPACE_LIST_NOCOMP = ['audio_lab_d']
 AC_SPACE_LIST_COMPMODE1 = ['control_room_a', 'tatami_room_a', 'office_a','studio_b']
 AC_SPACE_LIST_WINDOW = ['hall_a', 'outdoors_a','seminar_room_a','broadcast_studio_a', 'outdoors_b']
-AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i']
+AC_SPACE_LIST_WINDOW_ALL = ['']
+AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i','hall_a']
 AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
-AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a']
-AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a','broadcast_studio_a','concert_hall_a']
+AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a','concert_hall_a']
+AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a','broadcast_studio_a']
 AC_SPACE_LIST_LOW_FC = [' ']#
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
 

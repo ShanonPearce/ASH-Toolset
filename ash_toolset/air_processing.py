@@ -353,11 +353,11 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
         if ir_set == 'outdoors_a':
             fade_hanning_start=32000#55000
         elif ir_set == 'hall_a':
-            fade_hanning_start=23000#28000
+            fade_hanning_start=27000#23000
         elif ir_set == 'seminar_room_a' or ir_set == 'audio_lab_i':
             fade_hanning_start=12000#28000
         elif ir_set == 'broadcast_studio_a':
-            fade_hanning_start=20000#25000
+            fade_hanning_start=30000#20000,25000
         elif n_fft == CN.N_FFT_L:
             fade_hanning_start=35000#int(65536/2)
         else:
@@ -1477,23 +1477,23 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
             for set_num in range(num_out_sets):
                 for ir in range(irs_per_set):
                     data_fft = np.fft.fft(air_data[set_num,ir,0,44100:CN.N_FFT])
-                    if np.sum(np.abs(data_fft)) > 0:
+                    if np.sum(np.abs(data_fft)) > 0.0001:
                         mag_fft=np.abs(data_fft)
                         average_mag = np.mean(mag_fft[fb_start:fb_end])
                         total_irs=total_irs+1
                         average_mag_total=average_mag_total+average_mag
-            average_mag_total=average_mag_total/total_irs
+            average_mag_total=1.10*average_mag_total/total_irs
 
-            #window only if late reflections are stronger than average
+            #window only if late reflections are stronger than average or all IRs if specified
             for set_num in range(num_out_sets):
                 for ir in range(irs_per_set):
                     data_fft = np.fft.fft(air_data[set_num,ir,0,44100:CN.N_FFT])
                     mag_fft=np.abs(data_fft)
                     average_mag = np.mean(mag_fft[fb_start:fb_end])
-                    if average_mag > average_mag_total:
+                    if average_mag > average_mag_total or ir_set in CN.AC_SPACE_LIST_WINDOW_ALL:
                         for chan in range(total_chan_air):
                             air_data[set_num,ir,chan,:] = np.multiply(air_data[set_num,ir,chan,:],fade_out_win)
-                        print('Window applied')
+                        print('Window applied ' + str(set_num) + ' ' + str(ir))
         
         
         
@@ -1514,6 +1514,10 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
             
             if ir_set in CN.AC_SPACE_LIST_SUB:
                 cutoff_alignment = 80#100,90
+            elif ir_set in CN.AC_SPACE_LIST_HI_FC:
+                cutoff_alignment = CN.F_CROSSOVER_HI
+            elif ir_set in CN.AC_SPACE_LIST_MID_FC:
+                cutoff_alignment = CN.F_CROSSOVER_MID
             else:
                 cutoff_alignment = CN.CUTOFF_ALIGNMENT_AIR
             #peak to peak within a sufficiently small sample window

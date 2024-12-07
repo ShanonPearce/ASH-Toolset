@@ -567,6 +567,7 @@ def include_ash_e_apo_config(primary_path, enabled=False):
         output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS)
         
         #previously generated custom config file
+        hesuvi_file_name = 'hesuvi.txt'
         custom_file_name = 'ASH_Toolset_Config.txt'
         custom_file = pjoin(output_config_path, custom_file_name)
         custom_file_rel = CN.PROJECT_FOLDER + '\\E-APO-Configs\\'+custom_file_name
@@ -584,6 +585,9 @@ def include_ash_e_apo_config(primary_path, enabled=False):
                 with open(e_apo_config_path, "r", encoding='utf-8') as f:
                     for line in f.readlines():
                         altered_line=line
+                        #comment out line if hesuvi config is active and so is ash toolset config
+                        if hesuvi_file_name in line and '#' not in line and enabled == True:
+                            altered_line = '# '+line
                         #comment out line if a previous format convolution config is active
                         if ('HpCF-Convolution' in line or 'BRIR-Convolution' in line) and '#' not in line and enabled == True:
                             altered_line = '# '+line
