@@ -1559,6 +1559,11 @@ def main():
         hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
         spat_res_int = 0
 
+        #calculate name
+        brir_name = calc_brir_set_name(full_name=False)
+        brir_name_full = calc_brir_set_name(full_name=True)
+        dataset_name = CN.FOLDER_BRIRS_LIVE 
+        
         """
         #Run BRIR integration
         """
@@ -1568,11 +1573,6 @@ def main():
         """
         #Run BRIR export
         """
-        #calculate name
-        brir_name = calc_brir_set_name(full_name=False)
-        brir_name_full = calc_brir_set_name(full_name=True)
-        dataset_name = CN.FOLDER_BRIRS_LIVE 
-
         if brir_gen.size != 0:
 
             gain_oa_selected=dpg.get_value('e_apo_gain_oa')
@@ -1625,6 +1625,8 @@ def main():
         stop_thread_flag = False
         #update user data
         dpg.configure_item('qc_progress_bar_brir',user_data=stop_thread_flag)
+        #reset progress in case of changed settings
+        qc_reset_progress()
     
     def calc_brir_set_name(full_name=True):
         """ 
