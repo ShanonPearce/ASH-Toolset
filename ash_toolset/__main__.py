@@ -1426,12 +1426,13 @@ def main():
             hrtf_type = CN.HRTF_LIST_FULL_RES_NUM.index(hrtf)+1
         else:
             hrtf_type = CN.HRTF_LIST_NUM.index(hrtf)+1
-
+        hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
+        
         """
         #Run BRIR integration
         """
         brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, 
-                                                            pinna_comp=pinna_comp, report_progress=2, gui_logger=logz, acoustic_space=ac_space_src)
+                                                            pinna_comp=pinna_comp, report_progress=2, gui_logger=logz, acoustic_space=ac_space_src, hrtf_symmetry=hrtf_symmetry)
         
         """
         #Run BRIR export

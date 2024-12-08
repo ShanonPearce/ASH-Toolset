@@ -323,7 +323,7 @@ AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
 AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a','concert_hall_a']
-AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a','broadcast_studio_a']
+AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a']
 AC_SPACE_LIST_LOW_FC = [' ']#
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
 
