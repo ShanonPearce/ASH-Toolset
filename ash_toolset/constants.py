@@ -26,7 +26,7 @@ N_FFT_L = int(65536*2)
 N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
 SAMP_FREQ = 44100
 FS=SAMP_FREQ
-
+THRESHOLD_CROP = 0.0000005#-120db with reference level of 0.5
 SPECT_SMOOTH_MODE=1#0=use single pass smoothing, 1 = octave smoothing
 APPLY_SUB_EQ = 0#1
 APPLY_ROOM_TARGET = 1
@@ -221,6 +221,7 @@ AZ_ANGLES_SR_WAV.reverse()
 AZ_ANGLES_RL_WAV.reverse()
 AZ_ANGLES_RR_WAV.reverse()
 AZIM_HORIZ_RANGE = {5,20,25,35,40,355,340,335,325,320}
+EAPO_MUTE_GAIN=-60.0
 
 #spatial resolution
 SPATIAL_RES_LIST = ['Low','Medium','High','Max']
@@ -319,7 +320,7 @@ AC_SPACE_LIST_COMPMODE1 = ['control_room_a', 'tatami_room_a', 'office_a','studio
 AC_SPACE_LIST_WINDOW = ['hall_a', 'outdoors_a','seminar_room_a','broadcast_studio_a', 'outdoors_b']
 AC_SPACE_LIST_WINDOW_ALL = ['']
 AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i','hall_a']
-AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d']
+AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d','sub_set_e','sub_set_f']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
 AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a','concert_hall_a']

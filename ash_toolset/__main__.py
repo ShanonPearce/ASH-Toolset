@@ -1577,7 +1577,7 @@ def main():
         if brir_gen.size != 0:
 
             gain_oa_selected=dpg.get_value('e_apo_gain_oa')
-            dpg.set_value("e_apo_gain_oa", -60.0)
+            dpg.set_value("e_apo_gain_oa", CN.EAPO_MUTE_GAIN)
             dpg.set_value("e_apo_brir_conv", False)
             e_apo_config_acquire(estimate_gain=False)
             
@@ -2114,7 +2114,8 @@ def main():
         gain_conf = e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_dict=brir_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel)
  
         #run function to load the custom config file in config.txt
-        if enable_hpcf_selected == True or enable_brir_selected == True:
+        gain_oa_selected=dpg.get_value('e_apo_gain_oa')
+        if enable_hpcf_selected == True or enable_brir_selected == True or gain_oa_selected == CN.EAPO_MUTE_GAIN:
             load_config = True
         else:
             load_config = False

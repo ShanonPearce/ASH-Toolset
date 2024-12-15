@@ -63,6 +63,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         total_azim_brir = len(brir_arr[0])
         total_chan_brir = len(brir_arr[0][0])
         total_samples_brir = len(brir_arr[0][0][0])    
+        base_elev_idx = total_elev_brir//2
     
         #hesuvi path
         if 'EqualizerAPO' in primary_path:
@@ -81,6 +82,16 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         hrtf_index = hrtf_type-1
         hrtf_gain = gain_list[hrtf_index]
         
+        #gain adjustment
+        max_amp = np.max(np.abs(brir_arr))
+        
+        #reduce gain if direct gain db is less than max value
+        reduction_gain_db = (CN.DIRECT_GAIN_MAX-direct_gain_db)*-1/2
+        reduction_gain = hf.db2mag(reduction_gain_db)
+        reduction_gain_db_he = (reduction_gain_db+ac_gain+hrtf_gain)
+        reduction_gain_he = hf.db2mag(reduction_gain_db_he)
+        
+        #estimate output array length based on RT60
         if est_rt60 <=400:
             out_wav_samples_44 = 33075
         elif est_rt60 <750:
@@ -96,16 +107,18 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         if out_wav_samples_44 > total_samples_brir:
             out_wav_samples_44 = max(total_samples_brir-1000,4410)  
             
+        #attempt to trim array. Calculate point where amplitude falls below threshold, later discards remaining samples
+        ref_array = np.abs(brir_arr[base_elev_idx][0][0][0:out_wav_samples_44])/max_amp
+        ref_array_rev = ref_array[::-1]
+        crop_samples = len(ref_array_rev) - np.argmax(ref_array_rev > CN.THRESHOLD_CROP) - 1
+        if crop_samples > 4000 and crop_samples < out_wav_samples_44:
+            out_wav_samples_44=crop_samples
+        #print(crop_samples)
+        
+        #also calculate for 48kHz
         out_wav_samples_48 = round(out_wav_samples_44 * float(48000) / 44100) 
             
-        #gain adjustment
-        max_amp = np.max(np.abs(brir_arr))
-        
-        #reduce gain if direct gain db is less than max value
-        reduction_gain_db = (CN.DIRECT_GAIN_MAX-direct_gain_db)*-1/2
-        reduction_gain = hf.db2mag(reduction_gain_db)
-        reduction_gain_db_he = (reduction_gain_db+ac_gain+hrtf_gain)
-        reduction_gain_he = hf.db2mag(reduction_gain_db_he)
+
         
         #
         ## write set of WAVs
@@ -176,7 +189,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         #
          
         if sofa_export == True:
-            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, est_rt60=est_rt60, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
+            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
     
         #
         ## write set of HESUVI WAVs
@@ -588,14 +601,14 @@ def remove_select_brirs(primary_path, brir_set, gui_logger=None):
             gui_logger.log_error(log_string)
             
             
-def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt60, samp_freq, gui_logger=None):
+def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_samples, samp_freq, gui_logger=None):
     """
     Function to export a customised BRIR to SOFA file
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
     :param brir_name: string, name of brir
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
     :param samp_freq: int, sample frequency in Hz
-    :param est_rt60: int, value in ms for target reverberation time
+    :param output_samples: int, value in samples to crop output arrays assuming sample freq of 44.1kHz
     """
     
     now_datetime = datetime.now()
@@ -621,20 +634,6 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, est_rt6
         total_directions = total_elev_brir*total_azim_brir
         
         #set number of output samples assuming base rate is 44.1kHz
-        if est_rt60 <=300:
-            output_samples = 22050
-        elif est_rt60 <=400:
-            output_samples = 33075
-        elif est_rt60 <750:
-            output_samples = 44100
-        elif est_rt60 <1000:
-            output_samples = 55125
-        elif est_rt60 <=1250:
-            output_samples = 63945    
-        elif est_rt60 <=1500:
-            output_samples = 99225
-        else:
-            output_samples = 127890
         if output_samples > total_samples_brir:
             output_samples = max(total_samples_brir-1000,4410)  
             
