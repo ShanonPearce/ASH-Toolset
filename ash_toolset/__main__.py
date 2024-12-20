@@ -2921,8 +2921,8 @@ def main():
                 dpg.add_theme_color(dpg.mvPlotCol_Line, _hsv_to_rgb(k/7.0, 0.25, 0.6), category=dpg.mvThemeCat_Plots) 
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, _hsv_to_rgb(j/7.0, 0.7, 0.7))
         with dpg.theme(tag="__theme_i"):
-            i=3.5
-            j=3.5
+            i=3.6
+            j=3.6
             k=3.4
             with dpg.theme_component(dpg.mvAll):
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, _hsv_to_rgb(i/7.0, 0.3, 0.5))   
@@ -2938,7 +2938,22 @@ def main():
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
                 dpg.add_theme_color(dpg.mvPlotCol_Line, _hsv_to_rgb(k/7.0, 0.25, 0.6), category=dpg.mvThemeCat_Plots) 
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, _hsv_to_rgb(j/7.0, 0.7, 0.7))
-                
+        with dpg.theme(tag="__theme_j"):
+            i=4.1
+            j=4.1
+            with dpg.theme_component(dpg.mvAll):  
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, _hsv_to_rgb(i/7.0, 0.4, 0.5))   
+                dpg.add_theme_color(dpg.mvThemeCol_TabActive, _hsv_to_rgb(i/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_CheckMark, _hsv_to_rgb(i/7.0, 0.5, 0.8)) 
+                dpg.add_theme_color(dpg.mvThemeCol_SliderGrab, _hsv_to_rgb(i/7.0, 0.5, 0.7)) 
+                dpg.add_theme_color(dpg.mvThemeCol_SliderGrabActive, _hsv_to_rgb(i/7.0, 0.5, 0.7))
+                dpg.add_theme_color(dpg.mvPlotCol_TitleText, _hsv_to_rgb(i/7.0, 0.5, 0.7))
+                dpg.add_theme_color(dpg.mvThemeCol_Header, _hsv_to_rgb(4.4/7.0, 0.1, 0.25))
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_TabHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(j/7.0, 0.3, 0.5)) 
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, _hsv_to_rgb(j/7.0, 0.7, 0.7))
         dpg.bind_theme(global_theme)
         
         with dpg.tab_bar(tag='tab_bar'):
@@ -2990,12 +3005,12 @@ def main():
                             
                             with dpg.group(horizontal=True):
                                 dpg.add_button(label=CN.PROCESS_BUTTON_HPCF,user_data="",tag="qc_hpcf_tag", callback=qc_apply_hpcf_params, width=130)
-                                dpg.bind_item_theme(dpg.last_item(), "__theme_b")
+                                dpg.bind_item_theme(dpg.last_item(), "__theme_a")
                                 dpg.bind_item_font(dpg.last_item(), large_font)
                                 with dpg.tooltip("qc_hpcf_tag"):
                                     dpg.add_text("This will apply the selected filter in Equalizer APO")
                                 dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=30, width=356, overlay=CN.PROGRESS_START, tag="qc_progress_bar_hpcf")
-                                dpg.bind_item_theme(dpg.last_item(), "__theme_g")
+                                dpg.bind_item_theme(dpg.last_item(), "__theme_h")
                             with dpg.group(horizontal=True):
                                 dpg.add_checkbox(label="Enable Headphone Correction", default_value = e_apo_enable_hpcf_loaded,  tag='e_apo_hpcf_conv', callback=e_apo_toggle_hpcf)
                                 dpg.add_text("        ")
@@ -3547,13 +3562,13 @@ def main():
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
                                 dpg.add_button(label="Process",user_data=CN.PROCESS_BRIRS_RUNNING,tag="brir_tag", callback=start_process_brirs, width=130)
-                                dpg.bind_item_theme(dpg.last_item(), "__theme_a")
+                                dpg.bind_item_theme(dpg.last_item(), "__theme_b")
                                 dpg.bind_item_font(dpg.last_item(), large_font)
                                 with dpg.tooltip("brir_tag"):
                                     dpg.add_text("This will generate the binaural dataset and export to the output directory. This may take some time to process")
                                     
                                 dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=32, width=340, overlay=CN.PROGRESS_START_ALT, tag="progress_bar_brir",user_data=CN.STOP_THREAD_FLAG)
-                                dpg.bind_item_theme(dpg.last_item(), "__theme_h")
+                                dpg.bind_item_theme(dpg.last_item(), "__theme_g")
                 
                     #right most section
                     with dpg.group():    
@@ -3824,7 +3839,8 @@ def main():
                                         dpg.add_text("Generate room target set")
                                         dpg.add_button(label="Click Here to Run",user_data="",tag="calc_room_target_tag", callback=run_room_target_calc)
         
-            with dpg.tab(label="Additional Tools & Log",tag='additional_tools', parent="tab_bar"):        
+            with dpg.tab(label="Additional Tools & Log",tag='additional_tools', parent="tab_bar"):    
+                dpg.bind_item_theme(dpg.last_item(), "__theme_j")
                 with dpg.group(horizontal=True):
                     with dpg.group():  
                         with dpg.group(horizontal=True):
@@ -3902,6 +3918,7 @@ def main():
                                 dpg.add_combo(CN.HRTF_SYM_LIST, default_value=hrtf_symmetry_loaded, width=130, callback=qc_update_brir_param, tag='force_hrtf_symmetry')
                                 with dpg.tooltip("force_hrtf_symmetry"):
                                     dpg.add_text("This will mirror the left or right sides of the HATS / dummy head") 
+                                    dpg.add_text("Applies to the direct sound. Reverberation is not modified") 
                                 
                 #section for logging
                 with dpg.child_window(width=1690, height=482, tag="console_window"):
