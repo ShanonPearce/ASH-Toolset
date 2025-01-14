@@ -127,6 +127,7 @@ def main():
     e_apo_brir_sel_default=''
     tab_selected_default=0
     hrtf_symmetry_default=CN.HRTF_SYM_LIST[0]
+    er_rise_default=0
     qc_brir_hp_type_default='Over/On-Ear Headphones - High Strength'
     qc_hrtf_default=CN.HRTF_LIST_NUM[0]
     qc_room_target_default=CN.ROOM_TARGET_LIST[1]
@@ -161,6 +162,7 @@ def main():
     audio_channels_loaded=audio_channels_default
     auto_check_updates_loaded=auto_check_updates_default
     hrtf_symmetry_loaded=hrtf_symmetry_default
+    er_rise_loaded=er_rise_default
     #E-APO config related settings
     e_apo_mute_fl_loaded=e_apo_mute_default
     e_apo_mute_fr_loaded=e_apo_mute_default
@@ -259,6 +261,7 @@ def main():
             sofa_brir_exp_loaded=ast.literal_eval(config['DEFAULT']['sofa_brir_exp'])
             auto_check_updates_loaded=ast.literal_eval(config['DEFAULT']['auto_check_updates'])
             hrtf_symmetry_loaded=config['DEFAULT']['force_hrtf_symmetry']
+            er_rise_loaded=float(config['DEFAULT']['er_delay_time'])
             base_folder_loaded = config['DEFAULT']['path']
             primary_path=base_folder_loaded
             primary_ash_path=pjoin(base_folder_loaded, CN.PROJECT_FOLDER)
@@ -1427,11 +1430,13 @@ def main():
         else:
             hrtf_type = CN.HRTF_LIST_NUM.index(hrtf)+1
         hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
+        er_delay_time = dpg.get_value('er_delay_time_tag')
+        er_delay_time = round(er_delay_time,1)#round to nearest .1 dB
         
         """
         #Run BRIR integration
         """
-        brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, 
+        brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, early_refl_delay_ms=er_delay_time,
                                                             pinna_comp=pinna_comp, report_progress=2, gui_logger=logz, acoustic_space=ac_space_src, hrtf_symmetry=hrtf_symmetry)
         
         """
@@ -1559,6 +1564,8 @@ def main():
         bit_depth = CN.BIT_DEPTH_DICT.get(bit_depth_str)
         hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
         spat_res_int = 0
+        er_delay_time = dpg.get_value('er_delay_time_tag')
+        er_delay_time = round(er_delay_time,1)#round to nearest .1 dB
 
         #calculate name
         brir_name = calc_brir_set_name(full_name=False)
@@ -1568,7 +1575,7 @@ def main():
         """
         #Run BRIR integration
         """
-        brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, 
+        brir_gen = brir_generation.generate_integrated_brir(hrtf_type=hrtf_type, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, early_refl_delay_ms=er_delay_time, 
                                                             pinna_comp=pinna_comp, report_progress=1, gui_logger=logz, acoustic_space=ac_space_src, hrtf_symmetry=hrtf_symmetry)
         
         """
@@ -1650,8 +1657,10 @@ def main():
         sample_rate = dpg.get_value('qc_wav_sample_rate')
         bit_depth = dpg.get_value('qc_wav_bit_depth')
         hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
+        er_delay_time = dpg.get_value('er_delay_time_tag')
+        er_delay_time = round(er_delay_time,1)#round to nearest .1 dB
         if full_name==True:
-            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry
+            brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time)
         else:
             brir_name = CN.HRTF_LIST_SHORT[hrtf_type-1] + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp]
     
@@ -1747,6 +1756,7 @@ def main():
         dpg.set_value("eapo_brir_toggle", eapo_brir_exp_default)
         dpg.set_value("sofa_brir_toggle", sofa_brir_exp_default)
         dpg.set_value("force_hrtf_symmetry", hrtf_symmetry_default)
+        dpg.set_value("er_delay_time_tag", er_rise_default)
         dpg.set_value("e_apo_brir_conv", e_apo_enable_brir_default)
         dpg.set_value("e_apo_hpcf_conv", e_apo_enable_hpcf_default)
         #reset progress bars
@@ -1806,6 +1816,7 @@ def main():
         eapo_brir_exp_str= str(dpg.get_value('eapo_brir_toggle'))
         sofa_brir_exp_str= str(dpg.get_value('sofa_brir_toggle'))
         hrtf_symmetry_str = str(dpg.get_value('force_hrtf_symmetry'))
+        er_delay_time_str = str(dpg.get_value('er_delay_time_tag'))
         auto_check_updates_str = str(dpg.get_value('check_updates_start_tag'))
         enable_hpcf_str=str(dpg.get_value('e_apo_hpcf_conv'))
         autoapply_hpcf_str=str(dpg.get_value('qc_auto_apply_hpcf_sel'))
@@ -1816,19 +1827,16 @@ def main():
         brir_curr_set_str=str(dpg.get_value('qc_e_apo_curr_brir_set'))
         brir_sel_set_str=str(dpg.get_value('qc_e_apo_sel_brir_set'))
         channel_config_str=str(dpg.get_value('audio_channels_combo'))
-        
         #qc settings
         qc_hp_type_str = dpg.get_value('qc_brir_hp_type')
         qc_hrtf_str = dpg.get_value('qc_brir_hrtf')
         qc_room_target_str = dpg.get_value('qc_rm_target_list')
         qc_direct_gain_str = str(dpg.get_value('qc_direct_gain'))
         qc_ac_space_str=dpg.get_value('qc_acoustic_space_combo')
-
         #qc_brand_sel_str=dpg.get_value('qc_brand_list')
         qc_headphone_sel_str=dpg.get_value('qc_headphone_list')
         qc_sample_sel_str=dpg.get_value('qc_sample_list')
         qc_brand_sel_str = hpcf_functions.get_brand(conn, qc_headphone_sel_str)
-        
         mute_fl_str=str(dpg.get_value('e_apo_mute_fl'))
         mute_fr_str=str(dpg.get_value('e_apo_mute_fr'))
         mute_c_str=str(dpg.get_value('e_apo_mute_c'))
@@ -1858,8 +1866,7 @@ def main():
         azim_sr_str=str(dpg.get_value('e_apo_az_angle_sr'))
         azim_rl_str=str(dpg.get_value('e_apo_az_angle_rl'))
         azim_rr_str=str(dpg.get_value('e_apo_az_angle_rr'))
-    
-        
+
         curr_tab_str=str(dpg.get_value('tab_bar'))
         #print(curr_tab_str)
         try:
@@ -1889,6 +1896,7 @@ def main():
             config['DEFAULT']['sofa_brir_exp'] = sofa_brir_exp_str
             config['DEFAULT']['auto_check_updates'] = auto_check_updates_str
             config['DEFAULT']['force_hrtf_symmetry'] = hrtf_symmetry_str
+            config['DEFAULT']['er_delay_time'] = er_delay_time_str
             config['DEFAULT']['mute_fl'] = mute_fl_str
             config['DEFAULT']['mute_fr'] = mute_fr_str
             config['DEFAULT']['mute_c'] = mute_c_str
@@ -3919,7 +3927,13 @@ def main():
                                 with dpg.tooltip("force_hrtf_symmetry"):
                                     dpg.add_text("This will mirror the left or right sides of the HATS / dummy head") 
                                     dpg.add_text("Applies to the direct sound. Reverberation is not modified") 
-                                
+                                dpg.add_text("Early Reflection Delay (ms)")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_input_float(label=" ",width=140, format="%.1f", tag='er_delay_time_tag', min_value=CN.ER_RISE_MIN, max_value=CN.ER_RISE_MAX, default_value=er_rise_loaded,min_clamped=True, max_clamped=True, callback=qc_update_brir_param)
+                                with dpg.tooltip("er_delay_time_tag"):
+                                    dpg.add_text("This will increase the time between the direct sound and early reflections") 
+                                    dpg.add_text("This can be used to increase perceived distance") 
+                                    
                 #section for logging
                 with dpg.child_window(width=1690, height=482, tag="console_window"):
                     dpg.add_text("Log")

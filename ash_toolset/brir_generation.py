@@ -393,7 +393,7 @@ def generate_reverberant_brir(gui_logger=None):
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
 
-def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0]):   
+def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, early_refl_delay_ms = 0, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0]):   
     """
     Function to generate customised BRIR from below parameters
 
@@ -401,6 +401,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
     :param direct_gain_db: float, adjust gain of direct sound in dB
     :param room_target: int, room target id
     :param pinna_comp: int, 0 = equalised for in ear headphones (with additional eq), 1 = in ear headphones (without additional eq), 2 = over/on ear headphones (with additional eq), 3 = over/on ear headphones (without additional eq)
+    :param early_refl_rise_ms: float, ms length of early reflection rise window, default = 0 ms (instant rise)
     :param reduce_reverb: bool, True = enable reverb reduction, False = no reverb reduction
     :param target_rt60: int, value in ms for target reverberation time, only applicable if reduce_reverb == True
     :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
@@ -469,7 +470,7 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         initial_removal_win = data_pad_zeros.copy()
         initial_removal_win[initial_hanning_start:initial_hanning_start+int(initial_hanning_size/2)] = hann_initial
         initial_removal_win[initial_hanning_start+int(initial_hanning_size/2):]=data_pad_ones[initial_hanning_start+int(initial_hanning_size/2):]
-
+        
         #initial rise window for sub
         initial_hanning_size=50
         initial_hanning_start=0#190
@@ -810,6 +811,17 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             else:
                 brir_reverberation[0][azim][0][:] = np.multiply(brir_reverberation[0][azim][0][:],l_fade_out_win)
                 brir_reverberation[0][azim][1][:] = np.multiply(brir_reverberation[0][azim][1][:],l_fade_out_win)
+
+            #shift reflections by specified delay
+            if early_refl_delay_ms > 0:
+                reverb_delay_samples = int((early_refl_delay_ms/1000)*CN.FS)
+                brir_reverberation[0][azim][0][:] = np.roll(brir_reverberation[0][azim][0][:],reverb_delay_samples)
+                brir_reverberation[0][azim][1][:] = np.roll(brir_reverberation[0][azim][1][:],reverb_delay_samples)
+                #also zero out response before delay
+                brir_reverberation[0][azim][0][0:reverb_delay_samples] = np.multiply(brir_reverberation[0][azim][0][0:reverb_delay_samples],0)
+                brir_reverberation[0][azim][1][0:reverb_delay_samples] = np.multiply(brir_reverberation[0][azim][1][0:reverb_delay_samples],0)
+            
+                
 
         log_string = 'Reverberation data prepared'
         if CN.LOG_INFO == 1:
