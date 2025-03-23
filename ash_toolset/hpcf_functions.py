@@ -102,10 +102,7 @@ def create_hpcf_row(conn, hpcf_data, brand, headphone, sample, gui_logger=None):
         
         #log results
         log_string = 'HpCF inserted into database.' + ' Brand: ' + str(brand) + ' Headphone: ' + str(headphone) + ' Sample: ' + str(sample)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         
         cur.close()
@@ -414,10 +411,7 @@ def replace_hpcf_filter_data(conn, hpcf_data, headphone, sample, gui_logger=None
         
         #log results
         log_string = 'HpCF Updated in database. Headphone: ' + str(headphone) + ' Sample: ' + str(sample)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
@@ -440,10 +434,7 @@ def delete_headphone(conn, headphone, gui_logger=None):
         
         #log results
         log_string = 'HpCFs deleted from database for: ' + str(headphone)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
@@ -467,10 +458,7 @@ def delete_headphone_sample(conn, headphone, sample, gui_logger=None):
         
         #log results
         log_string = 'HpCFs deleted from database for: ' + str(headphone) + ' ' + str(sample)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
@@ -551,12 +539,9 @@ def rename_hpcf_sample_field(conn, headphone, sample_id_old, sample_id_new_min=1
             cur.close()
         
         #log results
-        if CN.LOG_INFO == 1 and sample_id_old != sample_id_new:
+        if CN.LOG_INFO == True and sample_id_old != sample_id_new:
             log_string = 'Sample name and ID updated in database. Headphone: ' + str(headphone) + ' sample: ' + str(sample_old) + ' sample id: ' + str(sample_id_old) + ' renamed to: ' + str(sample_new) + ' new sample id: ' + str(sample_id_new) 
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None      
@@ -588,12 +573,9 @@ def rename_hpcf_sample_name(conn, headphone, sample_name_old, sample_name_new, g
             cur.close()
         
             #log results
-            if CN.LOG_INFO == 1:
+            if CN.LOG_INFO == True:
                 log_string = 'Sample name and ID updated in database. Headphone: ' + str(headphone) + ' sample: ' + str(sample_name_old)  + ' renamed to: ' + str(sample_name_new) + ' new sample id: ' + str(sample_id_new) 
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None      
@@ -623,12 +605,9 @@ def rename_hpcf_sample_name_bulk(conn, sample_name_old, sample_name_new, gui_log
             cur.close()
         
             #log results
-            if CN.LOG_INFO == 1:
+            if CN.LOG_INFO == True:
                 log_string = 'Sample name and ID updated in database. Sample: ' + str(sample_name_old)  + ' renamed to: ' + str(sample_name_new) + ' new sample id: ' + str(sample_id_new) 
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
         return None      
@@ -690,16 +669,13 @@ def rename_hpcf_headphone(conn, headphone_old, headphone_new, gui_logger=None):
             
             #log results
             log_string = 'HpCF Updated in database. Headphone: ' + str(headphone_old) + ' renamed to ' + str(headphone_new)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
                 
             #finally remove any remaining hpcfs for the old headphone (e.g. old averages)
             delete_headphone(conn, headphone_old)
         else:
             #log results
-            if CN.LOG_INFO == 1:
+            if CN.LOG_INFO == True:
                 logging.info('Headphone ' + headphone_old +' not found')
         
         
@@ -759,17 +735,11 @@ def rename_hpcf_headphone_and_sample(conn, headphone_old, sample_old, headphone_
    
             #log results
             log_string = 'HpCF Updated in database. Headphone: ' + str(headphone_old) + ' renamed to ' + str(headphone_new) + ' and Sample: ' + str(sample_old) + ' renamed to ' + str(sample_new)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
         else:
             #log results
             log_string = 'Headphone ' + headphone_old + ' sample ' + sample_old +' not found'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
     
     except sqlite3.Error as e:
         logging.error("Error occurred", exc_info = e)
@@ -810,10 +780,7 @@ def renumber_headphone_samples(conn, gui_logger=None):
 
     #log results
     log_string = 'HpCF sample renumbering completed'
-    if CN.LOG_INFO == 1:
-        logging.info(log_string)
-    if CN.LOG_GUI == 1 and gui_logger != None:
-        gui_logger.log_info(log_string)
+    hf.log_with_timestamp(log_string, gui_logger)
 
 
 
@@ -959,7 +926,7 @@ def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=44100, geq_freq_arr = np.
         #hpcf_target_fr = np.divide(hpcf_target_fr,hpcf_target_fr.max())
         #normalise to 0db in low freqs
         hpcf_target_fr = np.divide(hpcf_target_fr,np.mean(hpcf_target_fr[0:200]))
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(hpcf_target_fr,'HpCF plot',CN.N_FFT,samp_freq)
         target_filter = hpcf_target_fr
         #truncate
@@ -1121,11 +1088,11 @@ def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=44100, geq_freq_arr = np.
             diff_db = np.subtract(target_filter_db,filter_evo_db)
             error = hf.db2mag(diff_db)
             
-            if CN.PLOT_ENABLE == 1:
+            if CN.PLOT_ENABLE == True:
                 hf.plot_data(error,'error',CN.N_FFT,samp_freq)
                 hf.plot_data(filter_evo_mag,'filter_evo_mag',CN.N_FFT,samp_freq)
         
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             pf.plot.freq(filter_evo)
         
         
@@ -1280,10 +1247,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
     
     
         log_string = 'Database created'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
                 
         
     except Exception as ex:
@@ -1294,7 +1258,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
     
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
+    if CN.LOG_INFO == True:
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
         
@@ -1344,8 +1308,10 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         hpcf_name = headphone + ' ' + sample
         hpcf_name_wav = headphone + ' ' + sample + '.wav'
         hpcf_name_wav = hpcf_name_wav.replace(" ", "_")
+        hpcf_name_wav=hf.sanitize_filename(hpcf_name_wav)#sanitize file name in case of invalid windows characters
         hpcf_name_geq = headphone + ' ' + sample + '.txt'
         hpcf_name_geq = hpcf_name_geq.replace(" ", "_")
+        hpcf_name_geq=hf.sanitize_filename(hpcf_name_geq)#sanitize file name in case of invalid windows characters
         
         #
         #save FIR to wav
@@ -1370,10 +1336,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
                 hf.write2wav(file_name=out_file_path, data=hpcf_fir, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
             
                 log_string = 'HpCF (WAV FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_wav)
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
             
         
         #also create E-APO config for this sample
@@ -1399,10 +1362,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             
             
             log_string = 'HpCF (WAV Stereo FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_st_wav)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
                 
         #
         #save Graphic EQ to txt file
@@ -1435,10 +1395,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             with open(out_file_path, 'w') as f:
                 f.write(hpcf_geq)    
             log_string = 'HpCF (Graphic EQ): ' + hpcf_name + ' saved to: ' + str(out_file_dir_geq)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
         
         #
         #save Graphic EQ 31 band to txt file
@@ -1471,10 +1428,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             with open(out_file_path, 'w') as f:
                 f.write(hpcf_geq_31)
             log_string = 'HpCF (Graphic EQ 31 band): '+ hpcf_name +' saved to: ' + str(out_file_dir_geq_31)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
         
         #
         #save Graphic EQ 103 band to txt file
@@ -1507,10 +1461,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             with open(out_file_path, 'w') as f:
                 f.write(hpcf_geq_103)
             log_string = 'HpCF (Graphic EQ 103 band): '+ hpcf_name +' saved to: ' + str(out_file_dir_geq_103)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
         
 
         #also export graphic eq to hesuvi folder
@@ -1540,17 +1491,12 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             with open(out_file_path, 'w') as f:
                 f.write(hpcf_geq_103)#f.write(hpcf_geq)
             log_string = 'HpCF (HeSuVi GEQ): ' + hpcf_name + ' saved to: ' + str(out_file_folder)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
 
 
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to export HpCFs'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
 
 
@@ -1813,9 +1759,142 @@ def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_
         
     
 
+def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set=0, gui_logger=None):
+    """
+    Function generates a csv summary sheet of headphone measurements within a folder
+    """
+
+    try:
+
+        if in_ear_set == 1:
+            hp_folder = 'in_ear'
+        else:
+            hp_folder = 'over_ear'
+
+        # delimiters
+        delimiter_l = ' L.txt'
+        delimiter_r = ' R.txt'
+
+        # get master list of current headphone names
+        headphone_list = get_all_headphone_list(conn)
+        brands_list = get_brand_list(conn)
+        
+        # directories
+        measurement_directory = pjoin(CN.DATA_DIR_RAW_HP_MEASRUEMENTS, hp_folder, measurement_folder_name)
+
+        output_directory = CN.DATA_DIR_RAW_HP_MEASRUEMENTS
+        out_file_name = measurement_folder_name + '_summary.csv'
+        output_file = pjoin(output_directory, out_file_name)
+
+        # read models from metadata csv. Expects metadata.csv in the specific measurement folder
+        metadata_file_name = 'metadata.csv'
+        metadata_file = pjoin(measurement_directory, metadata_file_name)
+        models_list = []
+        filename_mapping = {}  # Dictionary to store Filename to Models mapping
+        filename_brand_mapping = {} # Dictionary to store Filename to Brands mapping
+
+        with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+            reader = csv.DictReader(inputfile)
+            for row in reader:  # rows 2 and onward
+                model = row.get('Models')
+                models_list.append(model)
+                filename = row.get('Filename')
+                brand = row.get('Brands')
+                if filename:
+                    filename_mapping[filename] = model
+                    filename_brand_mapping[filename] = brand
+
+        # logging.info(str(models_list))
+
+        # list all names in path
+        dir_list = os.listdir(measurement_directory)
+
+        # for each txt file in folder
+        with open(output_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            # headings
+            writer.writerow(['file_name', 'extracted_name', 'original_name', 'original_brand', 'closest_brand', 'suggested_brand', 'suggested_name', 'suggested_name_alternate', 'chosen_brand', 'chosen_name', 'include'])
+            # write row for each input file
+            for txt_file in dir_list:
+
+                file_name = txt_file
+                logging.info("Processing:" + str(file_name))
+
+                if 'txt' in file_name:
+
+                    include_hp = 'Y'
+                    
+                    file_name_converted = file_name.replace("_Y_", " ") 
+                    name_before_l = file_name_converted.split(delimiter_l)[0]
+                    name_before_l_r = name_before_l.split(delimiter_r)[0]
+                    extracted_name = name_before_l_r
+
+                    # Check if a filename match exists in metadata
+                    if filename_mapping:
+                        filename_matches = hf.get_close_matches_fuzz(file_name, list(filename_mapping.keys()))
+                        if filename_matches:
+                            original_name = filename_mapping[filename_matches[0][0]]
+                            original_brand = filename_brand_mapping[filename_matches[0][0]]
+                        else:
+                            #find full name from model list if no filename match
+                            original_name_matches = hf.get_close_matches_fuzz(extracted_name, models_list)
+
+                            if original_name_matches == None or not original_name_matches:
+                                original_name = extracted_name
+                                original_brand = ''
+                                include_hp = 'N'
+                            else:
+                                original_name = original_name_matches[0][0]
+                                original_brand = ''
+                    else:
+                        #find full name from model list if no filename mapping
+                        original_name_matches = hf.get_close_matches_fuzz(extracted_name, models_list)
+
+                        if original_name_matches == None or not original_name_matches:
+                            original_name = extracted_name
+                            original_brand = ''
+                            include_hp = 'N'
+                        else:
+                            original_name = original_name_matches[0][0]
+                            original_brand = ''
+
+                    # calculate a suggested name based on closest match in database
+                    suggested_name_matches = hf.get_close_matches_fuzz(original_name, headphone_list)
+
+                    if suggested_name_matches == None or not suggested_name_matches:
+                        suggested_name = ''
+                        suggested_name_alt = ''
+                    else:
+                        suggested_name = suggested_name_matches[0][0]
+                        if len(suggested_name_matches) > 1:
+                            suggested_name_alt = suggested_name_matches[1][0]
+                        else:
+                            suggested_name_alt = ''
+
+                    # also calculate a closest matching brand based on original brand (if present)
+                    suggested_name_matches = hf.get_close_matches_fuzz(original_brand, brands_list)
+                    if suggested_name_matches == None or not suggested_name_matches:
+                        closest_brand = ''
+                    else:
+                        closest_brand = suggested_name_matches[0][0]
+                    
+                    
+
+                    # grab the brand for the suggested name
+                    suggested_brand = get_brand(conn, suggested_name)
+
+                    # write new row to file
+                    writer.writerow([file_name, extracted_name, original_name, original_brand, closest_brand, suggested_brand, suggested_name, suggested_name_alt, '', '', include_hp])
+
+        # log results
+        log_string = 'Summary sheet saved: ' + output_file
+        hf.log_with_timestamp(log_string, gui_logger)
+
+    except Error as e:
+        logging.error("Error occurred", exc_info=e)
 
 
-def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set = 0, gui_logger=None):
+def generate_hp_summary_sheet_basic(conn, measurement_folder_name, in_ear_set = 0, gui_logger=None):
     """
     Function generates a csv summary sheet of headphone measurements within a folder
     """
@@ -1840,10 +1919,8 @@ def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set = 0, gui
         output_directory = CN.DATA_DIR_RAW_HP_MEASRUEMENTS
         out_file_name = measurement_folder_name + '_summary.csv'
         output_file = pjoin(output_directory, out_file_name)
-        
-        #
-        #read metadata from csv. Expects metadata.csv in the specific measurement folder
-        #
+
+        #read models from metadata csv. Expects metadata.csv in the specific measurement folder
         metadata_file_name = 'metadata.csv'
         metadata_file = pjoin(measurement_directory, metadata_file_name)
         models_list = []
@@ -1911,10 +1988,7 @@ def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set = 0, gui
                 
         #log results
         log_string = 'Summary sheet saved: ' + output_file
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
     except Error as e:
         logging.error("Error occurred", exc_info = e)
@@ -2080,12 +2154,15 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         hpcf_fft_avg_db = fr_flat.copy()
         num_headphones = 0
         for hpcf_dict in hpcf_data_dict_list_c:
-            #get db response
-            resp_db = hpcf_dict.get('meas_resp_db_intrp')
-            #add db response to average
-            hpcf_fft_avg_db = np.add(hpcf_fft_avg_db,resp_db)
-            
-            num_headphones = num_headphones+1
+            #check if this row should be included
+            include_file = hpcf_dict.get('include')
+            if include_file == 'Y':
+                #get db response
+                resp_db = hpcf_dict.get('meas_resp_db_intrp')
+                #add db response to average
+                hpcf_fft_avg_db = np.add(hpcf_fft_avg_db,resp_db)
+                
+                num_headphones = num_headphones+1
             
         #divide by total number of samples
         hpcf_fft_avg_db = hpcf_fft_avg_db/num_headphones
@@ -2187,10 +2264,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                         
                 if duplicate_found == 1:
                     log_string = 'Duplicate HpCF generated. Not inserted into DB. Brand: ' + brand + ' Headphone: ' + headphone
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string)
+                    hf.log_with_timestamp(log_string, gui_logger)
                 
                 #add each HPCF to database if not duplicate
                 else:
@@ -2225,23 +2299,14 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                     hpcf_to_insert = (brand, headphone, sample_name, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
                     
                     log_string = 'HpCF generated. Brand: ' + brand + ' Headphone: ' + headphone + ' Sample: ' + sample_name + ' Sample id: ' + str(sample_id)
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string)
+                    hf.log_with_timestamp(log_string, gui_logger)
                     
                     if sample_id > 26:
                         log_string = 'HpCF not inserted into dB due to sample ID exceeding max sample ID (26) for this headphone'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string)
+                        hf.log_with_timestamp(log_string, gui_logger)
                     elif headphone == '' or headphone == None or brand == '' or brand == None:
                         log_string = 'HpCF not inserted into dB due to missing brand or headphone name'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string)
+                        hf.log_with_timestamp(log_string, gui_logger)
                     else:
                         # create entry
                         create_hpcf_row(conn, hpcf_to_insert, brand, headphone, sample_name)
@@ -2250,18 +2315,13 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         
         conn.commit()
         log_string = 'Finished processing measurements'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         
     except Error as e:
-        logging.error("Error occurred", exc_info = e)
-        
+
         log_string = 'Failed to generate new HpCFs'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
             
         return False
         
@@ -2280,10 +2340,7 @@ def hpcf_generate_variants(conn, gui_logger=None):
     try:
 
         log_string = 'Searching HpCF database for variants'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
 
         #retrieve geq frequency list as an array - 127 bands
         geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
@@ -2408,9 +2465,9 @@ def hpcf_generate_variants(conn, gui_logger=None):
                 for v in hpcf_variant_dict_list:
                     # json_string = json.dumps(v)
                     # log_string = 'Headphone: ' + h + ' Results: ' + json_string
-                    # if CN.LOG_INFO == 1:
+                    # if CN.LOG_INFO == True:
                     #     logging.info(log_string)
-                    # if CN.LOG_GUI == 1 and gui_logger != None:
+                    # if CN.LOG_GUI == True and gui_logger != None:
                     #     gui_logger.log_info(log_string)
                     
                     variant = v['variant']
@@ -2505,10 +2562,7 @@ def hpcf_generate_variants(conn, gui_logger=None):
                             
                 
         log_string = 'Completed Search'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
                 
         conn.commit()
         
@@ -2518,7 +2572,7 @@ def hpcf_generate_variants(conn, gui_logger=None):
     
 
 
-def get_recent_hpcfs(conn, date_str ='2024-10-10', gui_logger=None):
+def get_recent_hpcfs(conn, date_str ='2025-01-01', gui_logger=None):
     """
     Function get_recent_hpcfs
         searches DB for HpCFs created after a certain date
@@ -2539,10 +2593,7 @@ def get_recent_hpcfs(conn, date_str ='2024-10-10', gui_logger=None):
                 json_string = json.dumps(hpcf_dict)
                 
                 log_string = 'New HpCF: ' + json_string
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
 
     
     except Error as e:
@@ -2564,24 +2615,15 @@ def check_for_database_update(conn, gui_logger=None):
         
         #log results
         log_string = 'Checking for Headphone Correction Filter dataset updates'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         #log results
         log_string = 'Current dataset version: ' + str(local_db_version)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
         #log results
         log_string = 'Finding latest version'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
         #get version of online database
         url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
@@ -2596,31 +2638,23 @@ def check_for_database_update(conn, gui_logger=None):
         
         #log results
         log_string = 'Latest dataset version: ' + str(web_db_version)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
         if local_db_version == web_db_version:
             #log results
             log_string = 'No update available'
         else:
             log_string = "New version available. Click 'Download Latest Dataset' to update"
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         return True
     
 
         
     except Error as e:
-        logging.error("Error occurred", exc_info = e)
-        
+
         log_string = 'Failed to check HpCF versions'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
             
         return False
 
@@ -2633,10 +2667,7 @@ def downlod_latest_database(conn, gui_logger=None):
     try:
   
         log_string = 'Downloading latest HpCF database'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
   
         #download latest version of database
         url = "https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link"
@@ -2650,19 +2681,14 @@ def downlod_latest_database(conn, gui_logger=None):
 
         #log results
         log_string = 'Latest HpCF database downloaded to: ' + str(output)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
 
         return True
     
     except Error as e:
-        logging.error("Error occurred", exc_info = e)
-        
+ 
         log_string = 'Failed to download latest HpCF database'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
             
         return False
             
@@ -2682,24 +2708,15 @@ def check_for_app_update(gui_logger=None):
         
         #log results
         log_string = 'Checking for app updates'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         #log results
         log_string = 'Current ASH Toolset version: ' + str(__version__)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
         #log results
         log_string = 'Finding latest version...'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
         #get version of online database
         url = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
@@ -2714,30 +2731,21 @@ def check_for_app_update(gui_logger=None):
         
         #log results
         log_string = 'Latest ASH Toolset version: ' + str(web_app_version)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
             
         if __version__ == web_app_version:
             #log results
             log_string = 'No update required'
         else:
             log_string = "New version available at https://sourceforge.net/projects/ash-toolset/"
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         return True
     
     except Error as e:
         
-        logging.error("Error occurred", exc_info = e)
-        
         log_string = 'Failed to check app versions'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
             
         return False
 
@@ -2752,27 +2760,19 @@ def remove_hpcfs(primary_path, gui_logger=None):
         
         if os.path.exists(out_file_dir_hpcf):
             shutil.rmtree(out_file_dir_hpcf)
-            log_string_a = 'Deleted folder and contents: ' + out_file_dir_hpcf 
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_a)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_a)
+            log_string = 'Deleted folder and contents: ' + out_file_dir_hpcf 
+            hf.log_with_timestamp(log_string, gui_logger)
                 
         if os.path.exists(output_config_path):
             shutil.rmtree(output_config_path)
-            log_string_b = 'Deleted folder and contents: ' + output_config_path
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_b)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_b)    
+            log_string = 'Deleted folder and contents: ' + output_config_path
+            hf.log_with_timestamp(log_string, gui_logger)    
                 
                 
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folders: ' + out_file_dir_hpcf + ' & ' + output_config_path
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
 def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
     """
@@ -2795,19 +2795,14 @@ def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
                 if original_hp_name in filename and name_before_sample == original_hp_name:
                     file_path=os.path.join(root, filename)
                     os.remove(file_path) # delete file based on their name
-                    log_string_a = 'Deleted file: ' + file_path 
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)
+                    log_string = 'Deleted file: ' + file_path 
+                    hf.log_with_timestamp(log_string, gui_logger)   
         
  
   
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folder: ' + out_file_dir_hpcf
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
  
     
@@ -2884,11 +2879,8 @@ def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logg
     
     try:
         
-        log_string_a = 'Starting hp cues analysis'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        log_string = 'Starting hp cues analysis'
+        hf.log_with_timestamp(log_string, gui_logger)
         
         if in_ear_set == 1:
             hp_folder = 'in_ear'
@@ -3061,7 +3053,7 @@ def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logg
         #smoothing
         hpcf_target_mag = hf.smooth_fft_octaves(hpcf_target_mag)
             
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(hpcf_target_mag,'hpcf_target_mag ' + measurement_folder_name, normalise=0)
 
         #
@@ -3077,17 +3069,12 @@ def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logg
         
         np.save(out_file_path,hpcf_target_mag)    
         
-        log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        log_string = 'Exported numpy file to: ' + out_file_path 
+        hf.log_with_timestamp(log_string, gui_logger)
 
 
 
 
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete analysis'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error

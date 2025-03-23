@@ -28,10 +28,9 @@ log_info=1
 
 
 
-def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
+def write_e_apo_configs_brirs(brir_name, primary_path):
     """
     Function creates equalizer APO configuration files for specified brir name
-    :param hrtf_type: int, selected HRTF type
     :param brir_name: string, name of brir
     :param primary_path: string, base path to save files to
     :return: None
@@ -57,10 +56,7 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
         for m in elev_range:
             
             if m == '_Elevated_Front':
-                if hrtf_type in CN.HRTF_TYPE_LIST_LIM_RES:
-                    elev='30'
-                else:
-                    elev='15'
+                elev='15'
             else:
                 elev='0'
                     
@@ -84,8 +80,6 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
                     f.write('\n')
                     f.write('Channel: ALL')
                     f.write('\n')
-                    f.write('Preamp: '+ str(CN.HRTF_GAIN_LIST_NUM[hrtf_type-1]) +' dB')#also adjust gain
-                    f.write('\n')
                     if CN.CHANNEL_CONFIGS[n][1] == '2.0' or CN.CHANNEL_CONFIGS[n][1] == '2.0W' or CN.CHANNEL_CONFIGS[n][1] == '2.0N':
                         copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R'
                     elif CN.CHANNEL_CONFIGS[n][1] == '7.1N':
@@ -98,18 +92,18 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
                     f.write('\n')
                     f.write('Channel: L_INPUT_L_EAR L_INPUT_R_EAR')
                     f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '2.0W' and hrtf_type != 4:
+                    if CN.CHANNEL_CONFIGS[n][1] == '2.0W':
                         f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['WIDE_FL'] + brir_part_d)
-                    elif CN.CHANNEL_CONFIGS[n][1] == '2.0N' and hrtf_type != 4:
+                    elif CN.CHANNEL_CONFIGS[n][1] == '2.0N':
                         f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['NARROW_FL'] + brir_part_d)
                     else:
                         f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['FL'] + brir_part_d)
                     f.write('\n')
                     f.write('Channel: R_INPUT_L_EAR R_INPUT_R_EAR')
                     f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '2.0W' and hrtf_type != 4:
+                    if CN.CHANNEL_CONFIGS[n][1] == '2.0W':
                         f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['WIDE_FR'] + brir_part_d)
-                    elif CN.CHANNEL_CONFIGS[n][1] == '2.0N' and hrtf_type != 4:
+                    elif CN.CHANNEL_CONFIGS[n][1] == '2.0N':
                         f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['NARROW_FR'] + brir_part_d)
                     else:
                         f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['FR'] + brir_part_d)
@@ -160,21 +154,22 @@ def write_e_apo_configs_brirs(brir_name, primary_path, hrtf_type):
                         copy_string = 'Copy: L=L_INPUT_L_EAR+R_INPUT_L_EAR+C_INPUT_L_EAR+RL_INPUT_L_EAR+RR_INPUT_L_EAR R=L_INPUT_R_EAR+R_INPUT_R_EAR+C_INPUT_R_EAR+RL_INPUT_R_EAR+RR_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0 SR=0 SUB=0*SUB'
                     f.write(copy_string)
         
-        if CN.LOG_INFO == 1:
-            logging.info('Equalizer APO Configurations saved to: ' + str(output_config_path))
+
+        log_string = 'Equalizer APO Configurations saved to: ' + str(output_config_path)
+        hf.log_with_timestamp(log_string)
 
         
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Error occurred'
+        hf.log_with_timestamp(log_string=log_string, log_type = 2, exception=ex)#log error
             
     # get the end time
     et = time.time()
     
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
-        logging.info('Execution time:' + str(elapsed_time) + ' seconds')
-        
+    log_string = 'Execution time:' + str(elapsed_time) + ' seconds'
+    hf.log_with_timestamp(log_string)
         
 
 def write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path):
@@ -228,23 +223,25 @@ def write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path):
             f.write(conv_hpcf_rel_dir + hpcf_name_wav)
         
         
-        if CN.LOG_INFO == 1:
-            logging.info('Equalizer APO Configurations saved to: ' + str(output_config_path))
+        log_string = 'Equalizer APO Configurations saved to: ' + str(output_config_path)
+        hf.log_with_timestamp(log_string)
 
         
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
+        log_string = 'Error occurred'
+        hf.log_with_timestamp(log_string=log_string, log_type = 2, exception=ex)#log error
             
     # get the end time
     et = time.time()
     
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
-        logging.info('Execution time:' + str(elapsed_time) + ' seconds')
+ 
+    log_string = 'Execution time:' + str(elapsed_time) + ' seconds'
+    hf.log_with_timestamp(log_string)
         
  
-def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, spatial_res=1, gui_logger=None):
+def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, gain_override=None, spatial_res=1, upmix_method='Method A', side_delay=0, rear_delay=0, gui_logger=None):
     """
     Function creates equalizer APO configuration file to perform relevant convolution commands. This file needs to be loaded into config.txt
     :param primary_path: string, base path to save files to
@@ -252,10 +249,12 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
     :param brir_dict: dict, dictionary containing brir related metadata
     :param primary_path: string, selected audio channel configuration
     :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
+    :param gain_override: float, a value to replace gain with
+    :param upmix_method: int, upmixing method if applicable
     :return: float containing overall gain
     """ 
     out_file=''
-    additional_gain=CN.HRTF_GAIN_ADDIT#
+    additional_gain=CN.HRTF_A_GAIN_ADDIT#
     #impulse
     fft_size=CN.N_FFT
     impulse=np.zeros(fft_size)
@@ -263,6 +262,25 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
     fr_flat_mag = np.abs(np.fft.fft(impulse))
     fr_flat = hf.mag2db(fr_flat_mag)
     gain_overall=0.0
+    
+    if upmix_method == 'Method A':
+        gain_adjust_upmix = 0.8128
+        upmix_factor_front=0.5
+        upmix_factor_side=0.3 
+        upmix_factor_rear=0.3
+        upmix_factor_center=0.2
+        
+    else:
+        gain_adjust_upmix = 0.6237
+        upmix_factor_front=1.0
+        upmix_factor_side=0.7 
+        upmix_factor_rear=0.5
+        upmix_factor_center=0.7
+    # Apply gain adjustment and round to two decimal places
+    upmix_factor_front = round(upmix_factor_front * gain_adjust_upmix, 2)
+    upmix_factor_side = round(upmix_factor_side * gain_adjust_upmix, 2)
+    upmix_factor_rear = round(upmix_factor_rear * gain_adjust_upmix, 2)
+    upmix_factor_center = round(upmix_factor_center * gain_adjust_upmix, 2)
     
     try:
         #get variables from dicts
@@ -325,31 +343,6 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
         azim_rl=brir_dict.get('azim_rl')
         azim_rr=brir_dict.get('azim_rr')
         
-        #get htrf type from file name
-        hrtf_type=get_hrtf_type_from_dir(brir_set_name, spatial_res=spatial_res)
-
-            
-        nearest_dir_dict_fl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fl , target_azimuth=azim_fl, spatial_res=spatial_res)
-        nearest_dir_dict_fr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fr , target_azimuth=azim_fr, spatial_res=spatial_res)
-        nearest_dir_dict_c = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_c , target_azimuth=azim_c, spatial_res=spatial_res)
-        nearest_dir_dict_sl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sl , target_azimuth=azim_sl, spatial_res=spatial_res)
-        nearest_dir_dict_sr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sr , target_azimuth=azim_sr, spatial_res=spatial_res)
-        nearest_dir_dict_rl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rl , target_azimuth=azim_rl, spatial_res=spatial_res)
-        nearest_dir_dict_rr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rr , target_azimuth=azim_rr, spatial_res=spatial_res)
-        elev_fl=nearest_dir_dict_fl.get('nearest_elevation')
-        elev_fr=nearest_dir_dict_fr.get('nearest_elevation')
-        elev_c=nearest_dir_dict_c.get('nearest_elevation')
-        elev_sl=nearest_dir_dict_sl.get('nearest_elevation')
-        elev_sr=nearest_dir_dict_sr.get('nearest_elevation')
-        elev_rl=nearest_dir_dict_rl.get('nearest_elevation')
-        elev_rr=nearest_dir_dict_rr.get('nearest_elevation')
-        azim_fl=nearest_dir_dict_fl.get('nearest_azimuth')
-        azim_fr=nearest_dir_dict_fr.get('nearest_azimuth')
-        azim_c=nearest_dir_dict_c.get('nearest_azimuth')
-        azim_sl=nearest_dir_dict_sl.get('nearest_azimuth')
-        azim_sr=nearest_dir_dict_sr.get('nearest_azimuth')
-        azim_rl=nearest_dir_dict_rl.get('nearest_azimuth')
-        azim_rr=nearest_dir_dict_rr.get('nearest_azimuth')
 
         #find file names for desired brirs
         brir_set_formatted = brir_set_folder.replace(" ", "_")
@@ -369,7 +362,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
         sample_name_formatted = sample.replace(" ", "_")
         brand_formatted = brand.replace(" ", "_")
         hpcf_name_wav = hpcf_name_formatted + '_' + sample_name_formatted + '.wav'
-
+        hpcf_name_wav=hf.sanitize_filename(hpcf_name_wav)#sanitize file name in case of invalid windows characters
             
         #hpcf EAPO config path
         output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS)
@@ -380,14 +373,12 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
         #create dir if doesnt exist
         output_file = Path(out_file)
         output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        
+
         #relative directories
         conv_hpcf_rel_dir = 'Convolution: ..\\HpCFs\\FIRs\\'+brand_formatted+'\\'
         conv_hpcf_command = 'Convolution: ..\\HpCFs\\FIRs\\'+brand_formatted+'\\'+ hpcf_name_wav
         conv_brir_rel_dir = 'Convolution: ..\\BRIRs\\'+brir_set_formatted+'\\'
-        
-        
+   
         #calculate overall gain to prevent clipping
         output_fr_db = fr_flat
         max_level_db=0
@@ -395,27 +386,24 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
             #assume -6dB is peak for all hpcfs
             max_level_db=max_level_db-6
         if enable_brir_conv == True:
-            #find gain to apply based on HATS
-            hrtf_gain=0
-            if spatial_res == 3:
-                gain_list=CN.HRTF_GAIN_LIST_FULL_RES_NUM
-            else:
-                gain_list=CN.HRTF_GAIN_LIST_NUM
-            hrtf_index = hrtf_type-1
-            hrtf_gain = gain_list[hrtf_index]*-1
+            #find gain to apply based on HATS -> 3.1.0 obsolete
+        
             #find gain to apply based on acoustic space
             as_gain = get_as_gain_from_dir(brir_set_name)*-1
                     
-            max_level_db = max_level_db + hrtf_gain + as_gain
+            max_level_db = max_level_db + as_gain
         if enable_hpcf_conv == False and enable_brir_conv == False:
             max_level_db=max_level_db+0
         max_level_db = max_level_db + additional_gain
         gain_overall=gain_overall-max_level_db+gain_oa
+        #override gain if a value is passed into function
+        if gain_override is not None:
+            gain_overall=gain_overall+gain_override
         gain_overall = round(gain_overall,1)
         if gain_overall > 50 or gain_overall < -100:
             log_string = 'invalid gains calculated: ' + str(gain_overall)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_warning(log_string)
+            hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1)#log warning
+
         
         #write to txt file
         with open(out_file, 'w') as f:
@@ -439,6 +427,16 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
             f.write('\n')
             f.write('\n')
             
+            #upmixing if applicable
+            if audio_channels == '2.0 Stereo Upmix to 7.1':
+                if upmix_method == 'Method A':#basic method
+                    copy_string = 'Copy: L='+str(upmix_factor_front)+'*L R='+str(upmix_factor_front)+'*R C='+str(upmix_factor_center)+'*L+'+str(upmix_factor_center)+'*R SUB=0 RL='+str(upmix_factor_rear)+'*L RR='+str(upmix_factor_rear)+'*R SL='+str(upmix_factor_side)+'*L SR='+str(upmix_factor_side)+'*R'
+                else:#center and side separation
+                    copy_string = 'Copy: L='+str(upmix_factor_front)+'*L R='+str(upmix_factor_front)+'*R C='+str(upmix_factor_center)+'*L+'+str(upmix_factor_center)+'*R SUB=0 RL='+str(upmix_factor_rear)+'*L+-'+str(upmix_factor_rear)+'*R RR='+str(upmix_factor_rear)+'*R+-'+str(upmix_factor_rear)+'*L SL='+str(upmix_factor_side)+'*L+-'+str(upmix_factor_side)+'*R SR='+str(upmix_factor_side)+'*R+-'+str(upmix_factor_side)+'*L'
+                f.write(copy_string)
+                f.write('\n')
+                f.write('\n')
+            
             #section to apply specific channel gains
             f.write('Channel: L')
             f.write('\n')
@@ -448,7 +446,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
             f.write('\n')
             f.write('Preamp: '+ str(gain_fr) +' dB')#also adjust gain
             f.write('\n')
-            if audio_channels == '7.1 Surround' or audio_channels == '5.1 Surround':
+            if audio_channels == '7.1 Surround' or audio_channels == '5.1 Surround' or audio_channels == '2.0 Stereo Upmix to 7.1':
                 f.write('Channel: C')
                 f.write('\n')
                 f.write('Preamp: '+ str(gain_c) +' dB')#also adjust gain
@@ -461,19 +459,31 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
                 f.write('\n')
                 f.write('Preamp: '+ str(gain_rl) +' dB')#also adjust gain
                 f.write('\n')
+                if audio_channels == '2.0 Stereo Upmix to 7.1':
+                    f.write('Delay: '+ str(rear_delay) + ' samples')#also adjust delay
+                    f.write('\n')
                 f.write('Channel: RR')
                 f.write('\n')
                 f.write('Preamp: '+ str(gain_rr) +' dB')#also adjust gain
                 f.write('\n')
-            if audio_channels == '7.1 Surround':
+                if audio_channels == '2.0 Stereo Upmix to 7.1':
+                    f.write('Delay: '+ str(rear_delay) + ' samples')#also adjust delay
+                    f.write('\n')
+            if audio_channels == '7.1 Surround' or audio_channels == '2.0 Stereo Upmix to 7.1':
                 f.write('Channel: SL')
                 f.write('\n')
                 f.write('Preamp: '+ str(gain_sl) +' dB')#also adjust gain
                 f.write('\n')
+                if audio_channels == '2.0 Stereo Upmix to 7.1':
+                    f.write('Delay: '+ str(side_delay) + ' samples')#also adjust delay
+                    f.write('\n')
                 f.write('Channel: SR')
                 f.write('\n')
                 f.write('Preamp: '+ str(gain_sr) +' dB')#also adjust gain
                 f.write('\n')
+                if audio_channels == '2.0 Stereo Upmix to 7.1':
+                    f.write('Delay: '+ str(side_delay) + ' samples')#also adjust delay
+                    f.write('\n')
             f.write('\n')
             
             #downmixing if applicable
@@ -487,7 +497,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
             if enable_brir_conv == True:
                 if audio_channels == '2.0 Stereo' or audio_channels == '7.1 Downmix to Stereo':
                     copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R'
-                elif audio_channels == '7.1 Surround':
+                elif audio_channels == '7.1 Surround' or audio_channels == '2.0 Stereo Upmix to 7.1':
                     copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R C_INPUT_L_EAR=C+SUB C_INPUT_R_EAR=C+SUB RL_INPUT_L_EAR=RL RL_INPUT_R_EAR=RL RR_INPUT_L_EAR=RR RR_INPUT_R_EAR=RR SL_INPUT_L_EAR=SL SL_INPUT_R_EAR=SL SR_INPUT_L_EAR=SR SR_INPUT_R_EAR=SR'
                 elif audio_channels == '5.1 Surround':
                     copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R C_INPUT_L_EAR=C+SUB C_INPUT_R_EAR=C+SUB RL_INPUT_L_EAR=RL RL_INPUT_R_EAR=RL RR_INPUT_L_EAR=RR RR_INPUT_R_EAR=RR'
@@ -503,7 +513,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
                 f.write('\n')
                 f.write(conv_brir_rel_dir + brir_name_wav_fr)
                 f.write('\n')
-                if audio_channels == '7.1 Surround' or audio_channels == '5.1 Surround':
+                if audio_channels == '7.1 Surround' or audio_channels == '5.1 Surround' or audio_channels == '2.0 Stereo Upmix to 7.1':
                     f.write('Channel: C_INPUT_L_EAR C_INPUT_R_EAR')
                     f.write('\n')
                     f.write(conv_brir_rel_dir + brir_name_wav_c)
@@ -516,7 +526,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
                     f.write('\n')
                     f.write(conv_brir_rel_dir + brir_name_wav_rr)
                     f.write('\n')
-                if audio_channels == '7.1 Surround':
+                if audio_channels == '7.1 Surround' or audio_channels == '2.0 Stereo Upmix to 7.1':
                     f.write('Channel: SL_INPUT_L_EAR SL_INPUT_R_EAR')
                     f.write('\n')
                     f.write(conv_brir_rel_dir + brir_name_wav_sl)
@@ -528,7 +538,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
 
                 if audio_channels == '2.0 Stereo' or audio_channels == '7.1 Downmix to Stereo':
                     copy_string = 'Copy: L=0*L+L_INPUT_L_EAR+R_INPUT_L_EAR R=0*R+L_INPUT_R_EAR+R_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0*SL SR=0*SR SUB=0*SUB'
-                elif audio_channels == '7.1 Surround':
+                elif audio_channels == '7.1 Surround' or audio_channels == '2.0 Stereo Upmix to 7.1':
                     copy_string = 'Copy: L=0*L+L_INPUT_L_EAR+R_INPUT_L_EAR+C_INPUT_L_EAR+RL_INPUT_L_EAR+RR_INPUT_L_EAR+SL_INPUT_L_EAR+SR_INPUT_L_EAR R=0*R+L_INPUT_R_EAR+R_INPUT_R_EAR+C_INPUT_R_EAR+RL_INPUT_R_EAR+RR_INPUT_R_EAR+SL_INPUT_R_EAR+SR_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0*SL SR=0*SR SUB=0*SUB'
                 elif audio_channels == '5.1 Surround':
                     copy_string = 'Copy: L=0*L+L_INPUT_L_EAR+R_INPUT_L_EAR+C_INPUT_L_EAR+RL_INPUT_L_EAR+RR_INPUT_L_EAR R=0*R+L_INPUT_R_EAR+R_INPUT_R_EAR+C_INPUT_R_EAR+RL_INPUT_R_EAR+RR_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0*SL SR=0*SR SUB=0*SUB'
@@ -545,10 +555,8 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, s
                 f.write('\n')
   
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to write config file: ' + out_file
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_warning(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1, exception=ex)#log warning
             
         return CN.EAPO_ERROR_CODE
             
@@ -732,9 +740,9 @@ def get_hrtf_type_from_dir(brir_set, spatial_res=1):
         #find hrtf type from file name
         brir_set_formatted = brir_set.replace(" ", "_")
         if spatial_res == 3:
-            hrtf_list=CN.HRTF_LIST_FULL_RES_SHORT
+            hrtf_list=CN.HRTF_A_LIST_FULL_RES_SHORT
         else:
-            hrtf_list=CN.HRTF_LIST_SHORT
+            hrtf_list=CN.HRTF_A_LIST_SHORT
         for idx, x in enumerate(hrtf_list):
                 hrtf_name_delim = x+'_'
                 if hrtf_name_delim in brir_set_formatted:
@@ -843,11 +851,12 @@ def get_exported_sample_list(headphone, primary_path):
         logging.error("Error occurred", exc_info = ex) 
         return []
     
-def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_config=0, channel_config = '2.0 Stereo'):
+def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_config=0, calc_mode=0, channel_config = '2.0 Stereo'):
     """
     Function reads BRIR folders in output directory and returns float containing estimated peak gain.
     :param primary_path: string, base path
     :param brir_set: string, name of brir set
+    :param calc_mode: int, calculation mode, 0 = max, 1 = mean
     :return: float containing estimated peak gain
     """  
     n_fft=CN.N_FFT
@@ -912,29 +921,8 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
         azim_sr=brir_dict.get('azim_sr')
         azim_rl=brir_dict.get('azim_rl')
         azim_rr=brir_dict.get('azim_rr')
-        #get htrf type from file name
-        hrtf_type=get_hrtf_type_from_dir(brir_set, spatial_res=spatial_res)  
-        nearest_dir_dict_fl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fl , target_azimuth=azim_fl, spatial_res=spatial_res)
-        nearest_dir_dict_fr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_fr , target_azimuth=azim_fr, spatial_res=spatial_res)
-        nearest_dir_dict_c = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_c , target_azimuth=azim_c, spatial_res=spatial_res)
-        nearest_dir_dict_sl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sl , target_azimuth=azim_sl, spatial_res=spatial_res)
-        nearest_dir_dict_sr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_sr , target_azimuth=azim_sr, spatial_res=spatial_res)
-        nearest_dir_dict_rl = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rl , target_azimuth=azim_rl, spatial_res=spatial_res)
-        nearest_dir_dict_rr = brir_export.find_nearest_direction(hrtf_type=hrtf_type ,target_elevation=elev_rr , target_azimuth=azim_rr, spatial_res=spatial_res)
-        elev_fl=nearest_dir_dict_fl.get('nearest_elevation')
-        elev_fr=nearest_dir_dict_fr.get('nearest_elevation')
-        elev_c=nearest_dir_dict_c.get('nearest_elevation')
-        elev_sl=nearest_dir_dict_sl.get('nearest_elevation')
-        elev_sr=nearest_dir_dict_sr.get('nearest_elevation')
-        elev_rl=nearest_dir_dict_rl.get('nearest_elevation')
-        elev_rr=nearest_dir_dict_rr.get('nearest_elevation')
-        azim_fl=nearest_dir_dict_fl.get('nearest_azimuth')
-        azim_fr=nearest_dir_dict_fr.get('nearest_azimuth')
-        azim_c=nearest_dir_dict_c.get('nearest_azimuth')
-        azim_sl=nearest_dir_dict_sl.get('nearest_azimuth')
-        azim_sr=nearest_dir_dict_sr.get('nearest_azimuth')
-        azim_rl=nearest_dir_dict_rl.get('nearest_azimuth')
-        azim_rr=nearest_dir_dict_rr.get('nearest_azimuth')
+  
+        
         brir_name_wav_fl = 'BRIR' + '_E' + str(elev_fl) + '_A' + str(azim_fl) + '.wav'
         brir_name_wav_fr = 'BRIR' + '_E' + str(elev_fr) + '_A' + str(azim_fr) + '.wav'
         brir_name_wav_c = 'BRIR' + '_E' + str(elev_c) + '_A' + str(azim_c) + '.wav'
@@ -1061,7 +1049,10 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
         max_db_r = np.max(result_spectrum_r)
         
         #finalise gain
-        peak_gain = peak_gain+np.mean([max_db_l,max_db_r])
+        if calc_mode == 1:
+            peak_gain = peak_gain+np.mean([max_db_l,max_db_r])
+        else:
+            peak_gain = peak_gain+np.max([max_db_l,max_db_r])
         if enable_brir_conv == True or enable_hpcf_conv == True:
             peak_gain = peak_gain+gain_config
         peak_gain = round(peak_gain,1)
@@ -1072,3 +1063,82 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
         logging.error("Error occurred", exc_info = ex)   
         
     return peak_gain
+
+
+  
+def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config = '2.0 Stereo'):
+    """
+    Function reads BRIR folders in output directory and returns bool indicating if all brirs were found in the folder
+    :param primary_path: string, base path
+    :param brir_set: string, name of brir set
+    :return: bool indicating if all brirs were found in the folder
+    """  
+
+    #default value
+    all_brirs_found = False
+
+    try:
+        enable_brir_conv = brir_dict.get('enable_conv')
+
+        elev_fl=brir_dict.get('elev_fl')
+        elev_fr=brir_dict.get('elev_fr')
+        elev_c=brir_dict.get('elev_c')
+        elev_sl=brir_dict.get('elev_sl')
+        elev_sr=brir_dict.get('elev_sr')
+        elev_rl=brir_dict.get('elev_rl')
+        elev_rr=brir_dict.get('elev_rr')
+        azim_fl=brir_dict.get('azim_fl')
+        azim_fr=brir_dict.get('azim_fr')
+        azim_c=brir_dict.get('azim_c')
+        azim_sl=brir_dict.get('azim_sl')
+        azim_sr=brir_dict.get('azim_sr')
+        azim_rl=brir_dict.get('azim_rl')
+        azim_rr=brir_dict.get('azim_rr')
+
+        brir_name_wav_fl = 'BRIR' + '_E' + str(elev_fl) + '_A' + str(azim_fl) + '.wav'
+        brir_name_wav_fr = 'BRIR' + '_E' + str(elev_fr) + '_A' + str(azim_fr) + '.wav'
+        brir_name_wav_c = 'BRIR' + '_E' + str(elev_c) + '_A' + str(azim_c) + '.wav'
+        brir_name_wav_sl = 'BRIR' + '_E' + str(elev_sl) + '_A' + str(azim_sl) + '.wav'
+        brir_name_wav_sr = 'BRIR' + '_E' + str(elev_sr) + '_A' + str(azim_sr) + '.wav'
+        brir_name_wav_rl = 'BRIR' + '_E' + str(elev_rl) + '_A' + str(azim_rl) + '.wav'
+        brir_name_wav_rr = 'BRIR' + '_E' + str(elev_rr) + '_A' + str(azim_rr) + '.wav'
+        
+        if channel_config == '2.0 Stereo' or channel_config == '7.1 Downmix to Stereo':
+            expected_brirs = 2
+        elif channel_config == '5.1 Surround':
+            expected_brirs = 5
+        elif channel_config == '7.1 Surround' or channel_config == '2.0 Stereo Upmix to 7.1':
+            expected_brirs = 7
+        else:
+            expected_brirs = 2
+        brirs_found=0
+
+        if enable_brir_conv == True:
+            #get max gain from BRIRs
+            #find file names for desired brirs
+            brir_set_formatted = brir_set.replace(" ", "_")
+            brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
+            #find specific directions
+            for root, dirs, files in os.walk(brirs_path):
+                for filename in files:
+                    if channel_config == '2.0 Stereo' or channel_config == '5.1 Surround' or channel_config == '7.1 Surround'  or channel_config == '2.0 Stereo Upmix to 7.1'  or channel_config == '7.1 Downmix to Stereo':
+                        if filename == brir_name_wav_fl or filename == brir_name_wav_fr:
+                            brirs_found=brirs_found+1
+                    if channel_config == '5.1 Surround' or channel_config == '7.1 Surround' or channel_config == '2.0 Stereo Upmix to 7.1':
+                        if filename == brir_name_wav_c or filename == brir_name_wav_rl or filename == brir_name_wav_rr:#center
+                            brirs_found=brirs_found+1
+                    if channel_config == '7.1 Surround' or channel_config == '2.0 Stereo Upmix to 7.1':
+                        if filename == brir_name_wav_sl or filename == brir_name_wav_sr:
+                            brirs_found=brirs_found+1          
+            
+            #were all brirs found? compare count
+            if brirs_found >= expected_brirs:
+                all_brirs_found = True
+        else:
+            all_brirs_found = True
+        
+
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)   
+        
+    return all_brirs_found

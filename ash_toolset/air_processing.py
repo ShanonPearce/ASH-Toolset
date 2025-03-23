@@ -51,10 +51,7 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
     
     try:
         log_string_a = 'Starting extract_airs_from_recording processing for: '+ir_set
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
     
         file_id=0
         for root, dirs, files in os.walk(ir_data_folder):
@@ -78,7 +75,7 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
                     #take gradient with x spacing
                     fir_array_abs_combined = np.divide(np.add(np.abs(fir_array[:,0]),np.abs(fir_array[:,1])),2)
                     fir_array_abs_grad = np.gradient(fir_array_abs_combined, 1)
-                    if CN.PLOT_ENABLE == 1:
+                    if CN.PLOT_ENABLE == True:
                         plot_name = 'fir_array_abs_grad_'+filename
                         hf.plot_td(fir_array_abs_grad[0:20000],plot_name)
                     
@@ -123,16 +120,11 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
                     file_id=file_id+1
                     
         log_string_a = 'Completed extract_airs_from_recording processing for: '+ir_set
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
                     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to extract AIRs from recording for stream: ' + ir_set 
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
 
 
@@ -192,10 +184,7 @@ def split_airs_to_set(ir_set='fw', gui_logger=None):
     
     try:
         log_string_a = 'Starting split_airs_to_set processing for: '+ir_set
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
 
     
         #get number of IRs
@@ -270,22 +259,14 @@ def split_airs_to_set(ir_set='fw', gui_logger=None):
             np.save(out_file_path,air_data)
             
             log_string_a = 'Exported numpy file to: ' + out_file_path 
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_a)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_a)
+            hf.log_with_timestamp(log_string_a, gui_logger)
                 
             log_string_a = 'Completed split_airs_to_set processing for: '+ir_set
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_a)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_a)
+            hf.log_with_timestamp(log_string_a, gui_logger)
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete TD averaging for: ' + ir_set 
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
   
@@ -373,10 +354,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
 
     try:
         log_string_a = 'Starting irs_to_air_set processing for: '+ir_set
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
 
         #
         #get number of IRs to define size of dataset
@@ -453,10 +431,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                     total_irs=total_irs+input_channels
                     
                     log_string_a = 'npy data_ir shape: ' + str(shape) + ', Input Dimensions: ' + str(n_dims) + ', source samplerate: ' + str(samplerate) + ', input_channels: ' + str(input_channels)
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)    
+                    hf.log_with_timestamp(log_string_a, gui_logger)   
                         
     
                 if '.mat' in filename:
@@ -525,10 +500,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                     total_irs=total_irs+input_channels
                     
                     log_string_a = 'mat data_ir shape: ' + str(shape) + ', Input Dimensions: ' + str(n_dims) + ', source samplerate: ' + str(samplerate) + ', input_channels: ' + str(input_channels)
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)
+                    hf.log_with_timestamp(log_string_a, gui_logger)
                     
     
                 if '.sofa' in filename:
@@ -630,24 +602,15 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
             sofa_obj_per_hemi=int(np.ceil(total_sofa_obj/2))
  
             log_string_a = 'sets_per_hemi: ' + str(sets_per_hemi) + ', sofa_obj_per_hemi: ' + str(sofa_obj_per_hemi) + ', sets_per_sofa_obj: ' + str(sets_per_sofa_obj) + ', irs_per_set: ' + str(irs_per_set) + ', num_out_sets: ' + str(num_out_sets) + ', irs_per_sofa_obj: ' + str(irs_per_sofa_obj) + ', total_irs: ' + str(total_irs) + ', total_sofa_obj: ' + str(total_sofa_obj) 
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_a)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_a)
+            hf.log_with_timestamp(log_string_a, gui_logger)
 
         else: 
             log_string_a = 'sets_per_hemi: ' + str(sets_per_hemi) + ', irs_per_set: ' + str(irs_per_set) + ', num_out_sets: ' + str(num_out_sets)  + ', total_irs: ' + str(total_irs)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_a)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_a)
+            hf.log_with_timestamp(log_string_a, gui_logger)
             
         
         log_string_a = 'num_out_sets: ' + str(num_out_sets) + ', total_irs: ' + str(total_irs)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
         
         air_data=np.zeros((num_out_sets,irs_per_set,total_chan_air,n_fft))
         air_sample=np.zeros((num_out_sets,total_chan_air,n_fft))
@@ -707,19 +670,13 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                     extract_legth = min(n_fft,fir_length)
                     
                     log_string_a = 'SOFA data_ir shape: ' + str(shape) + ', Input Dimensions: ' + str(n_dims) + ', sofa_mode: ' + str(sofa_mode) + ', source samplerate: ' + str(samplerate) + ', input_channels: ' + str(input_channels) + ', fir_length: ' + str(fir_length)
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)
+                    hf.log_with_timestamp(log_string_a, gui_logger)
                     
                     #resample if sample rate is not 44100
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
                 
                     #apply noise reduction if enabled
                     if noise_reduction == 1:#if noise_reduction == 1 and 'idxX' in filename:
@@ -980,19 +937,13 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                         input_channels = len(fir_array[0])
 
                     log_string_a = 'mat data_ir shape: ' + str(shape) + ', Input Dimensions: ' + str(n_dims) + ', source samplerate: ' + str(samplerate) + ', input_channels: ' + str(input_channels)
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)
+                    hf.log_with_timestamp(log_string_a, gui_logger)
 
                     #resample if sample rate is not 44100
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
                             
                     fir_length = len(fir_array)
                     extract_legth = min(n_fft,fir_length)
@@ -1090,10 +1041,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
                     
                     fir_length = len(fir_array)
                     extract_legth = min(n_fft,fir_length)
@@ -1190,10 +1138,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                         if samplerate != samp_freq:
                             fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                             log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                            if CN.LOG_INFO == 1:
-                                logging.info(log_string_a)
-                            if CN.LOG_GUI == 1 and gui_logger != None:
-                                gui_logger.log_info(log_string_a)
+                            hf.log_with_timestamp(log_string_a, gui_logger)
                           
                         fir_length = len(fir_array)
                         extract_legth = min(n_fft,fir_length)
@@ -1257,10 +1202,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
                         
                     try:
                         input_channels = len(fir_array[0])
@@ -1352,10 +1294,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
                         
                     try:
                         input_channels = len(fir_array[0])
@@ -1622,10 +1561,7 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
         np.save(out_file_path,air_data)
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
         
         #also save to wav for testing
         for set_num in range(num_out_sets):
@@ -1645,10 +1581,8 @@ def prepare_air_set(ir_set='default_set_name', num_out_sets=None, gui_logger=Non
     
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete AIR set processing for: ' + ir_set 
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
   
     
     
@@ -1688,17 +1622,24 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
     #open input RIR
     air_in_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', ir_group,ir_set)
     npy_file_name = ir_set+'_full.npy'
-    
     air_file_path = pjoin(air_in_folder,npy_file_name)  
     
     try:
         log_string_a = 'Starting airs_to_brirs processing for: '+ir_set
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
             
-        air_reverberation = np.load(air_file_path)
+        try:
+            #try loading a single npy dataset
+            air_reverberation = np.load(air_file_path)
+            summary_string = hf.summarize_array(air_reverberation)
+            log_string_a = 'loaded: '+air_file_path + ', array structure: '+summary_string
+        except:
+            #if that fails, try loading all npy files within the folder, align them, redistribute, and concatenate them
+            air_reverberation = hf.roll_distribute_concatenate_npy_datasets(air_in_folder)
+            summary_string = hf.summarize_array(air_reverberation)
+            log_string_a = 'Failed to load: '+air_file_path + ', loaded all npy files in: '+air_in_folder + ', new array structure: '+summary_string
+        
+        hf.log_with_timestamp(log_string_a, gui_logger)
         
         #get number of sets
         total_sets_air = len(air_reverberation)
@@ -1734,14 +1675,19 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         if spatial_res <= 2:
             #this dataset includes all hrirs up to high spatial resolution. Elevations from -60 to 60deg in 5 deg steps, Azimuths from 0 to 360dg in 5deg steps
             npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_high.npy')
-            #npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_lfa_high.npy')
         elif spatial_res == 3:
             npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.npy')
-            #npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_lfa_max.npy')
 
         #load npy files
         hrir_list = np.load(npy_fname)
-        hrir_selected = hrir_list[0]
+        
+        #get hrir set id (dummy head), check if using alternative ID
+        if ir_set in CN.AC_SPACE_LIST_HRTF_1:
+            hrir_id=1
+        else:
+            hrir_id=0
+            
+        hrir_selected = hrir_list[hrir_id]
         
         total_elev_hrir = len(hrir_selected)
         total_azim_hrir = len(hrir_selected[0])
@@ -1756,9 +1702,9 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         if spatial_res <= 2:
             hrtf_idx = 0 
             elev_src_set = np.arange(-40,55,elev_nearest)
-            if CN.DIRECTION_MODE == 2:#or CN.DIRECTION_MODE == 1
+            if CN.DIRECTION_MODE == 2 or ir_set in CN.AC_SPACE_LIST_ALL_AZ:#use full range of azimuths
                 azim_src_set=np.arange(0,360,azim_nearest)
-            else:
+            else:#limited range
                 azim_src_range_a=np.arange(0,75,azim_nearest)
                 azim_src_range_b=np.arange(110,255,azim_nearest)
                 azim_src_range_c=np.arange(290,360,azim_nearest)
@@ -1767,10 +1713,10 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
                 azim_src_set=azim_src_range_abc
         else:
             hrtf_idx = 0 
-            elev_src_set = np.arange(-40,58,elev_nearest)#np.arange(-40,56,elev_nearest)
-            if CN.DIRECTION_MODE == 2:#or CN.DIRECTION_MODE == 1
+            elev_src_set = np.arange(-40,58,elev_nearest)#np.arange(-40,58,elev_nearest)
+            if CN.DIRECTION_MODE == 2 or ir_set in CN.AC_SPACE_LIST_ALL_AZ:#use full range of azimuths
                 azim_src_set=np.arange(0,360,azim_nearest)
-            else:
+            else:#limited range
                 azim_src_range_a=np.arange(0,72,2)
                 azim_src_range_b=np.arange(114,248,2)
                 azim_src_range_c=np.arange(290,360,2)
@@ -1797,10 +1743,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         num_out_dirs=max(num_out_dirs,CN.MIN_REVERB_DIRS)
         
         log_string_a = 'num_out_dirs: ' + str(num_out_dirs)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
         
         #create numpy array for new BRIR dataset   
         brir_reverberation=np.zeros((CN.INTERIM_ELEVS,num_out_dirs,2,n_fft))
@@ -1816,10 +1759,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         curr_hem=1
         hrtf_idx=0
         log_string_a = 'BRIR estimation loop running'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
         
         for set_num in range(total_sets_air):
             #each set represents a new BRIR direction
@@ -1916,7 +1856,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
             comp_mode=1#0 = compensate all directions together with a single filter, 1 = comp each direction separately
             
             #level ends of spectrum
-            high_freq=16000#16500,13500
+            high_freq=15000#16000
             low_freq_in=40
             if ir_set in CN.AC_SPACE_LIST_SUB:
                 high_freq=12000
@@ -1973,7 +1913,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
                         brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
                         brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
     
-                if CN.PLOT_ENABLE == 1:
+                if CN.PLOT_ENABLE == True:
                     print(str(num_bairs_avg))
                     hf.plot_data(brir_fft_target_mag,'brir_fft_target_mag', normalise=0)
                     hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=0)
@@ -2021,7 +1961,7 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
                         brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
                         brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
     
-                    if CN.PLOT_ENABLE == 1:
+                    if CN.PLOT_ENABLE == True:
                         print(str(num_bairs_avg))
                         hf.plot_data(brir_fft_target_mag,str(direc)+'_brir_fft_target_mag', normalise=0)
                         hf.plot_data(brir_fft_avg_mag,str(direc)+'_brir_fft_avg_mag', normalise=0)
@@ -2082,17 +2022,13 @@ def airs_to_brirs(ir_set='fw', ir_group='prepped_airs', out_directions=None, ali
         np.save(out_file_path,brir_reverberation)    
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
    
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
+
         log_string = 'Failed to complete AIR to BRIR processing for: ' + ir_set 
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
  
@@ -2163,10 +2099,7 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
             raise ValueError('Invalid number of input BRIRs')
             
         log_string_a = 'num_out_sets: ' + str(num_out_sets)
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
           
         #numpy array, num sets x num irs in each set x 2 channels x NFFT max samples
         brir_reverberation=np.zeros((CN.INTERIM_ELEVS,num_out_sets,2,n_fft))
@@ -2188,10 +2121,7 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
  
                     extract_legth = min(n_fft,fir_length)
                     #load into numpy array
@@ -2440,7 +2370,7 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
                     brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
                     brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
 
-            if CN.PLOT_ENABLE == 1:
+            if CN.PLOT_ENABLE == True:
                 print(str(num_bairs_avg))
                 hf.plot_data(brir_fft_target_mag,'brir_fft_target_mag', normalise=0)
                 hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=0)
@@ -2483,18 +2413,13 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
         np.save(out_file_path,brir_reverberation)    
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
        
 
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete BRIR processing for: ' + ir_set 
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
     
@@ -2561,10 +2486,7 @@ def calc_avg_room_target_mag(gui_logger=None):
     air_fft_avg_db = fr_flat.copy()
     
     log_string_a = 'Mag response estimation loop running'
-    if CN.LOG_INFO == 1:
-        logging.info(log_string_a)
-    if CN.LOG_GUI == 1 and gui_logger != None:
-        gui_logger.log_info(log_string_a)
+    hf.log_with_timestamp(log_string_a, gui_logger)
             
     #loop through folders
     try:
@@ -2614,17 +2536,15 @@ def calc_avg_room_target_mag(gui_logger=None):
         #avg_room_min_fir = hf.mag_to_min_fir(air_fft_avg_mag_sm, crop=1)
 
  
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             print(str(num_airs_avg))
             hf.plot_data(air_fft_avg_mag,'air_fft_avg_mag', normalise=0)
             hf.plot_data(air_fft_avg_mag_sm,'air_fft_avg_mag_sm', normalise=0)    
   
   
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete reverb response processing'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
             
             
@@ -2707,7 +2627,7 @@ def calc_reverb_target_mag(gui_logger=None):
         brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, n_fft=n_fft)
   
  
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             print(str(num_bairs_avg))
             hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=2)
             hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=2)    
@@ -2725,18 +2645,13 @@ def calc_reverb_target_mag(gui_logger=None):
         np.save(out_file_path,brir_fft_avg_mag_sm)    
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
        
 
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete BRIR reverb response processing'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
 def calc_subrir(gui_logger=None):
@@ -2810,7 +2725,7 @@ def calc_subrir(gui_logger=None):
         mag_fft=np.abs(data_fft)
         average_mag = np.mean(mag_fft[mag_range_a:mag_range_b])
         if average_mag == 0:
-            if CN.LOG_INFO == 1:
+            if CN.LOG_INFO == True:
                 logging.info('0 magnitude detected')
         for chan in range(CN.TOTAL_CHAN_BRIR):
             sub_brir_ir[chan][:] = np.divide(sub_brir_ir[chan][:],average_mag)
@@ -2853,10 +2768,7 @@ def calc_subrir(gui_logger=None):
                 if samplerate != samp_freq:
                     fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                     log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)
+                    hf.log_with_timestamp(log_string_a, gui_logger)
 
                 extract_legth = min(n_fft,fir_length)
                 #load into numpy array
@@ -2976,7 +2888,7 @@ def calc_subrir(gui_logger=None):
                 brir_reverberation[0,set_num,chan,:] = np.multiply(brir_reverberation[0,set_num,chan,:],n_fade_out_win)
             
             
-            if CN.LOG_INFO == 1:
+            if CN.LOG_INFO == True:
                 logging.info('delay index = ' + str(index_shift))
                 logging.info('sub polarity = ' + str(sub_polarity))
                 logging.info('samples_shift = ' + str(samples_shift))
@@ -3572,7 +3484,7 @@ def calc_subrir(gui_logger=None):
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
 
-            if CN.LOG_INFO == 1:
+            if CN.LOG_INFO == True:
                 logging.info('filter_type = ' + str(filter_type))
                 logging.info('fc = ' + str(fc))
                 logging.info('sr = ' + str(sr))
@@ -3618,16 +3530,12 @@ def calc_subrir(gui_logger=None):
         np.save(out_file_path,sub_brir_ir_new)    
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
     
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete sub BRIR processing'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
 
@@ -3646,10 +3554,7 @@ def calc_room_target_dataset(gui_logger=None):
         fr_flat = hf.mag2db(fr_flat_mag)
     
         log_string_a = 'Room target response calculation running'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
     
         #create new array for old and new targets
         num_targets=len(CN.ROOM_TARGET_LIST_FIRS)-1
@@ -3714,7 +3619,7 @@ def calc_room_target_dataset(gui_logger=None):
             new_id=num_targets+idx
             room_target_fir_arr[new_id,:] = np.copy(room_target_min_fir[0:fir_length])
             
-            if CN.PLOT_ENABLE == 1:
+            if CN.PLOT_ENABLE == True:
                 print(str(idx))
                 hf.plot_data(room_target_mag_new,'room_target_mag_new_'+str(idx), normalise=0)
                 hf.plot_data(room_target_mag_new_sm,'room_target_mag_new_sm_'+str(idx), normalise=0)
@@ -3738,7 +3643,7 @@ def calc_room_target_dataset(gui_logger=None):
             new_id=num_targets*2+idx
             room_target_fir_arr[new_id,:] = np.copy(room_target_min_fir[0:fir_length])
             
-            if CN.PLOT_ENABLE == 1:
+            if CN.PLOT_ENABLE == True:
                 print(str(idx))
                 hf.plot_data(room_target_mag_new,'room_target_mag_new_'+str(idx), normalise=0)
                 hf.plot_data(room_target_mag_new_sm,'room_target_mag_new_sm_'+str(idx), normalise=0)
@@ -3768,19 +3673,14 @@ def calc_room_target_dataset(gui_logger=None):
         np.save(out_file_path,room_target_fir_arr_out)    
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
         
         
     
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete room target response processing'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
                 
 def acoustic_space_updates(download_updates=False, gui_logger=None):
@@ -3793,10 +3693,7 @@ def acoustic_space_updates(download_updates=False, gui_logger=None):
         
         #log results
         log_string = 'Checking for acoustic space updates'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         #read local metadata from reverberation_metadata.csv
         #place rows into dictionary list
@@ -3863,10 +3760,7 @@ def acoustic_space_updates(download_updates=False, gui_logger=None):
                         update_required=1
                         #if not matching, print details
                         log_string = 'New version ('+vers_w+') available for: ' + name_gui_w
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string)
+                        hf.log_with_timestamp(log_string, gui_logger)
 
                             
             #this space not found in local metadata, must be new space
@@ -3874,27 +3768,18 @@ def acoustic_space_updates(download_updates=False, gui_logger=None):
                 mismatches=mismatches+1 
                 update_required=1
                 log_string = 'New acoustic space available: ' + name_gui_w
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
                     
             #if download updates enabled
             #for each version mismatch, download latest dataset from gdrive and place into relevant folder
             if download_updates == True and update_required > 0:
                 log_string = 'Downloading update'
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
    
                 gdown.download(gdrive_link, dl_file, fuzzy=True)
                 
                 log_string = 'Latest version of dataset: ' + name_gui_w + ' downloaded and saved to: ' + dl_file
-                if CN.LOG_INFO == 1:
-                    logging.info(log_string)
-                if CN.LOG_GUI == 1 and gui_logger != None:
-                    gui_logger.log_info(log_string)
+                hf.log_with_timestamp(log_string, gui_logger)
                 updates_perf=updates_perf+1
                     
         #finally, download latest metadata file and replace local file
@@ -3907,16 +3792,11 @@ def acoustic_space_updates(download_updates=False, gui_logger=None):
         #if no mismatches flagged, print message
         if mismatches == 0:
             log_string = 'No updates available'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
 
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to validate versions or update data'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
     

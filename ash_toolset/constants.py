@@ -17,16 +17,13 @@ from csv import DictReader
 ################################ 
 #Constants
 
-PLOT_ENABLE = 0
-LOG_INFO=1     
-LOG_GUI=1
 
 N_FFT = 65536
 N_FFT_L = int(65536*2)
 N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
-SAMP_FREQ = 44100
+SAMP_FREQ = 44100#sample rate for ash toolset
 FS=SAMP_FREQ
-THRESHOLD_CROP = 0.0000005#-120db with reference level of 0.5
+THRESHOLD_CROP = 0.0000005#0.0000005 -120db with reference level of 0.5
 SPECT_SMOOTH_MODE=1#0=use single pass smoothing, 1 = octave smoothing
 APPLY_SUB_EQ = 0#1
 APPLY_ROOM_TARGET = 1
@@ -35,6 +32,10 @@ HRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
 SUBRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
 ROOM_TARGET_MODE=1#0= load .mat dataset, 1=load .npy dataset
 PINNA_COMP_MODE=1#0= load .mat dataset, 1=load .npy dataset
+
+PLOT_ENABLE = False#False
+LOG_INFO=True     
+LOG_GUI=True
 HEAD_TRACK_RUNNING = False
 PROCESS_BRIRS_RUNNING = False
 SHOW_DEV_TOOLS=False
@@ -44,11 +45,11 @@ STOP_THREAD_FLAG = False
 DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
 
 #crossover frequency for low frequency BRIR integration
-ENABLE_SUB_INTEGRATION = 1
+ENABLE_SUB_INTEGRATION = True
 F_CROSSOVER = 120#125
 F_CROSSOVER_HI = 140#140
 F_CROSSOVER_MID = 130
-F_CROSSOVER_LOW = 100#110
+F_CROSSOVER_LOW = 110#110
 CUTOFF_SUB = F_CROSSOVER
 PEAK_TO_PEAK_WINDOW_SUB = int(np.divide(SAMP_FREQ,CUTOFF_SUB)*0.95)#np.divide(SAMP_FREQ,CUTOFF_SUB)  #peak to peak within a sufficiently small sample window
 PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
@@ -81,13 +82,18 @@ MIN_T_SHIFT_S = -370#-250
 MAX_T_SHIFT_S = 250#250
 NUM_INTERVALS_S = int(np.abs((MAX_T_SHIFT_S-MIN_T_SHIFT_S)/T_SHIFT_INTERVAL_S))
 T_SHIFT_INTERVAL_N = 25
-MIN_T_SHIFT_N = -250#-250
-MAX_T_SHIFT_N = 100#150
+MIN_T_SHIFT_N = -225#-250
+MAX_T_SHIFT_N = 100#100
 NUM_INTERVALS_N = int(np.abs((MAX_T_SHIFT_N-MIN_T_SHIFT_N)/T_SHIFT_INTERVAL_N))
 T_SHIFT_INTERVAL_P = 25
-MIN_T_SHIFT_P = -200#-250
-MAX_T_SHIFT_P = 50#50
+MIN_T_SHIFT_P = -225#-200
+MAX_T_SHIFT_P = 100#50
 NUM_INTERVALS_P = int(np.abs((MAX_T_SHIFT_P-MIN_T_SHIFT_P)/T_SHIFT_INTERVAL_P))
+#reverb alignment
+T_SHIFT_INTERVAL_R = 25
+MIN_T_SHIFT_R = -500#-400
+MAX_T_SHIFT_R = 100#100
+NUM_INTERVALS_R = int(np.abs((MAX_T_SHIFT_P-MIN_T_SHIFT_P)/T_SHIFT_INTERVAL_P))
 #hrir alignment
 T_SHIFT_INTERVAL_H = 5
 MIN_T_SHIFT_H = -30#
@@ -104,12 +110,15 @@ DELAY_WIN_MAX_A = 1000#1500
 DELAY_WIN_HOPS_A = int((DELAY_WIN_MAX_A-DELAY_WIN_MIN_A)/DELAY_WIN_HOP_SIZE)
 MIN_T_SHIFT_B = -3000#for longer delays
 MAX_T_SHIFT_B = 0#
-CUTOFF_ALIGNMENT_AIR = F_CROSSOVER#140
+MIN_T_SHIFT_D = -750#
+MAX_T_SHIFT_D = 200#
+CUTOFF_ALIGNMENT_AIR = F_CROSSOVER_LOW#F_CROSSOVER
 PEAK_TO_PEAK_WINDOW_AIR = int(np.divide(SAMP_FREQ,CUTOFF_ALIGNMENT)*0.95) 
 
-#option to limit azimuths for TD alignment
-ALIGN_LIMIT_AZIM = 1
 
+ALIGN_LIMIT_AZIM = 1#option to limit azimuths for TD alignment
+TOTAL_SAMPLES_HRIR=256
+TOTAL_CHAN_HRIR = 2
 TOTAL_CHAN_BRIR = 2
 INTERIM_ELEVS = 1
 NEAREST_AZ_BRIR_REVERB = 15
@@ -125,8 +134,8 @@ ROLL_ROOM = 0
 ROOM_WEIGHTING_DESC=1
 SPECT_SNAP_F0=160
 SPECT_SNAP_F1=3500#1500
-SPECT_SNAP_M_F0=1200
-SPECT_SNAP_M_F1=1800#1500
+SPECT_SNAP_M_F0=800#1200
+SPECT_SNAP_M_F1=2100#1800
 
 #window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
 WINDOW_TYPE=2#1
@@ -139,9 +148,13 @@ BASE_DIR_PATH = Path(__file__).resolve().parents[1] #using Pathlib
 SCRIPT_DIR_PATH = Path(__file__).resolve().parent #using Pathlib
 SCRIPT_DIRECTORY = path.dirname(path.abspath(sys.argv[0]))#old method using os.path
 DATA_DIR_INT = pjoin(BASE_DIR_OS, 'data','interim')
+DATA_DIR_HRIR_NPY = pjoin(BASE_DIR_OS, 'data','interim','hrir')
+DATA_DIR_HRIR_NPY_DH = pjoin(BASE_DIR_OS, 'data','interim','hrir','dh')
+DATA_DIR_HRIR_NPY_HL = pjoin(BASE_DIR_OS, 'data','interim','hrir','hl')
+DATA_DIR_HRIR_NPY_USER = pjoin(BASE_DIR_OS, 'data','interim','hrir','user')
 DATA_DIR_EXT = pjoin(BASE_DIR_OS, 'data','external')
 DATA_DIR_SOFA = pjoin(BASE_DIR_OS, 'data','external','SOFA')
-DATA_DIR_SOFA_USER = pjoin(BASE_DIR_OS, 'data','external','SOFA','user')
+DATA_DIR_SOFA_USER = pjoin(BASE_DIR_OS, 'data','user','SOFA')
 DATA_DIR_ASSETS = pjoin(BASE_DIR_OS, 'data','external','assets')
 DATA_DIR_RAW = pjoin(BASE_DIR_OS, 'data','raw')
 DATA_DIR_RAW_HP_MEASRUEMENTS = pjoin(BASE_DIR_OS, 'data','raw','headphone_measurements')
@@ -172,6 +185,7 @@ OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
 #GUI related
 TOOLTIP_GAIN = 'Positive values may result in clipping'
 TOOLTIP_ELEVATION = 'Positive values are above the listener while negative values are below the listener'
+TOOLTIP_AZIMUTH = 'Positive values are to the right of the listener while negative values are to the left'
 RADIUS=85
 X_START=110
 Y_START=100
@@ -198,7 +212,8 @@ NUM_OUT_CHANNELS_TS = 4
 BRIR_EXPORT_ENABLE = True
 AZIM_DICT = {'WIDE_BL':'-135','WIDE_BR':'135','NARROW_BL':'-150','NARROW_BR':'150','WIDEST_BL':'-120','WIDEST_BR':'120','SL':'-90','SR':'90','FL':'-30','FR':'30','FC':'0','WIDE_FL':'-35','WIDE_FR':'35','NARROW_FL':'-25','NARROW_FR':'25'}
 CHANNEL_CONFIGS = [['2.0_Stereo','2.0','2.0 Stereo'],['2.0_Stereo_Narrow','2.0N','2.0 Stereo (narrow placement)'],['2.0_Stereo_Wide','2.0W','2.0 Stereo (wide placement)'],['7.1_Surround_Narrow_Back','7.1N','7.1 surround (narrow back placement)'],['7.1_Surround_Wide_Back','7.1W','7.1 surround (wide back placement)'],['5.1_Surround','5.1','5.1 surround']]
-AUDIO_CHANNELS = ['2.0 Stereo','5.1 Surround','7.1 Surround','7.1 Downmix to Stereo']
+AUDIO_CHANNELS = ['2.0 Stereo','2.0 Stereo Upmix to 7.1','5.1 Surround','7.1 Surround','7.1 Downmix to Stereo']
+UPMIXING_METHODS = ['Method A','Method B']
 NUM_SPEAK_CONFIGS = len(CHANNEL_CONFIGS)
 ELEV_ANGLES_WAV_BK = [-30,0,30]
 ELEV_ANGLES_WAV = [45,30,15,0,-15,-30,-45]#[-45,-30,-15,0,15,30,45]
@@ -221,10 +236,12 @@ AZ_ANGLES_SR_WAV.reverse()
 AZ_ANGLES_RL_WAV.reverse()
 AZ_ANGLES_RR_WAV.reverse()
 AZIM_HORIZ_RANGE = {5,20,25,35,40,355,340,335,325,320}
+AZIM_EXTRA_RANGE = {25,30,35,335,330,325}
 EAPO_MUTE_GAIN=-60.0
 
 #spatial resolution
-SPATIAL_RES_LIST = ['Low','Medium','High','Max']
+SPATIAL_RES_LIST = ['Low','Medium','High','Max']#0=low,1=med,2=high,3=max
+SPATIAL_RES_LIST_LIM = ['Low','Medium','High']
 SPATIAL_RES_ELEV_DESC = ['-30 to 30 degrees in 15 degree steps.','-45 to 45 degrees in 15 degree steps.',
                          '-50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps.','-40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps.']
 SPATIAL_RES_AZIM_DESC = ['0 to 360 degrees in varying steps.','0 to 360 degrees in varying steps.',
@@ -244,8 +261,12 @@ SPATIAL_RES_ELEV_MIN_OUT=[-30, -45, -50, -40 ]#reduced set
 SPATIAL_RES_ELEV_MAX_OUT=[30, 45, 50, 40 ]#reduced set
 SPATIAL_RES_ELEV_NEAREST=[5, 5, 5, 2]#as per hrir dataset
 SPATIAL_RES_AZIM_NEAREST=[5, 5, 5, 2]#as per hrir dataset
-SPATIAL_RES_ELEV_NEAREST_PR=[15, 15, 5, 2]#reduced set
-SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#reduced set
+SPATIAL_RES_ELEV_NEAREST_PR=[5, 5, 5, 2]#3.1.0 increased processing resolution from [15, 15, 5, 2]
+SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#
+SPATIAL_RES_ELEV_NEAREST_PR_R=[15, 15, 5, 2]#
+SPATIAL_RES_AZIM_NEAREST_PR_R=[5, 5, 5, 2]#
+SPATIAL_RES_ELEV_NEAREST_OUT=[15, 15, 5, 2]#
+SPATIAL_RES_AZIM_NEAREST_OUT=[5, 5, 5, 2]#
 
 #Head tracking related
 THREAD_FPS = 10
@@ -271,7 +292,7 @@ FREQ_CUTOFF = 20000#f in bins
 FREQ_CUTOFF_GEQ = 29000
 EAPO_GAIN_ADJUST = 0.9*1.1*1.1*1.1
 EAPO_QF_ADJUST = 0.5*0.8
-HPCF_FIR_LENGTH = 512#was 1024
+HPCF_FIR_LENGTH = 384#was 1024, then 512
 #gui
 DIRECT_GAIN_MAX=8#6
 DIRECT_GAIN_MIN=-8#-6
@@ -322,14 +343,16 @@ AC_SPACE_LIST_NOCOMP = ['audio_lab_d']
 AC_SPACE_LIST_COMPMODE1 = ['control_room_a', 'tatami_room_a', 'office_a','studio_b']
 AC_SPACE_LIST_WINDOW = ['hall_a', 'outdoors_a','seminar_room_a','broadcast_studio_a', 'outdoors_b']
 AC_SPACE_LIST_WINDOW_ALL = ['']
-AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i','hall_a']
+AC_SPACE_LIST_SLOWRISE = ['studio_b','audio_lab_i','hall_a','small_room_a','medium_room_a','large_room_a','small_room_b','medium_room_b','large_room_b','small_room_c','small_room_d']
 AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d','sub_set_e','sub_set_f']
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
-AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a','concert_hall_a']
-AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a']
-AC_SPACE_LIST_LOW_FC = [' ']#
+#AC_SPACE_LIST_HI_FC = [ 'audio_lab_c','control_room_a', 'auditorium_a', 'tatami_room_a','seminar_room_a','conference_room_a','concert_hall_a']
+#AC_SPACE_LIST_MID_FC = ['audio_lab_a','hall_a','office_a']
+#AC_SPACE_LIST_LOW_FC = ['small_room_a','small_room_c','small_room_d','large_room_a','large_room_b']#,'medium_room_a','medium_room_b','large_room_a','large_room_b','small_room_a','small_room_b',
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
+AC_SPACE_LIST_HRTF_1 = ['small_room_b','small_room_d','medium_room_b','large_room_b']#
+AC_SPACE_LIST_ALL_AZ = ['small_room_a','small_room_b','small_room_c','small_room_d','small_room_e','large_room_a','large_room_b']
 
 #load other lists from csv file
 AC_SPACE_LIST_GUI = []
@@ -343,6 +366,9 @@ AC_SPACE_MEAS_R60 = []
 AC_SPACE_FADE_START = []
 AC_SPACE_LIST_LOWRT60 = []
 AC_SPACE_GAINS = []
+AC_SPACE_LIST_HI_FC = []
+AC_SPACE_LIST_MID_FC = []
+AC_SPACE_LIST_LOW_FC = []
 
 try:
     #directories
@@ -362,31 +388,73 @@ try:
             AC_SPACE_MEAS_R60.append(int(row.get('meas_rt60')))  
             AC_SPACE_FADE_START.append(int(row.get('fade_start')))
             AC_SPACE_GAINS.append(float(row.get('gain'))) 
-            low_flag = row.get('low_rt60')
+            low_rt_flag = row.get('low_rt60')
             name_src = row.get('name_src')
-            if low_flag == "Yes":
+            if low_rt_flag == "Yes":
                 AC_SPACE_LIST_LOWRT60.append(name_src)
+            low_fc_flag = row.get('low_fc')
+            mid_fc_flag = row.get('mid_fc')
+            hi_fc_flag = row.get('high_fc')
+            if low_fc_flag == "Yes":
+                AC_SPACE_LIST_LOW_FC.append(name_src)
+            if mid_fc_flag == "Yes":
+                AC_SPACE_LIST_MID_FC.append(name_src)
+            if hi_fc_flag == "Yes":
+                AC_SPACE_LIST_HI_FC.append(name_src)
 
 except Exception:
     pass
 
 
-#HRTF related
+#SOFA related
+SOFA_COMPAT_CONV = []
+SOFA_COMPAT_VERS = []
+SOFA_COMPAT_CONVERS = []
+SOFA_OUTPUT_CONV = []
+SOFA_OUTPUT_VERS = []
+SOFA_OUTPUT_CONVERS = []
+
+try:
+    #directories
+    #read metadata from csv. Expects reverberation_metadata.csv 
+    metadata_file_name = 'supported_conventions.csv'
+    metadata_file = pjoin(DATA_DIR_SOFA, metadata_file_name)
+    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+        reader = DictReader(inputfile)
+        for row in reader:#rows 2 and onward
+            #store each row as a dictionary
+            #append to list of dictionaries
+            SOFA_COMPAT_CONV.append(row.get('Convention'))  
+            SOFA_COMPAT_VERS.append(row.get('Version'))  
+            SOFA_COMPAT_CONVERS.append(row.get('SOFAConventionsVersion'))  
+            out_flag = row.get('OutputFormat')
+            if out_flag == "Yes":
+                SOFA_OUTPUT_CONV.append(row.get('Convention'))  
+                SOFA_OUTPUT_VERS.append(row.get('Version'))  
+                SOFA_OUTPUT_CONVERS.append(row.get('SOFAConventionsVersion'))  
+
+except Exception:
+    pass
+
+
+
+#HRTF related - individual datasets
+HRTF_A_GAIN_ADDIT = 2.5#
 #Strings
-HRTF_LIST_NUM = []
-HRTF_LIST_SHORT = []
-HRTF_GAIN_LIST_NUM = []
-HRTF_GAIN_ADDIT = 2.5#
-HRTF_LIST_FULL_RES_NUM = []
-HRTF_LIST_FULL_RES_SHORT = []
-HRTF_GAIN_LIST_FULL_RES_NUM = []
-HRTF_TYPE_LIST_LIM_RES=[]
-HRTF_TYPE_LIST_FLIP_POL=[]
+HRTF_TYPE_LIST = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input']
+HRTF_TYPE_LIST_FULL = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input','Dummy Head - Max Resolution']
+HRTF_DATASET_LIST_DUMMY = []
+HRTF_DATASET_LIST_DUMMY_MAX = []
+HRTF_DATASET_LIST_INDV = []
+HRTF_DATASET_LIST_CUSTOM = ['N/A']
+HRTF_TYPE_DEFAULT=''
+HRTF_DATASET_DEFAULT=''
+HRTF_LISTENER_DEFAULT=''
 #load lists from csv file
 try:
 
     #directories
-    csv_directory = DATA_DIR_INT
+    csv_directory = DATA_DIR_HRIR_NPY
     #read metadata from csv. Expects reverberation_metadata.csv 
     metadata_file_name = 'hrir_metadata.csv'
     metadata_file = pjoin(csv_directory, metadata_file_name)
@@ -395,22 +463,39 @@ try:
         for row in reader:#rows 2 and onward
             #store each row as a dictionary
             #append to list of dictionaries
-            HRTF_LIST_NUM.append(row.get('name_gui'))  
-            HRTF_LIST_SHORT.append(row.get('name_short'))  
-            HRTF_GAIN_LIST_NUM.append(float(row.get('gain')))  
-            spat_res = row.get('highest_res')
-            if spat_res == "max":
-                HRTF_LIST_FULL_RES_NUM.append(row.get('name_gui'))   
-                HRTF_LIST_FULL_RES_SHORT.append(row.get('name_short'))    
-                HRTF_GAIN_LIST_FULL_RES_NUM.append(float(row.get('gain')))
-            lim_res = row.get('limited_res')
-            if lim_res == "yes":
-                HRTF_TYPE_LIST_LIM_RES.append(int(row.get('hrtf_type')))  
-            flip_pol = row.get('flip_polarity')
-            if flip_pol == "yes":
-                HRTF_TYPE_LIST_FLIP_POL.append(int(row.get('hrtf_type'))) 
+            if row.get('hrtf_type') == 'Human Listener':
+                HRTF_DATASET_LIST_INDV.append(row.get('dataset')) 
+            if row.get('hrtf_type') == 'Dummy Head / Head & Torso Simulator':
+                HRTF_DATASET_LIST_DUMMY.append(row.get('dataset')) 
+            if row.get('hrtf_index_max') != '':
+                HRTF_DATASET_LIST_DUMMY_MAX.append(row.get('dataset')) 
+            if row.get('default') == 'Yes':
+                HRTF_TYPE_DEFAULT = row.get('hrtf_type')
+                HRTF_DATASET_DEFAULT = row.get('dataset')
+                HRTF_LISTENER_DEFAULT = row.get('name_gui')
+                
+    # Remove duplicates by converting to a set and back to a list
+    HRTF_DATASET_LIST_INDV = list(set(HRTF_DATASET_LIST_INDV))
+    # Sort the list alphabetically
+    HRTF_DATASET_LIST_INDV.sort()
+    # Remove duplicates by converting to a set and back to a list
+    HRTF_DATASET_LIST_DUMMY = list(set(HRTF_DATASET_LIST_DUMMY))
+    HRTF_DATASET_LIST_DUMMY_MAX = list(set(HRTF_DATASET_LIST_DUMMY_MAX))
+    # Sort the list alphabetically
+    HRTF_DATASET_LIST_DUMMY.sort()
+    HRTF_DATASET_LIST_DUMMY_MAX.sort()
+    
+ 
 except Exception:
     pass
+#create a dictionary
+HRTF_TYPE_DATASET_DICT = {
+    HRTF_TYPE_LIST_FULL[0]: HRTF_DATASET_LIST_DUMMY,
+    HRTF_TYPE_LIST_FULL[1]: HRTF_DATASET_LIST_INDV,
+    HRTF_TYPE_LIST_FULL[2]: HRTF_DATASET_LIST_CUSTOM,
+    HRTF_TYPE_LIST_FULL[3]: HRTF_DATASET_LIST_DUMMY_MAX
+}
+
 
 #GUI
 PROGRESS_FIN=' Active   '

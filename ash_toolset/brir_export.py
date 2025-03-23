@@ -21,6 +21,7 @@ from SOFASonix import SOFAFile
 import json
 from datetime import date
 from datetime import datetime
+import glob
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -29,11 +30,10 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=44100, bit_depth='PCM_24', spatial_res=1, sofa_export=False):
+def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict=None, sofa_conv=None):
     """
     Function to export a customised BRIR to WAV files
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
-    :param hrtf_type: int, selected HRTF type starts from 1
     :param acoustic_space: str, shorthand name of selected acoustic space
     :param brir_name: string, name of brir
     :param primary_path: string, base path to save files to
@@ -44,6 +44,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
     :param gui_logger: gui logger object for dearpygui
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
     :param samp_freq: int, sample frequency in Hz
+    :param brir_dict: dict, contains inputs relating to channel directions
     :return: None
     """ 
     
@@ -54,10 +55,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
     try:
         
         log_string = 'Preparing BRIRs for export'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger) 
     
         total_elev_brir = len(brir_arr)
         total_azim_brir = len(brir_arr[0])
@@ -75,20 +73,14 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
         ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
         est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
         ac_gain = CN.AC_SPACE_GAINS[ac_space_int]
-        if spatial_res == 3:
-            gain_list=CN.HRTF_GAIN_LIST_FULL_RES_NUM
-        else:
-            gain_list=CN.HRTF_GAIN_LIST_NUM
-        hrtf_index = hrtf_type-1
-        hrtf_gain = gain_list[hrtf_index]
-        
+ 
         #gain adjustment
         max_amp = np.max(np.abs(brir_arr))
         
         #reduce gain if direct gain db is less than max value
         reduction_gain_db = (CN.DIRECT_GAIN_MAX-direct_gain_db)*-1/2
         reduction_gain = hf.db2mag(reduction_gain_db)
-        reduction_gain_db_he = (reduction_gain_db+ac_gain+hrtf_gain)
+        reduction_gain_db_he = (reduction_gain_db+ac_gain)
         reduction_gain_he = hf.db2mag(reduction_gain_db_he)
         
         #estimate output array length based on RT60
@@ -109,8 +101,7 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
             
         #attempt to trim array. Calculate point where amplitude falls below threshold, later discards remaining samples
         ref_array = np.abs(brir_arr[base_elev_idx][0][0][0:out_wav_samples_44])/max_amp
-        ref_array_rev = ref_array[::-1]
-        crop_samples = len(ref_array_rev) - np.argmax(ref_array_rev > CN.THRESHOLD_CROP) - 1
+        crop_samples = hf.get_crop_index(ref_array)
         if crop_samples > 4000 and crop_samples < out_wav_samples_44:
             out_wav_samples_44=crop_samples
         #print(crop_samples)
@@ -132,7 +123,26 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
  
         if brir_dir_export == True:
             
-            direction_matrix_out = generate_direction_matrix(hrtf_type, spatial_res=spatial_res, output_variant=2)
+            if reduce_dataset == True:
+                #case for reduced dataset
+                
+                if os.path.exists(out_file_dir_wav):
+                    try:
+                        files = glob.glob(pjoin(out_file_dir_wav, '*')) #get all files in directory
+                        for f in files:
+                            os.remove(f) #delete each file.
+                        log_string = f"Cleared existing files from directory: {out_file_dir_wav}"
+                        hf.log_with_timestamp(log_string, gui_logger) 
+                    except Exception as e:
+                        log_string = f"Error clearing files from directory: {e}"
+                        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1, exception=e)#log warning
+                else:
+                    os.makedirs(out_file_dir_wav)
+                
+                direction_matrix_out = generate_direction_matrix(spatial_res=spatial_res, variant=3, brir_dict=brir_dict)
+            else:
+                #regular case
+                direction_matrix_out = generate_direction_matrix(spatial_res=spatial_res, variant=2)
             
                     
             if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
@@ -173,23 +183,20 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
                         output_file.parent.mkdir(exist_ok=True, parents=True)
                         
                         #resample if samp_freq is not 44100
-                        if samp_freq != 44100:
+                        if samp_freq != CN.SAMP_FREQ:
                             out_wav_array = hf.resample_signal(out_wav_array, new_rate = samp_freq)
                         
                         hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
     
             log_string = 'BRIR WAV set saved to: ' + str(out_file_dir_wav)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger) 
 
         #
         ## write SOFA file
         #
          
         if sofa_export == True:
-            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, gui_logger=gui_logger)
+            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
     
         #
         ## write set of HESUVI WAVs
@@ -213,34 +220,62 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
             brir_out_48_he=np.zeros((CN.NUM_OUT_CHANNELS_HE,out_wav_samples_48))
             brir_out_44_ts=np.zeros((CN.NUM_OUT_CHANNELS_TS,out_wav_samples_44))
             
-            selected_elev=0
-            elev_id=int((selected_elev-elev_min)/elev_nearest)
+            
+            
         
             #load each input azimuth
             for n in range(CN.NUM_SOURCE_AZIM):
-                dezired_az=0
+                selected_az=0
+                selected_elev=0
                 #change azimuth depending on source azim ID
-                if n == 0 :
-                    dezired_az=0
-                elif n == 1:
-                    dezired_az=30
-                elif n == 2:
-                    dezired_az=330
-                elif n == 3:
-                    dezired_az=90
-                elif n == 4:
-                    dezired_az=270
-                elif n == 5:
-                    dezired_az=135
-                elif n == 6:
-                    dezired_az=225
-                
-                dezired_azim_id = int(dezired_az/azim_nearest)    
+                if brir_dict is not None: 
+                    if n == 0 :
+                        selected_elev=int(brir_dict.get('h_elev_c'))
+                        selected_az=int(brir_dict.get('h_azim_c'))
+                    elif n == 1:
+                        selected_elev=int(brir_dict.get('h_elev_fl'))
+                        selected_az=int(brir_dict.get('h_azim_fl'))
+                    elif n == 2:
+                        selected_elev=int(brir_dict.get('h_elev_fr'))
+                        selected_az=int(brir_dict.get('h_azim_fr'))
+                    elif n == 3:
+                        selected_elev=int(brir_dict.get('h_elev_sl'))
+                        selected_az=int(brir_dict.get('h_azim_sl'))
+                    elif n == 4:
+                        selected_elev=int(brir_dict.get('h_elev_sr'))
+                        selected_az=int(brir_dict.get('h_azim_sr'))
+                    elif n == 5:
+                        selected_elev=int(brir_dict.get('h_elev_rl'))
+                        selected_az=int(brir_dict.get('h_azim_rl'))
+                    elif n == 6:
+                        selected_elev=int(brir_dict.get('h_elev_rr'))
+                        selected_az=int(brir_dict.get('h_azim_rr'))
+                    #convert to range 0-360
+                    dezired_az= 0-selected_az if selected_az<=0 else 360-selected_az
+                else:
+                    selected_elev=0
+                    if n == 0 :
+                        dezired_az=0
+                    elif n == 1:
+                        dezired_az=30
+                    elif n == 2:
+                        dezired_az=330
+                    elif n == 3:
+                        dezired_az=90
+                    elif n == 4:
+                        dezired_az=270
+                    elif n == 5:
+                        dezired_az=135
+                    elif n == 6:
+                        dezired_az=225
+                        
+                elev_id=int((selected_elev-elev_min)/elev_nearest)
+                azim_id = int(dezired_az/azim_nearest)    
 
                 #load into zero pad array
                 data_pad=np.zeros((out_wav_samples_44,2))
-                data_pad[0:(out_wav_samples_44),0]=np.copy(brir_arr[elev_id][dezired_azim_id][0][0:out_wav_samples_44])*reduction_gain_he/max_amp#L
-                data_pad[0:(out_wav_samples_44),1]=np.copy(brir_arr[elev_id][dezired_azim_id][1][0:out_wav_samples_44])*reduction_gain_he/max_amp#R
+                data_pad[0:(out_wav_samples_44),0]=np.copy(brir_arr[elev_id][azim_id][0][0:out_wav_samples_44])*reduction_gain_he/max_amp#L
+                data_pad[0:(out_wav_samples_44),1]=np.copy(brir_arr[elev_id][azim_id][1][0:out_wav_samples_44])*reduction_gain_he/max_amp#R
       
                 #create a copy and resample to 48kHz
                 data_pad_48k=np.zeros((out_wav_samples_48,2))           
@@ -308,16 +343,13 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
             output_file.parent.mkdir(exist_ok=True, parents=True)
             
             #resample if samp_freq is not 44100
-            if samp_freq != 44100:
+            if samp_freq != CN.SAMP_FREQ:
                 output_wav_ts = hf.resample_signal(output_wav_ts, new_rate = samp_freq)
             
             hf.write2wav(file_name=out_file_path, data=output_wav_ts, bit_depth=bit_depth, samplerate=samp_freq)
         
             log_string = 'BRIR WAV True stereo saved to: ' + str(out_file_dir_wav)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger) 
         
         if hesuvi_export == True:
             
@@ -353,36 +385,30 @@ def export_brir(brir_arr, acoustic_space, hrtf_type, brir_name, primary_path, br
             hf.write2wav(file_name=out_file_path, data=output_wav_he_48, bit_depth=bit_depth, samplerate=48000)
         
             log_string = 'BRIR HESUVI WAV saved to: ' + str(out_file_dir_wav_48)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger) 
         
  
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to export BRIRs'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
     # get the end time
     et = time.time()
 
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
+    if CN.LOG_INFO == True:
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
         
         
         
 
-def generate_direction_matrix(hrtf_type, spatial_res=1, output_variant=1):
+def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
     """
-    Function returns a numpy array containing a matrix of elevations and azimuths marked for export (output_variant) or processing
-    :param hrtf_type: int, select HRTF type, starts from 1
+    Function returns a numpy array containing a matrix of elevations and azimuths marked for export (variant) or processing
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
-    :param output_variant: int, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 0 = no reduction
+    :param variant: int, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 3 = reduce dataset flagged (specified directions), 0 = no reduction
     """
 
     try:
@@ -394,8 +420,12 @@ def generate_direction_matrix(hrtf_type, spatial_res=1, output_variant=1):
             elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
             elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
+            elev_nearest_process_r=CN.SPATIAL_RES_ELEV_NEAREST_PR_R[spatial_res]
+            elev_nearest_out=CN.SPATIAL_RES_ELEV_NEAREST_OUT[spatial_res] 
             azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
+            azim_nearest_process_r=CN.SPATIAL_RES_AZIM_NEAREST_PR_R[spatial_res] 
+            azim_nearest_out=CN.SPATIAL_RES_AZIM_NEAREST_OUT[spatial_res] 
         else:
             raise ValueError('Invalid spatial resolution')
            
@@ -406,39 +436,48 @@ def generate_direction_matrix(hrtf_type, spatial_res=1, output_variant=1):
         direction_matrix=np.zeros((output_elevs,output_azims,1,1))  
         
         azim_horiz_range = CN.AZIM_HORIZ_RANGE
+        elev_list = []
+        azim_list = []
+        #grab elev and azim data for reduced dataset case
+        if variant == 3 and brir_dict is not None: 
+            elev_list=(brir_dict.get('elev_list'))
+            azim_list=(brir_dict.get('azim_list'))
 
         #write stereo wav for each elev and az
         for elev in range(output_elevs):
             elev_deg = int(elev_min + elev*elev_nearest)
             for azim in range(output_azims):
                 azim_deg = int(azim*azim_nearest)
+                azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
                 
+                #reduced dataset case - processing
+                if variant == 4:
+                    if elev_deg%elev_nearest_process_r == 0 and azim_deg%azim_nearest_process_r == 0:  
+                        #populate matrix with 1 if direction applicable
+                        direction_matrix[elev][azim][0][0] = 1
+                #reduced dataset case - post processing and wav output
+                elif variant == 3:
+                    if elev_deg in elev_list and (azim_deg_wav in azim_list or azim_deg in CN.AZIM_EXTRA_RANGE):
+                        #populate matrix with 1 if direction applicable
+                        direction_matrix[elev][azim][0][0] = 1
                 #reduced set of directions for post processing or WAV output
-                if output_variant >= 1:
-                    #limited elevation range for HRTF type 4
-                    if hrtf_type in CN.HRTF_TYPE_LIST_LIM_RES and spatial_res < 3:
-                        if (elev_deg >= -30 and elev_deg <= 30 and elev_deg%15 == 0 and azim_deg%15 == 0):  
-                            #populate matrix with 1 if direction applicable
-                            direction_matrix[elev][azim][0][0] = 1
-                    elif spatial_res == 0: 
-                        if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
-                            #populate matrix with 1 if direction applicable
-                            direction_matrix[elev][azim][0][0] = 1
-                    elif spatial_res == 1: 
-                        if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
+                elif variant >= 1:
+                    #limited elevation range for HRTF type 4 -> 250309: dont limit outputs
+                    if spatial_res == 0 or spatial_res == 1: 
+                        if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_out == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
                             #populate matrix with 1 if direction applicable
                             direction_matrix[elev][azim][0][0] = 1
                     elif spatial_res == 2 or spatial_res == 3: 
-                        if output_variant == 2:#wav export variant
-                            if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0:  
+                        if variant == 2:#wav export variant is different for high and max
+                            if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0:  
                                 #populate matrix with 1 if direction applicable
                                 direction_matrix[elev][azim][0][0] = 1
                         else:
-                            if elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0:  
+                            if elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0:  
                                 #populate matrix with 1 if direction applicable
                                 direction_matrix[elev][azim][0][0] = 1
                     else:
-                        if (elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0):
+                        if (elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0):
                             #populate matrix with 1 if direction applicable
                             direction_matrix[elev][azim][0][0] = 1
  
@@ -454,7 +493,7 @@ def generate_direction_matrix(hrtf_type, spatial_res=1, output_variant=1):
     return direction_matrix
 
 
-def find_nearest_direction(hrtf_type, target_elevation, target_azimuth, spatial_res=1):
+def find_nearest_direction(target_elevation, target_azimuth, spatial_res=1):
     """
     Function returns a dict containing nearest available azimuth and elevation angle for a specified hrtf and azimuth and elevation
     Used to determine elevations and azimuths available to read from wav file dataset
@@ -497,10 +536,7 @@ def find_nearest_direction(hrtf_type, target_elevation, target_azimuth, spatial_
                 
                 valid_dir = 0 
                 
-                if hrtf_type in CN.HRTF_TYPE_LIST_LIM_RES and spatial_res < 3:
-                    if (elev_deg >= -30 and elev_deg <= 30 and elev_deg%15 == 0 and azim_deg%15 == 0):  
-                        valid_dir = 1 
-                elif spatial_res == 0: 
+                if spatial_res == 0: 
                     if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
                         valid_dir = 1 
                 elif spatial_res == 1: 
@@ -544,32 +580,21 @@ def remove_brirs(primary_path, gui_logger=None):
         if os.path.exists(out_file_dir_wav):
             shutil.rmtree(out_file_dir_wav)
             log_string_a = 'Deleted folder and contents: ' + out_file_dir_wav 
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_a)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_a)
+            hf.log_with_timestamp(log_string_a, gui_logger) 
                 
         if os.path.exists(output_config_path):
             shutil.rmtree(output_config_path)
             log_string_b = 'Deleted folder and contents: ' + output_config_path
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_b)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_b)
+            hf.log_with_timestamp(log_string_b, gui_logger) 
     
         if os.path.exists(output_hesuvi_path):
             shutil.rmtree(output_hesuvi_path)
             log_string_c = 'Deleted folder and contents: ' + output_hesuvi_path
-            if CN.LOG_INFO == 1:
-                logging.info(log_string_c)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string_c)
+            hf.log_with_timestamp(log_string_c, gui_logger)
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folders: ' + out_file_dir_wav + ' & ' + output_config_path
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
             
 def remove_select_brirs(primary_path, brir_set, gui_logger=None):
@@ -588,20 +613,15 @@ def remove_select_brirs(primary_path, brir_set, gui_logger=None):
                     shutil.rmtree(folder_path)
                     #os.rmdir(folder_path)
                     log_string_a = 'Deleted folder and contents: ' + folder_path 
-                    if CN.LOG_INFO == 1:
-                        logging.info(log_string_a)
-                    if CN.LOG_GUI == 1 and gui_logger != None:
-                        gui_logger.log_info(log_string_a)
+                    hf.log_with_timestamp(log_string_a, gui_logger)
             
  
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to delete folder: ' + out_file_dir_brirs
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
             
-def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_samples, samp_freq, gui_logger=None):
+def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_samples, samp_freq, sofa_conv=None, gui_logger=None):
     """
     Function to export a customised BRIR to SOFA file
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
@@ -614,6 +634,8 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
     now_datetime = datetime.now()
     
     try:
+        if sofa_conv == None:
+            sofa_conv='GeneralFIR'
         
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
             elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
@@ -664,7 +686,7 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
                     pos_brir_array[:,1] = np.copy(brir_arr[elev,azim,1,0:output_samples])#R
                     
                     #resample if samp_freq is not 44100
-                    if samp_freq != 44100:
+                    if samp_freq != CN.SAMP_FREQ:
                         pos_brir_array = hf.resample_signal(pos_brir_array, new_rate = samp_freq)
                     
                     #populate data IR array
@@ -683,7 +705,7 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         __version__ = _info['version']
         
         # Create SOFAFile object with the latest SimpleFreeFieldHRIR convention
-        sofa = SOFAFile("GeneralFIR", sofaConventionsVersion=1.0, version=1.0)
+        sofa = SOFAFile(sofa_conv, sofaConventionsVersion=1.0, version=1.0)
         
         # Set dimensions
         sofa._M = total_directions#how many directions?
@@ -734,11 +756,15 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         # Needs dimensions IC or MC
         sofa.ListenerPosition = np.atleast_2d(np.array([0, 0, 0]))
         
+        #SimpleFreeFieldHRIR requires ListenerUp
         # Needs dimensions IC or MC
-        #sofa.ListenerUp = np.atleast_2d(np.array([0, 0, 1]))
+        if sofa_conv == 'SimpleFreeFieldHRIR':
+            sofa.ListenerUp = np.atleast_2d(np.array([0, 0, 1]))
         
+        #SimpleFreeFieldHRIR requires ListenerUp
         # Needs dimensions IC or MC
-        #sofa.ListenerView = np.atleast_2d(np.array([1, 0, 0]))
+        if sofa_conv == 'SimpleFreeFieldHRIR':
+            sofa.ListenerView = np.atleast_2d(np.array([1, 0, 0]))
         
         # Needs dimensions rCI or rCM
         sofa.ReceiverPosition = np.atleast_3d(np.array([[0, 0.09, 0],[0, -0.09, 0]]))
@@ -784,14 +810,9 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         sofa.export(output_file)
    
         log_string_a = 'Exported SOFA file: ' + brir_set_name 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
   
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to export SOFA file: ' + brir_set_name 
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     

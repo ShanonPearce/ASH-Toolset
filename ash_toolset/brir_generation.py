@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BRIR generation routine of ASH-Tools.
+BRIR generation routine of ASH-Toolset.
 
 Created on Sun Apr 28 11:25:06 2024
 @author: Shanon Pearce
@@ -17,6 +17,7 @@ import logging
 from ash_toolset import helper_functions as hf
 from ash_toolset import constants as CN
 from ash_toolset import brir_export
+from ash_toolset import hrir_processing
 import scipy as sp
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
@@ -24,6 +25,9 @@ import dearpygui.dearpygui as dpg
 import os
 from pathlib import Path
 import threading
+import gdown
+import datetime
+import concurrent.futures
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +83,7 @@ def generate_reverberant_brir(gui_logger=None):
         #load matrix, get list of numpy arrays
         brir_list = [[element for element in upperElement] for upperElement in brirs['ash_input_brir']]
         #grab desired hrtf. Returns 56x24x2x65536 array
-        
-        if CN.PLOT_ENABLE == 1:
-            room_selected = brir_list[0]
-            brir_selected = room_selected[0]
-            hf.plot_td(brir_selected[0][0:44100],'Input BRIR room 0 az 0')
+
     
         total_rooms = len(brir_list)
         total_azim_brir = len(brir_list[0])
@@ -92,10 +92,7 @@ def generate_reverberant_brir(gui_logger=None):
         nearest_azim_brir = int(360/total_azim_brir)
 
         log_string = 'Input BRIRs loaded'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         #
         # section to rearrange BRIR array
         #
@@ -132,19 +129,10 @@ def generate_reverberant_brir(gui_logger=None):
                 for chan in range(total_chan_brir):
                     brir_list[room][azim][chan][:] = np.multiply(brir_list[room][azim][chan][:],direct_removal_win)
 
-        if CN.PLOT_ENABLE == 1:
-            room_selected = brir_list[0]
-            brir_selected = room_selected[0]
-            hf.plot_td(brir_selected[0][0:44100],'Windowed BRIR room 0 az 0')
-            hf.plot_td(direct_removal_win,'direct_removal_win')
-            hf.plot_td(direct_removal_win_b,'direct_removal_win_b')
-        
+    
 
         log_string = 'Direct signal removed'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         #
         ## set BRIR level to 0dB
@@ -167,18 +155,10 @@ def generate_reverberant_brir(gui_logger=None):
                 for chan in range(total_chan_brir):
                     brir_list[room][azim][chan][:] = np.divide(brir_list[room][azim][chan][:],average_mag)
         
-        
-        if CN.PLOT_ENABLE == 1:
-            room_selected = brir_list[0]
-            brir_selected = room_selected[0]
-            hf.plot_td(brir_selected[0][0:44100],'level matched BRIR room 0 az 0')
-        
+      
 
         log_string = 'BRIRs level matched'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
         
         #
         ## TD alignment of BRIRs
@@ -265,15 +245,12 @@ def generate_reverberant_brir(gui_logger=None):
                     brir_list[this_room_idx][this_az_idx][0][CN.MIN_T_SHIFT:] = brir_list[this_room_idx][this_az_idx][0][CN.MIN_T_SHIFT:]*0#left
                     brir_list[this_room_idx][this_az_idx][1][CN.MIN_T_SHIFT:] = brir_list[this_room_idx][this_az_idx][0][CN.MIN_T_SHIFT:]*0#right
        
-                if CN.LOG_INFO == 1:
+                if CN.LOG_INFO == True:
                     logging.info('samples_shift = ' + str(samples_shift) + ' for room ' + str(this_room_idx) + ' and for azim ' + str(this_az_idx))
              
 
         log_string = 'BRIRs aligned'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
 
         #adjust levels of BRIRs -> divide by total rooms to be integrated
         
@@ -292,10 +269,7 @@ def generate_reverberant_brir(gui_logger=None):
         
 
         log_string = 'Gains applied'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
     
         #
         #add BRIRs into output BRIR array
@@ -313,21 +287,9 @@ def generate_reverberant_brir(gui_logger=None):
                         
                         brir_reverberation[elev][azim][chan][:] = np.add(brir_reverberation[elev][azim][chan][:],brir_list[room][brir_azim_ind][chan][:])
         
-                        #plot each BRIR
-                        if CN.PLOT_ENABLE == 1 and elev == 0 and azim == 0 and chan == 0:
-                            
-                            sample_brir = np.copy(brir_reverberation[elev][azim][0][:])
-                            sample_brir_lp = hf.signal_lowpass_filter(sample_brir, CN.F_CROSSOVER, CN.FS, CN.ORDER)
-                            plot_name = 'Cum Sum BRIR LP Room: 0 to Room: ' + str(room)
-                            hf.plot_td(sample_brir_lp[0:1024],plot_name)
-                            plot_name = 'Cum Sum BRIR Reverberation, Room: 0 to Room: ' + str(room)
-                            hf.plot_td(sample_brir[500:44100],plot_name)
- 
+                 
         log_string = 'BRIRs combined'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
     
         #
         # BRIR has been shifted so apply fade in window again to remove any overlap with HRIR
@@ -354,13 +316,7 @@ def generate_reverberant_brir(gui_logger=None):
                 for chan in range(total_chan_brir):
                     brir_reverberation[elev][azim][chan][:] = np.divide(brir_reverberation[elev][azim][chan][:],average_mag)
 
-        #plot BRIR
-        if CN.PLOT_ENABLE == 1:
-            
-            sample_brir = np.copy(brir_reverberation[0][0][0][:])
-            sample_brir_lp = hf.signal_lowpass_filter(sample_brir, CN.F_CROSSOVER, CN.FS, CN.ORDER)
-            plot_name = 'step 8 Sum BRIR LP All Rooms'
-            hf.plot_td(sample_brir_lp[0:1024],plot_name)
+    
 
 
         if CN.LIMIT_REBERB_DIRS == True:
@@ -376,10 +332,7 @@ def generate_reverberant_brir(gui_logger=None):
  
 
         log_string = 'Binary saved in data folder'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
   
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
@@ -389,11 +342,11 @@ def generate_reverberant_brir(gui_logger=None):
 
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
+    if CN.LOG_INFO == True:
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
 
-def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp, early_refl_delay_ms = 0, reduce_reverb=False, target_rt60=CN.RT60_MAX_L, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0]):   
+def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp, early_refl_delay_ms = 0, reduce_reverb=False, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0], reduce_dataset=False, brir_dict=None):   
     """
     Function to generate customised BRIR from below parameters
 
@@ -403,43 +356,37 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
     :param pinna_comp: int, 0 = equalised for in ear headphones (with additional eq), 1 = in ear headphones (without additional eq), 2 = over/on ear headphones (with additional eq), 3 = over/on ear headphones (without additional eq)
     :param early_refl_rise_ms: float, ms length of early reflection rise window, default = 0 ms (instant rise)
     :param reduce_reverb: bool, True = enable reverb reduction, False = no reverb reduction
-    :param target_rt60: int, value in ms for target reverberation time, only applicable if reduce_reverb == True
     :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
     :param report_progress: int, 1 = update progress to progress bar (1st tab) in gui, 2 = 2nd tab, set to 0 if not using the gui
     :param gui_logger: gui logger object for dearpygui
-    :return: numpy array containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
+    Returns:
+        tuple: (np.ndarray, int, str)
+            - NumPy array: numpy array containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
+            - Status code: 0 = Success, 1 = Failure, 2 = Cancelled
     """ 
 
     # get the start time
     st = time.time()
     brir_out= np.array([])
+    status=1
+    #num_workers = os.cpu_count()  #4 Or os.cpu_count() or any other value
   
     try:
         
         #exit if stop thread flag is true
-        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread_1 == True or stop_thread_2 == True:
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
             brir_out= np.array([])
-            log_string = 'BRIR Processing cancelled by user'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-            return brir_out
+            status=2#2=cancelled
+            return brir_out,status
   
         #limit IR size
-        if target_rt60 <= 1100 or acoustic_space in CN.AC_SPACE_LIST_LOWRT60:
+        target_rt60=CN.RT60_MAX_L
+        if acoustic_space in CN.AC_SPACE_LIST_LOWRT60:
             n_fft=CN.N_FFT
-            if target_rt60 > CN.RT60_MAX_S:
-                target_rt60=CN.RT60_MAX_S
+            target_rt60=CN.RT60_MAX_S
         else:
-            n_fft=CN.N_FFT_L   
-        #limit RT60 target
-        if target_rt60 < CN.RT60_MIN:
-            target_rt60=CN.RT60_MIN
-        elif target_rt60 > CN.RT60_MAX_L:
-            target_rt60=CN.RT60_MAX_L        
+            n_fft=CN.N_FFT_L      
 
         #variable crossover depending on acoustic space
         if acoustic_space in CN.AC_SPACE_LIST_HI_FC:
@@ -450,7 +397,6 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             f_crossover_var=CN.F_CROSSOVER_LOW
         else:
             f_crossover_var=CN.F_CROSSOVER
-        fc_alignment=f_crossover_var
 
         #impulse
         impulse=np.zeros(CN.N_FFT)
@@ -462,32 +408,32 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         data_pad_zeros=np.zeros(n_fft)
         data_pad_ones=np.ones(n_fft)
 
-        #initial rise window
-        initial_hanning_size=40
-        initial_hanning_start=0#190
-        hann_initial_full=np.hanning(initial_hanning_size)
-        hann_initial = np.split(hann_initial_full,2)[0]
-        initial_removal_win = data_pad_zeros.copy()
-        initial_removal_win[initial_hanning_start:initial_hanning_start+int(initial_hanning_size/2)] = hann_initial
-        initial_removal_win[initial_hanning_start+int(initial_hanning_size/2):]=data_pad_ones[initial_hanning_start+int(initial_hanning_size/2):]
-        
         #initial rise window for sub
-        initial_hanning_size=50
+        initial_hanning_size=60
         initial_hanning_start=0#190
         hann_initial_full=np.hanning(initial_hanning_size)
         hann_initial = np.split(hann_initial_full,2)[0]
         initial_removal_win_sub = data_pad_zeros.copy()
         initial_removal_win_sub[initial_hanning_start:initial_hanning_start+int(initial_hanning_size/2)] = hann_initial
         initial_removal_win_sub[initial_hanning_start+int(initial_hanning_size/2):]=data_pad_ones[initial_hanning_start+int(initial_hanning_size/2):]
+        #initial rise window for reverb
+        initial_hanning_size=100
+        initial_hanning_start=70
+        hann_initial_full=np.hanning(initial_hanning_size)
+        hann_initial = np.split(hann_initial_full,2)[0]
+        initial_removal_win_rev = data_pad_zeros.copy()
+        initial_removal_win_rev[initial_hanning_start:initial_hanning_start+int(initial_hanning_size/2)] = hann_initial
+        initial_removal_win_rev[initial_hanning_start+int(initial_hanning_size/2):]=data_pad_ones[initial_hanning_start+int(initial_hanning_size/2):]
 
-        #fade out window
-        fade_hanning_size=65536
-        fade_hanning_start=int(fade_hanning_size/2)
-        hann_fade_full=np.hanning(fade_hanning_size)
-        hann_fade = np.split(hann_fade_full,2)[1]
-        fade_out_win = data_pad_ones.copy()
-        fade_out_win[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
-        fade_out_win[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
+
+
+
+
+        log_string = 'Loading input filters'
+        hf.log_with_timestamp(log_string, gui_logger)
+        if report_progress > 0:
+            progress = 1/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
 
         #
         # load room target filter (FIR)
@@ -532,11 +478,11 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
                 samplerate, data_addit_eq = hf.read_wav_file(wav_fname)
 
 
-        log_string = 'Input filters loaded'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        log_string = 'Loading reverberation data'
+        hf.log_with_timestamp(log_string, gui_logger)
+        if report_progress > 0:
+            progress = 2/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
         
         #
         # load sub bass BRIR (FIR)
@@ -550,20 +496,6 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         
         
 
-        log_string = 'Low frequency response loaded'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
-        if report_progress > 0:
-            progress = 5/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
-            
         #
         # Load BRIR reverberation data
         #
@@ -575,36 +507,85 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             brir_est_folder = pjoin(CN.DATA_DIR_INT, 'reverberation', 'est_bin')
             npy_file_name =  'reverberation_dataset_' +acoustic_space+'.npy'
             npy_file_path = pjoin(brir_est_folder,npy_file_name)   
-        brir_reverberation = np.load(npy_file_path)
-        
-        total_elev_reverb = len(brir_reverberation)
+        try:
+            brir_reverberation = np.load(npy_file_path)
+        except Exception as e:
+            log_string=f"Error loading reverberation data: {e}"
+            hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
+            raise ValueError('Reverberation data not loaded')
+            
+        #total_elev_reverb = len(brir_reverberation)
         total_azim_reverb = len(brir_reverberation[0])
-        total_chan_reverb = len(brir_reverberation[0][0])
-        total_samples_reverb = len(brir_reverberation[0][0][0])
+        #total_chan_reverb = len(brir_reverberation[0][0])
+        #total_samples_reverb = len(brir_reverberation[0][0][0])
         nearest_azim_reverb = int(360/total_azim_reverb)
         
+        #zero pad reverberation array due to variable length
+        brir_reverberation=hf.zero_pad_last_dimension(data=brir_reverberation, n_fft=n_fft)
         
-        #plot an input BRIR
-        if CN.PLOT_ENABLE == 1:  
-            sample_brir = np.copy(brir_reverberation[0][0][0][:])
-            plot_name = 'Cum Sum BRIR Reverberation, Room: 0 to Room: 71'
-            hf.plot_td(sample_brir[500:44100],plot_name)
+        
+        log_string = 'Loading HRTF data'
+        hf.log_with_timestamp(log_string, gui_logger)
+        if report_progress > 0:
+            progress = 5/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
 
         #
         # load HRIRs
         #
         
-        #determine spatial resolution parameters
-        direction_matrix_process = brir_export.generate_direction_matrix(hrtf_type, spatial_res=spatial_res, output_variant=0)
+        #get matrix of desired directions to process
+        if reduce_dataset == True or brir_name != CN.FOLDER_BRIRS_LIVE:
+            #case for reduced dataset or dataset export
+            direction_matrix_process = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=4)
+        else:
+            #regular case - quick configuration
+            direction_matrix_process = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=0)
 
+        #get relevant information from dict
+        if brir_dict != None:
+            if brir_name == CN.FOLDER_BRIRS_LIVE: 
+                brir_hrtf_type=brir_dict.get('qc_brir_hrtf_type')
+                brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
+                brir_hrtf = brir_dict.get('qc_brir_hrtf')
+                brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
+            else:
+                brir_hrtf_type=brir_dict.get('brir_hrtf_type')
+                brir_hrtf_dataset=brir_dict.get('brir_hrtf_dataset')
+                brir_hrtf = brir_dict.get('brir_hrtf')
+                brir_hrtf_short=brir_dict.get('brir_hrtf_short')
+        else:
+            raise ValueError('brir_dict not populated ')
+          
+        # print(brir_hrtf_type)
+        # print(brir_hrtf_dataset)
+        # print(brir_hrtf)
+        # print(brir_hrtf_short)
+        
+        if brir_hrtf_type == 'Human Listener':
+            hrir_dir_base = CN.DATA_DIR_HRIR_NPY_HL
+        elif brir_hrtf_type == 'Dummy Head / Head & Torso Simulator':
+            hrir_dir_base = CN.DATA_DIR_HRIR_NPY_DH
+        else:
+            hrir_dir_base = CN.DATA_DIR_HRIR_NPY_USER#user sofa npy set
         
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
             if spatial_res <= 2:
-                #this dataset includes all hrirs up to high spatial resolution. Elevations from -60 to 60deg in 5 deg steps, Azimuths from 0 to 360dg in 5deg steps
-                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_hp_high.npy')#_hp_ = high pass filter applied
+                sub_directory = 'h'
             elif spatial_res == 3:
-                #this dataset includes all hrirs at full spatial resolution. Elevations from -40 to 60deg in 2 deg steps, Azimuths from 0 to 360dg in 2deg steps
-                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_hp_max.npy')
+                sub_directory = 'm'
+                status_subroutine = check_download_max_hrtf_datasets(download=True, gui_logger=gui_logger, report_progress=report_progress)
+                if status_subroutine == 1:#failed
+                    raise ValueError('HRIR processing failed due to error downloading HRTF dataset')
+            #join spatial res subdirectory
+            hrir_dir = pjoin(hrir_dir_base, sub_directory)
+            # join dataset subdirectory
+            if brir_hrtf_type != 'User SOFA Input':
+                hrir_dir = pjoin(hrir_dir, brir_hrtf_dataset)
+            # full filename
+            npy_fname = pjoin(hrir_dir, f"{brir_hrtf_short}.npy")
+            # load specified hrir dataset
+                
             elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
             elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
             elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
@@ -612,50 +593,53 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         else:
-            log_string = 'Invalid spatial resolution. No hrir dataset loaded.'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-        
-        hrtf_index = hrtf_type-1
- 
-        #load npy files
-        hrir_list = np.load(npy_fname)
-        hrir_selected = hrir_list[hrtf_index]
+            raise ValueError('Invalid spatial resolution. No hrir dataset loaded.')
 
+        #first try to load npy dataset
+        #if failed, proceed with SOFA workflow
+        try:
+            #load npy files
+            hrir_list = np.load(npy_fname)
+        except:
+            log_string = 'local HRIR dataset not found. Proceeding with SOFA workflow'
+            hf.log_with_timestamp(log_string, gui_logger) 
+            if report_progress > 0:
+                hf.update_gui_progress(report_progress=report_progress, message=log_string)
+        
+            #run sofa workflow
+            status_subroutine = hrir_processing.sofa_workflow_new_dataset(brir_hrtf_type=brir_hrtf_type, brir_hrtf_dataset=brir_hrtf_dataset, brir_hrtf=brir_hrtf, brir_hrtf_short=brir_hrtf_short, gui_logger=gui_logger, report_progress=report_progress)
+            if status_subroutine == 0:#success
+                #finally load the npy file
+                hrir_list = np.load(npy_fname)
+            elif status_subroutine == 2:#cancelled
+                brir_out= np.array([])
+                status=2#2=cancelled
+                return brir_out,status
+            else:
+                raise ValueError('HRIR processing failed due to error in SOFA workflow')
+        
+        
+        hrir_selected = hrir_list[0]#first dimension is unitary
         total_elev_hrir = len(hrir_selected)
         total_azim_hrir = len(hrir_selected[0])
         total_chan_hrir = len(hrir_selected[0][0])
         total_samples_hrir = len(hrir_selected[0][0][0])
         base_elev_idx = total_elev_hrir//2
     
+  
         #output_azims = int(360/azim_nearest)#should be identical to above lengths
         #output_elevs = int((elev_max-elev_min)/elev_nearest +1)#should be identical to above lengths
         
         #BRIR_out array will be populated BRIRs for all directions
         brir_out=np.zeros((total_elev_hrir,total_azim_hrir,2,n_fft))   
 
-        
-        if CN.PLOT_ENABLE == 1:
-            elev_selected = hrir_selected[0]
-            azim_selected = elev_selected[0]
-            hf.plot_td(azim_selected[0][0:total_samples_hrir],'input HRIR elev 0 az 0')
-        
+  
    
-        log_string = 'HRIRs loaded'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        log_string = 'Adjusting levels'
+        hf.log_with_timestamp(log_string, gui_logger)
         if report_progress > 0:
-            progress = 10/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            progress = 20/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
             
 
       
@@ -668,12 +652,13 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         elif direct_gain_db < CN.DIRECT_GAIN_MIN:
             direct_gain_db = CN.DIRECT_GAIN_MIN   
         direct_gain = hf.db2mag(direct_gain_db)
-        for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir):
-                for chan in range(total_chan_hrir):
-                    hrir_selected[elev][azim][chan][:] = np.multiply(hrir_selected[elev][azim][chan][:],CN.DIRECT_SCALING_FACTOR)
-                    hrir_selected[elev][azim][chan][:] = np.multiply(hrir_selected[elev][azim][chan][:],direct_gain)
+        hrir_selected *= direct_gain#Use Vectorized NumPy Operations
         
+        #flip polarity if flagged
+        flip_polarity = hrir_processing.get_polarity(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=gui_logger)
+        if flip_polarity == 'yes':
+            hrir_selected *= -1
+     
         #apply left right symmetry if enabled
         if hrtf_symmetry != CN.HRTF_SYM_LIST[0]:
             for elev in range(total_elev_hrir):
@@ -693,40 +678,26 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         
         
         
-        log_string = 'HRIR levels adjusted'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
-
+        log_string = 'Preparing reverberation data'
+        hf.log_with_timestamp(log_string, gui_logger) 
         if report_progress > 0:
-            progress = 20/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            progress = 30/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
             
         
         #exit if stop thread flag is true
-        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread_1 == True or stop_thread_2 == True:
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
             brir_out= np.array([])
-            log_string = 'BRIR Processing cancelled by user'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-            return brir_out
+            status=2#2=cancelled
+            return brir_out,status
         
         #
         ## Integration of BRIRs with HRIRs through TD interpolation and DRR scaling
         #
  
         #
-        ## Reverberation shaping and EQ
+        ## Reverberation shaping
         #
         
         #get start id for noise reduction fade out
@@ -740,77 +711,48 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             noise_fade = False
 
         #get start id for reverberation snapshot for reverb reduction
-        rt60_comp_factor=1
         #convert to sample ID to get start of reverb response
-        rt60_snap_start = int(((target_rt60*rt60_comp_factor)/1000)*CN.FS)
-        r_fade_win_start=200
+        rt60_snap_start = int(((target_rt60)/1000)*CN.FS)
  
         #generate hann windows for reverb EQ
-        r_fade_win_size=np.abs(rt60_snap_start-r_fade_win_start)*2
         l_fade_win_size=np.abs(rt60_snap_start-n_fft)*2
         n_fade_win_size=np.abs(4000)*2
         if CN.WINDOW_TYPE == 1:
-            wind_r_fade_full=np.hanning(r_fade_win_size)
             wind_l_fade_full=np.hanning(l_fade_win_size)
             wind_n_fade_full=np.hanning(n_fade_win_size)
         elif CN.WINDOW_TYPE == 2:
-            wind_r_fade_full=np.bartlett(r_fade_win_size)
             wind_l_fade_full=np.bartlett(l_fade_win_size)
             wind_n_fade_full=np.bartlett(n_fade_win_size)
-        elif CN.WINDOW_TYPE == 3:
-            wind_r_fade_full=np.blackman(r_fade_win_size)  
+        elif CN.WINDOW_TYPE == 3: 
             wind_l_fade_full=np.blackman(l_fade_win_size)
             wind_n_fade_full=np.blackman(n_fade_win_size)
         elif CN.WINDOW_TYPE == 4:
-            wind_r_fade_full=np.hamming(r_fade_win_size) 
             wind_l_fade_full=np.hamming(l_fade_win_size)
             wind_n_fade_full=np.hamming(n_fade_win_size)
         else:
-            wind_r_fade_full=np.bartlett(r_fade_win_size)
             wind_l_fade_full=np.bartlett(l_fade_win_size)
             wind_n_fade_full=np.bartlett(n_fade_win_size)
         
-
-        win_r_fade_out = np.split(wind_r_fade_full,2)[1]
-        win_r_fade_in = np.split(wind_r_fade_full,2)[0]
         win_l_fade_out = np.split(wind_l_fade_full,2)[1]
         win_n_fade_out = np.split(wind_n_fade_full,2)[1]
         
-        #fade in window for reduced reverb
-        r_fade_in_win = data_pad_zeros.copy()
-        r_fade_in_win[r_fade_win_start:r_fade_win_start+int(r_fade_win_size/2)] = win_r_fade_in
-        r_fade_in_win[r_fade_win_start+int(r_fade_win_size/2):]=data_pad_ones[r_fade_win_start+int(r_fade_win_size/2):]
+        if noise_fade == True:
+            #additional window to fade out noise
+            n_fade_out_win = data_pad_zeros.copy()
+            n_fade_out_win[0:n_fade_win_start] = data_pad_ones[0:n_fade_win_start]
+            n_fade_out_win[n_fade_win_start:n_fade_win_start+int(n_fade_win_size/2)] = win_n_fade_out
+        else:
+            #additional window to fade out tail end of late reflections
+            n_fade_out_win = data_pad_zeros.copy()
+            n_fade_out_win[0:rt60_snap_start] = data_pad_ones[0:rt60_snap_start]
+            n_fade_out_win[rt60_snap_start:] = win_l_fade_out
         
-        #fade out window for original reverb
-        r_fade_out_win = data_pad_zeros.copy()
-        r_fade_out_win[0:r_fade_win_start] = data_pad_ones[0:r_fade_win_start]
-        r_fade_out_win[r_fade_win_start:r_fade_win_start+int(r_fade_win_size/2)] = win_r_fade_out
-        r_fade_out_win[r_fade_win_start+int(r_fade_win_size/2):]=data_pad_zeros[r_fade_win_start+int(r_fade_win_size/2):]
         
-        #additional window to fade out tail end of late reflections
-        l_fade_out_win = data_pad_zeros.copy()
-        l_fade_out_win[0:rt60_snap_start] = data_pad_ones[0:rt60_snap_start]
-        l_fade_out_win[rt60_snap_start:] = win_l_fade_out
-        
-        #additional window to fade out noise
-        n_fade_out_win = data_pad_zeros.copy()
-        n_fade_out_win[0:n_fade_win_start] = data_pad_ones[0:n_fade_win_start]
-        n_fade_out_win[n_fade_win_start:n_fade_win_start+int(n_fade_win_size/2)] = win_n_fade_out
-        
-        if CN.PLOT_ENABLE == 1:
-            plt.plot(r_fade_in_win)
-            plt.plot(r_fade_out_win)
-          
         #for each azim
         for azim in range(total_azim_reverb):
             #apply fade out for noise reduction
-            if noise_fade == True:
-                brir_reverberation[0][azim][0][:] = np.multiply(brir_reverberation[0][azim][0][:],n_fade_out_win)
-                brir_reverberation[0][azim][1][:] = np.multiply(brir_reverberation[0][azim][1][:],n_fade_out_win)
-            #or multiply with late reflection fade out window
-            else:
-                brir_reverberation[0][azim][0][:] = np.multiply(brir_reverberation[0][azim][0][:],l_fade_out_win)
-                brir_reverberation[0][azim][1][:] = np.multiply(brir_reverberation[0][azim][1][:],l_fade_out_win)
+            brir_reverberation[0][azim][0][:] = np.multiply(brir_reverberation[0][azim][0][:],n_fade_out_win)
+            brir_reverberation[0][azim][1][:] = np.multiply(brir_reverberation[0][azim][1][:],n_fade_out_win)
 
             #shift reflections by specified delay
             if early_refl_delay_ms > 0:
@@ -822,20 +764,25 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
                 brir_reverberation[0][azim][1][0:reverb_delay_samples] = np.multiply(brir_reverberation[0][azim][1][0:reverb_delay_samples],0)
             
                 
+        #
+        # TD alignment of BRIRs with HRIRs
+        #
+        
+        #grab a sample hrir and brir used to td alignment
+        # elev_ind = int((0-elev_min)/elev_nearest)
+        # azim_ind = int(30/azim_nearest)
+        # hrir_sample = np.copy(hrir_selected[elev_ind][azim_ind][0][:])
+        # hrir_sample=hf.zero_pad_last_dimension(data=hrir_sample, n_fft=n_fft)#zero pad
+        # reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb)
 
-        log_string = 'Reverberation data prepared'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+
+
+
+        log_string = 'Integrating HRIRs and reverberation'
+        hf.log_with_timestamp(log_string, gui_logger) 
         if report_progress > 0:
-            progress = 30/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            progress = 40/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
 
         #
         # grab BRIRs from interim matrix and place in output matrix
@@ -888,223 +835,76 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
    
     
    
-        #plot BRIR and HRIR
-        if CN.PLOT_ENABLE == 1:
-            
-            sample_brir = np.copy(brir_out[base_elev_idx][0][0][:])
-            sample_brir_lp = hf.signal_lowpass_filter(sample_brir, f_crossover_var, CN.FS, CN.ORDER)
-            plot_name = 'Sum BRIR LP All Rooms'
-            hf.plot_td(sample_brir_lp[0:1024],plot_name)
-            plot_name = 'Sum BRIR All Rooms'
-            hf.plot_td(sample_brir[500:44100],plot_name)
-            
-            sample_hrir = np.copy(hrir_selected[base_elev_idx][0][0][0:total_samples_hrir])
-            plot_name = 'HRIR before integration'
-            hf.plot_td(sample_hrir[0:total_samples_hrir],plot_name)
     
         #
         #add HRIR into output BRIR array
-        #use multiple threads to integrate HRIRs into output BRIR rray
-        ts = []
-        for elev in range(total_elev_hrir):
-            t = threading.Thread(target=combine_hrirs_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, hrir_selected, total_samples_hrir))
-            ts.append(t)
-            t.start()
-        for t in ts:
-           t.join()
-        
-
+        #use multiple threads to integrate HRIRs into output BRIR array
+        # Use ThreadPoolExecutor to integrate HRIRs into output BRIR array
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(combine_hrirs_brirs, brir_out, elev, n_fft, total_azim_hrir, hrir_selected, total_samples_hrir) for elev in range(total_elev_hrir)]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()  # Optionally, handle any exceptions here
         
         #clear out hrir array since no longer used
         hrir_selected = None
         brir_reverberation = None
         
-        #plot integrated BRIR and HRIR
-        if CN.PLOT_ENABLE == 1:
-            sample_brir = np.copy(brir_out[base_elev_idx][0][0][:])
-            plot_name = 'Intergrated HRIR and BRIR All Rooms'
-            hf.plot_td(sample_brir[0:44100],plot_name)
+   
  
  
- 
-        log_string = 'HRIRs integrated with reverberation'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        log_string = 'Processing low frequencies'
+        hf.log_with_timestamp(log_string, gui_logger)
+    
         if report_progress > 0:
-            progress = 40/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            progress = 50/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
         
         
         #exit if stop thread flag is true
-        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread_1 == True or stop_thread_2 == True:
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
             brir_out= np.array([])
-            log_string = 'BRIR Processing cancelled by user'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-            return brir_out
+            status=2#2=cancelled
+            return brir_out,status
+        
+        #low freq reference ranges
+        mag_range_a=int(30*(n_fft/CN.N_FFT))
+        mag_range_a2=int(80*(n_fft/CN.N_FFT))#50
+        mag_range_b=int(290*(n_fft/CN.N_FFT))
+        
+        #grab a sample brir used to td alignment
+        elev_ind = int((0-elev_min)/elev_nearest)
+        azim_ind = int(30/azim_nearest)
+        brir_sample = np.copy(brir_out[elev_ind][azim_ind][0][:])
+        
+        #set level of HF BRIR to 0 at low freqs
+        data_fft_b = np.fft.fft(brir_sample)
+        mag_fft_b=np.abs(data_fft_b)
+        average_mag_b = np.mean(mag_fft_b[mag_range_a2:mag_range_b])
+        if average_mag_b == 0:
+            if CN.LOG_INFO == True:
+                logging.info('0 magnitude detected')
+        for elev in range(total_elev_hrir):
+            for azim in range(total_azim_hrir):
+                for chan in range(total_chan_hrir):      
+                    #only apply gain if direction is in direction matrix
+                    if direction_matrix_process[elev][azim][0][0] == 1: 
+                        brir_out[elev][azim][chan][:] = np.divide(brir_out[elev][azim][chan][:],average_mag_b)
+        
+        
         
         #
         # Sub BRIR integration
         #
         
-        peak_to_peak_window = int(np.divide(CN.FS,f_crossover_var)*0.95)
+  
+        if CN.ENABLE_SUB_INTEGRATION == True:
         
-        delay_eval_set_sub_p = np.zeros((CN.NUM_INTERVALS_P))
-        delay_eval_set_sub_n = np.zeros((CN.NUM_INTERVALS_N))
-        
-        #method 1: take current room, compare group delay
-        #method 2: take sum of all prior rooms and this room, compare group delay in low freqs
-        #method 3: take sum of all prior rooms and this room, compare group delay in low freqs (first x samples)
-        #method 4: take sum of all prior rooms and this room, low pass, compare peak to peak distance in low freqs
-        #method 5: Same as 4 but calculate distance from peak to peak within a 400 sample window 
-        
-        mag_range_a=int(30*(n_fft/CN.N_FFT))
-        mag_range_a2=int(80*(n_fft/CN.N_FFT))#50
-        mag_range_b=int(290*(n_fft/CN.N_FFT))
-        
-        if CN.ENABLE_SUB_INTEGRATION == 1:
-        
-            #set level of sub BRIR to 0 at low freqs
-            data_fft = np.fft.fft(sub_brir_ir[0][:])
-            mag_fft=np.abs(data_fft)
-            average_mag = np.mean(mag_fft[mag_range_a:mag_range_b])
-            if average_mag == 0:
-                if CN.LOG_INFO == 1:
-                    logging.info('0 magnitude detected')
-            for chan in range(CN.TOTAL_CHAN_BRIR):
-                sub_brir_ir[chan][:] = np.divide(sub_brir_ir[chan][:],average_mag)
-        
-            #set level of HF BRIR to 0 at low freqs
-            data_fft_b = np.fft.fft(brir_out[0][0][0][:])
-            mag_fft_b=np.abs(data_fft_b)
-            average_mag_b = np.mean(mag_fft_b[mag_range_a2:mag_range_b])
-            if average_mag_b == 0:
-                if CN.LOG_INFO == 1:
-                    logging.info('0 magnitude detected')
-            for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    for chan in range(total_chan_hrir):      
-                        #only apply gain if direction is in direction matrix
-                        if direction_matrix_process[elev][azim][0][0] == 1: 
-                            brir_out[elev][azim][chan][:] = np.divide(brir_out[elev][azim][chan][:],average_mag_b)
-
-            #section to calculate best delay for next ir to align with this ir
-            brir_sample = np.copy(brir_out[0][0][0][:])
-
-            subrir_sample_p = np.copy(sub_brir_ir[0][:])#check first ir, first channel
-            subrir_sample_n = np.multiply(np.copy(sub_brir_ir[0][:]),-1)
-
-            #run once for positive polarity
-            for delay in range(CN.NUM_INTERVALS_P):
-            
-                #shift next ir (BRIR)
-                current_shift = CN.MIN_T_SHIFT_P+(delay*CN.T_SHIFT_INTERVAL_P)
-                subrir_shift_c = np.roll(subrir_sample_p,current_shift)
-                
-                #add current ir (SUBBRIR) to shifted next ir (BRIR)
-                sum_ir_c = np.add(brir_sample,subrir_shift_c)
-
-                #method 5: calculate distance from peak to peak within a 400 sample window
-                sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, fc_alignment, CN.FS, CN.ORDER)
-                peak_to_peak_iter=0
-                for hop_id in range(CN.DELAY_WIN_HOPS):
-                    samples = hop_id*CN.DELAY_WIN_HOP_SIZE
-                    local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
-                    local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
-                    if CN.PEAK_MEAS_MODE == 1:
-                        peak_to_peak = np.abs(local_max-local_min)
-                    else:
-                        peak_to_peak = np.abs(local_max)
-                    #if this window has larger pk to pk, store in iter var
-                    if peak_to_peak > peak_to_peak_iter:
-                        peak_to_peak_iter = peak_to_peak
-                #store largest pk to pk distance of all windows into delay set
-                delay_eval_set_sub_p[delay] = peak_to_peak_iter
-
-            peak_to_peak_max_p = np.max(delay_eval_set_sub_p[:])
-            index_shift_p = np.argmax(delay_eval_set_sub_p[:])
-            
-            #run once for negative polarity
-            for delay in range(CN.NUM_INTERVALS_N):
-            
-                #shift next ir (BRIR)
-                current_shift = CN.MIN_T_SHIFT_N+(delay*CN.T_SHIFT_INTERVAL_N)
-                subrir_shift_c = np.roll(subrir_sample_n,current_shift)
-                
-                #add current ir (SUBBRIR) to shifted next ir (BRIR)
-                sum_ir_c = np.add(brir_sample,subrir_shift_c)
-
-                #method 5: calculate distance from peak to peak within a 400 sample window
-                sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, fc_alignment, CN.FS, CN.ORDER)
-                peak_to_peak_iter=0
-                for hop_id in range(CN.DELAY_WIN_HOPS):
-                    samples = hop_id*CN.DELAY_WIN_HOP_SIZE
-                    local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
-                    local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
-                    if CN.PEAK_MEAS_MODE == 1:
-                        peak_to_peak = np.abs(local_max-local_min)
-                    else:
-                        peak_to_peak = np.abs(local_max)
-                    #if this window has larger pk to pk, store in iter var
-                    if peak_to_peak > peak_to_peak_iter:
-                        peak_to_peak_iter = peak_to_peak
-                #store largest pk to pk distance of all windows into delay set
-                delay_eval_set_sub_n[delay] = peak_to_peak_iter
-
-            peak_to_peak_max_n = np.max(delay_eval_set_sub_n[:])
-            index_shift_n = np.argmax(delay_eval_set_sub_n[:])
-            
-            if peak_to_peak_max_p > peak_to_peak_max_n or CN.EVAL_POLARITY == False:
-                index_shift=index_shift_p
-                sub_polarity=1
-                #shift next ir by delay that has largest peak to peak distance
-                samples_shift=CN.MIN_T_SHIFT_P+(index_shift*CN.T_SHIFT_INTERVAL_P)
-            else:
-                index_shift=index_shift_n
-                sub_polarity=-1
-                #shift next ir by delay that has largest peak to peak distance
-                samples_shift=CN.MIN_T_SHIFT_N+(index_shift*CN.T_SHIFT_INTERVAL_N)
-            
-            
-            
-
-            for chan in range(CN.TOTAL_CHAN_BRIR):
-                #roll subrir
-                sub_brir_ir[chan][:] = np.roll(sub_brir_ir[chan][:],samples_shift)
-                #change polarity if applicable
-                sub_brir_ir[chan][:] = np.multiply(sub_brir_ir[chan][:],sub_polarity)
-                #set end of array to zero to remove any data shifted to end of array
-                if samples_shift < 0:
-                    sub_brir_ir[chan][samples_shift:] = sub_brir_ir[chan][samples_shift:]*0#left
-                    sub_brir_ir[chan][:] = np.multiply(sub_brir_ir[chan][:],initial_removal_win_sub)
-            
-
-            if CN.LOG_INFO == 1 and CN.SHOW_DEV_TOOLS == True:
-                logging.info('delay index = ' + str(index_shift))
-                logging.info('samples_shift = ' + str(samples_shift))
-                logging.info('sub polarity = ' + str(sub_polarity))
-                logging.info('peak_to_peak_max_n = ' + str(peak_to_peak_max_n))
-                logging.info('peak_to_peak_max_p = ' + str(peak_to_peak_max_p))
+            sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub)
             
             if report_progress > 0:
-                progress = 50/100
-                if report_progress == 2:
-                    dpg.set_value("progress_bar_brir", progress)
-                    dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-                else:
-                    dpg.set_value("qc_progress_bar_brir", progress)
-                    dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+                progress = 60/100
+                hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
             
             #
             #apply low pass filter to sub BRIR
@@ -1118,83 +918,38 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
             sub_brir_ir[1][:] = brir_eq_b_r[0:n_fft]
             
             #apply fade out win if enabled
-            if noise_fade == True:
-                sub_brir_ir[0][:] = np.multiply(sub_brir_ir[0][:],n_fade_out_win)
-                sub_brir_ir[1][:] = np.multiply(sub_brir_ir[1][:],n_fade_out_win)
-            else:
-                sub_brir_ir[0][:] = np.multiply(sub_brir_ir[0][:],l_fade_out_win)
-                sub_brir_ir[1][:] = np.multiply(sub_brir_ir[1][:],l_fade_out_win)
+            sub_brir_ir[0][:] = np.multiply(sub_brir_ir[0][:],n_fade_out_win)
+            sub_brir_ir[1][:] = np.multiply(sub_brir_ir[1][:],n_fade_out_win)
             
-            #plot BRIR before adding SUB 
-            if CN.PLOT_ENABLE == 1:
-                sample_brir = np.copy(brir_out[base_elev_idx][0][0][:])
-                sample_brir_lp = hf.signal_lowpass_filter(sample_brir, f_crossover_var, CN.FS, CN.ORDER)
-                plot_name = 'Sum BRIR + HRIR LP All Rooms before SUB Int'
-                hf.plot_td(sample_brir_lp[0:1024],plot_name)
-                
-                sample_sub_lp = np.copy(sub_brir_ir[0][:])#already low passed
-                plot_name = 'Sub IR after shifting before int'
-                hf.plot_td(sample_sub_lp[0:1024],plot_name)
-            
+       
 
             
             #use multiple threads to integrate sub brir into output array
-            ts = []
-            for elev in range(total_elev_hrir):
-                t = threading.Thread(target=integrate_sub_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, f_crossover_var, sub_brir_ir))
-                ts.append(t)
-                t.start()
-            for t in ts:
-               t.join()
+            # Use ThreadPoolExecutor to integrate sub brir
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures = [executor.submit(integrate_sub_brirs, brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process,
+                                        f_crossover_var, sub_brir_ir)
+                           for elev in range(total_elev_hrir)]
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()  # Optionally, handle exceptions
 
         
-        
-            #plot BRIR after adding SUB 
-            if CN.PLOT_ENABLE == 1:
-                sample_brir = np.copy(brir_out[base_elev_idx][0][0][:])
-                sample_brir_lp = hf.signal_lowpass_filter(sample_brir, f_crossover_var, CN.FS, CN.ORDER)
-                plot_name = 'Sum BRIR LP All Rooms after SUB Int'
-                hf.plot_td(sample_brir_lp[0:1024],plot_name)
+    
 
-
-        log_string = 'Low frequency response integrated'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        log_string = 'Applying EQ'
+        hf.log_with_timestamp(log_string, gui_logger)
         if report_progress > 0:
-            progress = 60/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            progress = 70/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
          
             
         #exit if stop thread flag is true
-        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread_1 == True or stop_thread_2 == True:
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
             brir_out= np.array([])
-            log_string = 'BRIR Processing cancelled by user'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-            return brir_out
+            status=2#2=cancelled
+            return brir_out,status
             
-        # HRIR has been filtered, so apply window to remove any aliasing
-        #use multiple threads to perform windowing
-        ts = []
-        for elev in range(total_elev_hrir):
-            t = threading.Thread(target=initial_rise_window, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, initial_removal_win))
-            ts.append(t)
-            t.start()
-        for t in ts:
-           t.join()
-           
-
 
 
         #
@@ -1203,16 +958,16 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         
 
         #use multiple threads to calculate EQ
-        results_list = []
-        ts = []
-        for elev in range(total_elev_hrir):
-            list_indx=elev
-            results_list.append(0)
-            t = threading.Thread(target=calc_eq_for_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, fr_flat, results_list, list_indx))
-            ts.append(t)
-            t.start()
-        for t in ts:
-           t.join()
+        # Use ThreadPoolExecutor to calculate EQ
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results_list = [0] * total_elev_hrir  # Initialize results list, contains a zero element for each elevation to start with
+            futures = [executor.submit(calc_eq_for_brirs, brir_out, elev, total_azim_hrir, direction_matrix_process, fr_flat, results_list, elev) for elev in range(total_elev_hrir)]
+    
+            for future in concurrent.futures.as_completed(futures):
+                future.result()  # Optionally, handle exceptions
+
+           
+           
         #results_list will be populated with numpy arrays representing db response for each elevation
         num_results_avg = 0
         brir_fft_avg_db = fr_flat.copy()
@@ -1239,119 +994,352 @@ def generate_integrated_brir(hrtf_type, direct_gain_db, room_target, pinna_comp,
         brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1, out_win_size=2048, n_fft=CN.N_FFT)
         
         if report_progress > 0:
-            progress = 75/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            progress = 80/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
         
         #get matrix of desired output directions
-        direction_matrix_out = brir_export.generate_direction_matrix(hrtf_type, spatial_res=spatial_res, output_variant=1)
+        if reduce_dataset == True:
+            #case for reduced dataset
+            direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=3, brir_dict=brir_dict)
+        else:
+            #regular case
+            direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=1)
 
         #exit if stop thread flag is true
-        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread_1 == True or stop_thread_2 == True:
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
             brir_out= np.array([])
-            log_string = 'BRIR Processing cancelled by user'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-            return brir_out
+            status=2#2=cancelled
+            return brir_out,status
 
 
+        
+
+        #get end index for convolutions
+        brir_sample = brir_out[0][0][0][:]
+        crop_samples = hf.get_crop_index(brir_sample)
+        #print(crop_samples)
+        
         #use multiple threads to perform EQ
-        ts = []
-        for elev in range(total_elev_hrir):
-            t = threading.Thread(target=apply_eq_to_brirs, args = (brir_out, elev, n_fft, total_azim_hrir, direction_matrix_out, brir_df_inv_fir, room_target, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq))
-            ts.append(t)
-            t.start()
-        for t in ts:
-           t.join()
+        #Use ThreadPoolExecutor to perform EQ
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(apply_eq_to_brirs, brir_out, elev, n_fft, total_azim_hrir, direction_matrix_post,
+                                    brir_df_inv_fir, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq, crop_samples)
+                       for elev in range(total_elev_hrir)]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()  # Optionally, handle exceptions
 
 
-        if CN.PLOT_ENABLE == 1:
-            hf.plot_data(mag_fft,'mag_fft SUBRIR')
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag')
             hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm')
             hf.plot_data(brir_fft_avg_mag_inv,'brir_fft_avg_mag_inv')
 
         #exit if stop thread flag is true
-        stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-        stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
-        if stop_thread_1 == True or stop_thread_2 == True:
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
             brir_out= np.array([])
-            log_string = 'BRIR Processing cancelled by user'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
-            return brir_out
+            status=2#2=cancelled
+            return brir_out,status
 
 
-        log_string = 'Frequency response calibrated'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        log_string = 'Finalising dataset'
+        status=0#0=success
+        hf.log_with_timestamp(log_string, gui_logger)
         if report_progress > 0:
             progress = 90/100
-            if report_progress == 2:
-                dpg.set_value("progress_bar_brir", progress)
-                dpg.configure_item("progress_bar_brir", overlay = str(int(progress*100))+'%')
-            else:
-                dpg.set_value("qc_progress_bar_brir", progress)
-                dpg.configure_item("qc_progress_bar_brir", overlay = str(int(progress*100))+'%')
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
 
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
+        status=1#1=failed
         log_string = 'Failed to generate BRIRs'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+  
+
         
     # get the end time
     et = time.time()
 
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
-        logging.info('Execution time:' + str(elapsed_time) + ' seconds')
+    log_string = 'Execution time:' + str(elapsed_time) + ' seconds'
+    hf.log_with_timestamp(log_string)
         
     #return the integrated BRIR
-    return brir_out
+    return brir_out,status
 
 
-def combine_hrirs_brirs(brir_out, elev, n_fft, total_azim_hrir, hrir_selected, total_samples_hrir):
+def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub):
+    """
+    Function performs time domain alignment of sub brir array
+    :param sub_brir_ir: numpy array containing sub brirs
+    :return: None
+    """ 
+
+    peak_to_peak_window = int(np.divide(CN.FS,f_crossover_var)*0.95)
+    
+    delay_eval_set_sub_p = np.zeros((CN.NUM_INTERVALS_P))
+    delay_eval_set_sub_n = np.zeros((CN.NUM_INTERVALS_N))
+
+    #take sum of reference BRIR and Sub BRIR, low pass, compare peak to peak distance in low freqs
+    #then calculate distance from peak to peak within a 400 sample window 
+    
+    mag_range_a=int(30*(n_fft/CN.N_FFT))
+    mag_range_b=int(290*(n_fft/CN.N_FFT))
+    
+
+    #set level of sub BRIR to 0 at low freqs
+    data_fft = np.fft.fft(sub_brir_ir[0][:])
+    mag_fft=np.abs(data_fft)
+    average_mag = np.mean(mag_fft[mag_range_a:mag_range_b])
+    if average_mag == 0:
+        if CN.LOG_INFO == True:
+            logging.info('0 magnitude detected')
+    for chan in range(CN.TOTAL_CHAN_BRIR):
+        sub_brir_ir[chan][:] = np.divide(sub_brir_ir[chan][:],average_mag)
+
+
+
+ 
+    subrir_sample_p = np.copy(sub_brir_ir[0][:])#check first ir, first channel
+    subrir_sample_n = np.multiply(np.copy(sub_brir_ir[0][:]),-1)
+
+    #run once for positive polarity
+    for delay in range(CN.NUM_INTERVALS_P):
+    
+        #shift SUBBRIR
+        current_shift = CN.MIN_T_SHIFT_P+(delay*CN.T_SHIFT_INTERVAL_P)
+        subrir_shift_c = np.roll(subrir_sample_p,current_shift)
+        
+        #add (BRIR) to shifted SUBBRIR
+        sum_ir_c = np.add(brir_sample,subrir_shift_c)
+
+        #calculate distance from peak to peak within a 400 sample window
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        peak_to_peak_iter=0
+        for hop_id in range(CN.DELAY_WIN_HOPS):
+            samples = hop_id*CN.DELAY_WIN_HOP_SIZE
+            local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            if CN.PEAK_MEAS_MODE == 1:
+                peak_to_peak = np.abs(local_max-local_min)
+            else:
+                peak_to_peak = np.abs(local_max)
+            #if this window has larger pk to pk, store in iter var
+            if peak_to_peak > peak_to_peak_iter:
+                peak_to_peak_iter = peak_to_peak
+        #store largest pk to pk distance of all windows into delay set
+        delay_eval_set_sub_p[delay] = peak_to_peak_iter
+
+    peak_to_peak_max_p = np.max(delay_eval_set_sub_p[:])
+    index_shift_p = np.argmax(delay_eval_set_sub_p[:])
+    
+    #run once for negative polarity
+    for delay in range(CN.NUM_INTERVALS_N):
+    
+        #shift SUBBRIR
+        current_shift = CN.MIN_T_SHIFT_N+(delay*CN.T_SHIFT_INTERVAL_N)
+        subrir_shift_c = np.roll(subrir_sample_n,current_shift)
+        
+        #add (BRIR) to shifted SUBBRIR
+        sum_ir_c = np.add(brir_sample,subrir_shift_c)
+
+        #calculate distance from peak to peak within a 400 sample window
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        peak_to_peak_iter=0
+        for hop_id in range(CN.DELAY_WIN_HOPS):
+            samples = hop_id*CN.DELAY_WIN_HOP_SIZE
+            local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            if CN.PEAK_MEAS_MODE == 1:
+                peak_to_peak = np.abs(local_max-local_min)
+            else:
+                peak_to_peak = np.abs(local_max)
+            #if this window has larger pk to pk, store in iter var
+            if peak_to_peak > peak_to_peak_iter:
+                peak_to_peak_iter = peak_to_peak
+        #store largest pk to pk distance of all windows into delay set
+        delay_eval_set_sub_n[delay] = peak_to_peak_iter
+
+    peak_to_peak_max_n = np.max(delay_eval_set_sub_n[:])
+    index_shift_n = np.argmax(delay_eval_set_sub_n[:])
+    
+    if peak_to_peak_max_p > peak_to_peak_max_n or CN.EVAL_POLARITY == False:
+        index_shift=index_shift_p
+        sub_polarity=1
+        #shift subrir by delay that has largest peak to peak distance
+        samples_shift=CN.MIN_T_SHIFT_P+(index_shift*CN.T_SHIFT_INTERVAL_P)
+    else:
+        index_shift=index_shift_n
+        sub_polarity=-1
+        #shift subrir by delay that has largest peak to peak distance
+        samples_shift=CN.MIN_T_SHIFT_N+(index_shift*CN.T_SHIFT_INTERVAL_N)
+    
+    
+    
+
+    for chan in range(CN.TOTAL_CHAN_BRIR):
+        #roll subrir
+        sub_brir_ir[chan][:] = np.roll(sub_brir_ir[chan][:],samples_shift)
+        #change polarity if applicable
+        sub_brir_ir[chan][:] = np.multiply(sub_brir_ir[chan][:],sub_polarity)
+        #set end of array to zero to remove any data shifted to end of array
+        if samples_shift < 0:
+            sub_brir_ir[chan][samples_shift:] = sub_brir_ir[chan][samples_shift:]*0#left
+            sub_brir_ir[chan][:] = np.multiply(sub_brir_ir[chan][:],initial_removal_win_sub)
+    
+
+    if CN.LOG_INFO == True and CN.SHOW_DEV_TOOLS == True:
+        logging.info('(SUB) delay index = ' + str(index_shift))
+        logging.info('(SUB) samples_shift = ' + str(samples_shift))
+        logging.info('(SUB) sub polarity = ' + str(sub_polarity))
+        logging.info('(SUB) peak_to_peak_max_n = ' + str(peak_to_peak_max_n))
+        logging.info('(SUB) peak_to_peak_max_p = ' + str(peak_to_peak_max_p))
+
+
+def reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb):
+    """
+    Function performs time domain alignment of reverb brir array
+    :param sub_brir_ir: numpy array containing sub brirs
+    :return: None
+    """ 
+    #eval_polarity=CN.EVAL_POLARITY
+    eval_polarity=False
+
+    brir_sample = np.copy(brir_reverberation[0][1][0][:])#use id 1 (FL)
+    
+    peak_to_peak_window = int(np.divide(CN.FS,f_crossover_var)*0.95)
+    
+    delay_eval_set_reverb_p = np.zeros((CN.NUM_INTERVALS_R))
+    delay_eval_set_reverb_n = np.zeros((CN.NUM_INTERVALS_R))
+
+    #take sum of reference HRIR and Reverb BRIR, low pass, compare peak to peak distance in low freqs
+    #then calculate distance from peak to peak within a 400 sample window 
+    
+    reverb_sample_p = np.copy(brir_sample)#check first ir, first channel
+    reverb_sample_n = np.multiply(np.copy(brir_sample),-1)
+
+    #run once for positive polarity
+    for delay in range(CN.NUM_INTERVALS_R):
+    
+        #shift (BRIR)
+        current_shift = CN.MIN_T_SHIFT_R+(delay*CN.T_SHIFT_INTERVAL_R)
+        reverb_shift_c = np.roll(reverb_sample_p,current_shift)
+        
+        #add (HRIR) to shifted (BRIR)
+        sum_ir_c = np.add(hrir_sample,reverb_shift_c)
+
+        #calculate distance from peak to peak within a 400 sample window
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        peak_to_peak_iter=0
+        for hop_id in range(CN.DELAY_WIN_HOPS):
+            samples = hop_id*CN.DELAY_WIN_HOP_SIZE
+            local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            if CN.PEAK_MEAS_MODE == 1:
+                peak_to_peak = np.abs(local_max-local_min)
+            else:
+                peak_to_peak = np.abs(local_max)
+            #if this window has larger pk to pk, store in iter var
+            if peak_to_peak > peak_to_peak_iter:
+                peak_to_peak_iter = peak_to_peak
+        #store largest pk to pk distance of all windows into delay set
+        delay_eval_set_reverb_p[delay] = peak_to_peak_iter
+
+    peak_to_peak_max_p = np.max(delay_eval_set_reverb_p[:])
+    index_shift_p = np.argmax(delay_eval_set_reverb_p[:])
+    
+    #run once for negative polarity
+    for delay in range(CN.NUM_INTERVALS_R):
+    
+        #shift (BRIR)
+        current_shift = CN.MIN_T_SHIFT_R+(delay*CN.T_SHIFT_INTERVAL_R)
+        reverb_shift_c = np.roll(reverb_sample_n,current_shift)
+        
+        #add (HRIR) to shifted (BRIR)
+        sum_ir_c = np.add(hrir_sample,reverb_shift_c)
+
+        #calculate distance from peak to peak within a 400 sample window
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        peak_to_peak_iter=0
+        for hop_id in range(CN.DELAY_WIN_HOPS):
+            samples = hop_id*CN.DELAY_WIN_HOP_SIZE
+            local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window])
+            if CN.PEAK_MEAS_MODE == 1:
+                peak_to_peak = np.abs(local_max-local_min)
+            else:
+                peak_to_peak = np.abs(local_max)
+            #if this window has larger pk to pk, store in iter var
+            if peak_to_peak > peak_to_peak_iter:
+                peak_to_peak_iter = peak_to_peak
+        #store largest pk to pk distance of all windows into delay set
+        delay_eval_set_reverb_n[delay] = peak_to_peak_iter
+
+    peak_to_peak_max_n = np.max(delay_eval_set_reverb_n[:])
+    index_shift_n = np.argmax(delay_eval_set_reverb_n[:])
+    
+    if peak_to_peak_max_p > peak_to_peak_max_n or eval_polarity == False:
+        index_shift=index_shift_p
+        sub_polarity=1
+        #shift BRIR by delay that has largest peak to peak distance
+        samples_shift=CN.MIN_T_SHIFT_R+(index_shift*CN.T_SHIFT_INTERVAL_R)
+    else:
+        index_shift=index_shift_n
+        sub_polarity=-1
+        #shift BRIR by delay that has largest peak to peak distance
+        samples_shift=CN.MIN_T_SHIFT_R+(index_shift*CN.T_SHIFT_INTERVAL_R)
+    
+    
+    
+
+    for azim in range(total_azim_reverb):
+        #roll BRIR
+        brir_reverberation[0][azim][0][:] = np.roll(brir_reverberation[0][azim][0][:],samples_shift)
+        brir_reverberation[0][azim][1][:] = np.roll(brir_reverberation[0][azim][1][:],samples_shift)
+        #change polarity if applicable
+        brir_reverberation[0][azim][0][:] = np.multiply(brir_reverberation[0][azim][0][:],sub_polarity)
+        brir_reverberation[0][azim][1][:] = np.multiply(brir_reverberation[0][azim][1][:],sub_polarity)
+        
+        if samples_shift < 0:
+            #set end of array to zero to remove any data shifted to end of array
+            brir_reverberation[0][azim][0][samples_shift:] = np.multiply(brir_reverberation[0][azim][0][samples_shift:],0)
+            brir_reverberation[0][azim][1][samples_shift:] = np.multiply(brir_reverberation[0][azim][1][samples_shift:],0)
+            #apply window to start
+            brir_reverberation[0][azim][0][:] = np.multiply(brir_reverberation[0][azim][0][:],initial_removal_win_rev)
+            brir_reverberation[0][azim][1][:] = np.multiply(brir_reverberation[0][azim][1][:],initial_removal_win_rev)
+     
+
+    if CN.LOG_INFO == True and CN.SHOW_DEV_TOOLS == True:
+        logging.info('(Reverb) delay index = ' + str(index_shift))
+        logging.info('(Reverb) samples_shift = ' + str(samples_shift))
+        logging.info('(Reverb) polarity = ' + str(sub_polarity))
+        logging.info('(Reverb) peak_to_peak_max_n = ' + str(peak_to_peak_max_n))
+        logging.info('(Reverb) peak_to_peak_max_p = ' + str(peak_to_peak_max_p))
+        
+        
+        
+
+def combine_hrirs_brirs(brir_out, elev, n_fft, total_azim_hrir, hrir_selected, total_samples_hrir, swap_azimuths=False):
     """
     Function integrates HRIRs into BRIR dataset
     :param brir_out: numpy array containing brirs
+    :param swap_azimuths: bool flag, if true will swap left and right azimuths. Useful for cases where azimuth angles have opposite direction to standard CCW
     :return: None
     """ 
     
     for azim in range(total_azim_hrir):
+        if swap_azimuths == True and azim>0:#swap L and R if flagged and not 0 id
+            azim_hrir = total_azim_hrir-azim
+        else:
+            azim_hrir = azim
         for chan in range(CN.TOTAL_CHAN_BRIR):      
             brir_out[elev][azim][chan][0:total_samples_hrir] = brir_out[elev][azim][chan][0:total_samples_hrir] + hrir_selected[elev][azim][chan][0:total_samples_hrir]
     
 
-def initial_rise_window(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, initial_removal_win):
-    """
-    Function performs initial rise windowing on brirs
-    :param brir_out: numpy array containing brirs
-    :return: None
-    """ 
-    
-    for azim in range(total_azim_hrir):
-        for chan in range(CN.TOTAL_CHAN_BRIR):
-            #only apply if direction is in direction matrix
-            if direction_matrix_process[elev][azim][0][0] == 1: 
-                brir_out[elev][azim][chan][:] = np.multiply(brir_out[elev][azim][chan][:],initial_removal_win)
-    
-    
 
-def calc_eq_for_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, fr_flat, results_list, list_indx):
+
+def calc_eq_for_brirs(brir_out, elev, total_azim_hrir, direction_matrix_process, fr_flat, results_list, list_indx):
     """
     Function calculates equalisation filter in parts
     :param brir_out: numpy array containing brirs
@@ -1366,7 +1354,7 @@ def calc_eq_for_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_p
         for chan in range(CN.TOTAL_CHAN_BRIR):
             #only apply if direction is in direction matrix
             if direction_matrix_process[elev][azim][0][0] == 1: 
-                brir_current = np.copy(brir_out[elev,azim,chan,0:CN.N_FFT])
+                brir_current = brir_out[elev, azim, chan, 0:CN.N_FFT]
                 brir_current_fft = np.fft.fft(brir_current)
                 brir_current_mag_fft=np.abs(brir_current_fft)
                 brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
@@ -1383,21 +1371,22 @@ def calc_eq_for_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_p
     
     
 
-def apply_eq_to_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_out, brir_df_inv_fir, room_target, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq):
+def apply_eq_to_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_post, brir_df_inv_fir, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq, crop_samples):
     """
     Function applies equalisation to brirs in numpy array
     :param brir_out: numpy array containing brirs
     :return: None
     """ 
+    
  
     for azim in range(total_azim_hrir):
         for chan in range(CN.TOTAL_CHAN_BRIR):  
             
             #only apply equalisation if direction is in direction matrix
-            if direction_matrix_out[elev][azim][0][0] == 1: 
+            if direction_matrix_post[elev][azim][0][0] == 1: 
             
                 #convolve BRIR with filters
-                brir_eq_b = np.copy(brir_out[elev,azim,chan,:])#brir_eq_a = np.copy(brir_out[elev][azim][chan][:])
+                brir_eq_b = np.copy(brir_out[elev,azim,chan,0:crop_samples])#brir_eq_a = np.copy(brir_out[elev][azim][chan][:])
                 #apply DF eq
                 brir_eq_b = sp.signal.convolve(brir_eq_b,brir_df_inv_fir, 'full', 'auto')
                 #apply room target
@@ -1407,10 +1396,37 @@ def apply_eq_to_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_o
                     brir_eq_b = sp.signal.convolve(brir_eq_b,pinna_comp_fir, 'full', 'auto')
                 #apply additional eq for headphones
                 brir_eq_b = sp.signal.convolve(brir_eq_b,data_addit_eq, 'full', 'auto')
-                brir_out[elev,azim,chan,:] = np.copy(brir_eq_b[0:n_fft])
+                
+                replace_samples=min(len(brir_eq_b),n_fft)
+                brir_out[elev,azim,chan,0:replace_samples] = np.copy(brir_eq_b[0:replace_samples])
+                if replace_samples < n_fft:
+                    brir_out[elev,azim,chan,replace_samples:n_fft]=0
             
             else:
                 brir_out[elev,azim,chan,:] = np.zeros(n_fft)#zero out directions that wont be exported
+
+
+def apply_eq_to_brirs_v2(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_post, brir_df_inv_fir, room_target_fir, pinna_comp, pinna_comp_fir, data_addit_eq):
+    """
+    Function applies equalization to BRIRs in numpy array.
+    """
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):  
+            if direction_matrix_post[elev, azim, 0, 0] == 1:  # Only apply EQ if direction is in direction matrix
+                
+                # Apply convolution directly to brir_out to save memory
+                brir_out[elev, azim, chan, :] = sp.signal.convolve(brir_out[elev, azim, chan, :], brir_df_inv_fir, 'full', 'auto')[:n_fft]
+                brir_out[elev, azim, chan, :] = sp.signal.convolve(brir_out[elev, azim, chan, :], room_target_fir, 'full', 'auto')[:n_fft]
+
+                if pinna_comp >= 2:
+                    brir_out[elev, azim, chan, :] = sp.signal.convolve(brir_out[elev, azim, chan, :], pinna_comp_fir, 'full', 'auto')[:n_fft]
+
+                brir_out[elev, azim, chan, :] = sp.signal.convolve(brir_out[elev, azim, chan, :], data_addit_eq, 'full', 'auto')[:n_fft]
+            
+            else:
+                brir_out[elev, azim, chan, :].fill(0)  # Zero out in-place
+
+
 
 def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, f_crossover_var, sub_brir_ir):
     """
@@ -1454,7 +1470,7 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
     st = time.time()
     n_fft=CN.N_FFT
     lf_align=False#False
-    h_pass=False
+    h_pass=True
 
     try:
     
@@ -1473,10 +1489,7 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
             azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
         else:
             log_string = 'Invalid spatial resolution. No hrir dataset loaded.'
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
 
         #old format mat files
         #annots = loadmat(mat_fname)
@@ -1560,7 +1573,8 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
             #apply high pass filter to hrirs
             #
             if h_pass == True:
-                f_crossover_var=CN.F_CROSSOVER
+                #f_crossover_var=CN.F_CROSSOVER
+                f_crossover_var=180
                 for elev in range(total_elev_hrir):
                     for azim in range(total_azim_hrir):
                         for chan in range(total_chan_hrir):  
@@ -1639,10 +1653,7 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
                         hrir_out[hrtf_idx,elev,azim,chan,0:total_samples_hrir] = np.copy(hrir_selected[elev][azim_in][chan][0:total_samples_hrir])
      
             log_string = 'level adjustment and time alignment completed for hrtf idx: ' + str(hrtf_idx)
-            if CN.LOG_INFO == 1:
-                logging.info(log_string)
-            if CN.LOG_GUI == 1 and gui_logger != None:
-                gui_logger.log_info(log_string)
+            hf.log_with_timestamp(log_string, gui_logger)
 
         #save resulting dataset to a numpy file
         if lf_align == True:
@@ -1657,10 +1668,7 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
         np.save(out_file_path,hrir_out)    
 
         log_string = 'Binary saved in data folder'
-        if CN.LOG_INFO == 1:
-            logging.info(log_string)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string)
+        hf.log_with_timestamp(log_string, gui_logger)
   
     except Exception as ex:
         logging.error("Error occurred", exc_info = ex)
@@ -1670,7 +1678,7 @@ def preprocess_hrirs(spatial_res=1, gui_logger=None):
 
     # get the execution time
     elapsed_time = et - st
-    if CN.LOG_INFO == 1:
+    if CN.LOG_INFO == True:
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
    
         
@@ -1720,10 +1728,7 @@ def process_mono_cues(gui_logger=None):
                     if samplerate != samp_freq:
                         fir_array = hf.resample_signal(fir_array, new_rate = samp_freq)
                         log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to 44100Hz'
-                        if CN.LOG_INFO == 1:
-                            logging.info(log_string_a)
-                        if CN.LOG_GUI == 1 and gui_logger != None:
-                            gui_logger.log_info(log_string_a)
+                        hf.log_with_timestamp(log_string_a, gui_logger)
  
                     extract_legth = min(n_fft,fir_length)
                     
@@ -1749,7 +1754,7 @@ def process_mono_cues(gui_logger=None):
         #octave smoothing
         brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, n_fft=n_fft, win_size_base = 25)
         drir_90_l_mean_mag = np.copy(brir_fft_avg_mag_sm)
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             print(str(num_bairs_avg))
             hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=1)    
  
@@ -1769,7 +1774,7 @@ def process_mono_cues(gui_logger=None):
         drir_90_l_mean_db_comp = np.subtract(drir_90_l_mean_db,in_ear_eq_db)
         #convert to mag
         drir_90_l_mean_comp = hf.db2mag(drir_90_l_mean_db_comp)
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(drir_90_l_mean_comp,'drir_90_l_mean_comp', normalise=1)  
     
     
@@ -1804,7 +1809,7 @@ def process_mono_cues(gui_logger=None):
         brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, n_fft=n_fft, win_size_base = 20)
         hp_cue_overear_mean_mag = np.copy(brir_fft_avg_mag_sm)
  
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             print(str(num_sets_avg))
             hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=1) 
         
@@ -1835,7 +1840,7 @@ def process_mono_cues(gui_logger=None):
         #octave smoothing
         brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, n_fft=n_fft, win_size_base = 20)
         hp_cue_inear_mean_mag = np.copy(brir_fft_avg_mag_sm)
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             print(str(num_sets_avg))
             hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=1) 
         
@@ -1845,7 +1850,7 @@ def process_mono_cues(gui_logger=None):
         hp_fft_diff_db = np.subtract(hp_overear_db_fft,hp_inear_db_fft)
         #convert to mag
         hp_cue_diff_mean_mag = hf.db2mag(hp_fft_diff_db)
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(hp_cue_diff_mean_mag,'hp_cue_diff_mean_mag', normalise=1)
   
         #
@@ -1862,7 +1867,7 @@ def process_mono_cues(gui_logger=None):
         pinna_comp_db_pos = np.multiply(pinna_comp_db_fft,-1)
         #convert to mag
         pinna_comp_pos = hf.db2mag(pinna_comp_db_pos)
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(pinna_comp_pos,'pinna_comp_pos', normalise=1)
   
         #average the estimates with weighting to get good approximate
@@ -1876,7 +1881,7 @@ def process_mono_cues(gui_logger=None):
         hp_est_avg_db = np.add(np.multiply(hp_est_c_db_fft,weightings[2]),hp_est_avg_db)
         #convert to mag
         hp_est_avg_mag = hf.db2mag(hp_est_avg_db)
-        if CN.PLOT_ENABLE == 1:
+        if CN.PLOT_ENABLE == True:
             hf.plot_data(drir_90_l_mean_comp,'drir_90_l_mean_comp', normalise=1)
             hf.plot_data(hp_cue_diff_mean_mag,'hp_cue_diff_mean_mag', normalise=1)
             hf.plot_data(pinna_comp_pos,'pinna_comp_pos', normalise=1)
@@ -1902,19 +1907,91 @@ def process_mono_cues(gui_logger=None):
         np.save(out_file_path,pinna_comp_inv_min_fir)    
         
         log_string_a = 'Exported numpy file to: ' + out_file_path 
-        if CN.LOG_INFO == 1:
-            logging.info(log_string_a)
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_info(log_string_a)
+        hf.log_with_timestamp(log_string_a, gui_logger)
        
 
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         log_string = 'Failed to complete BRIR processing'
-        if CN.LOG_GUI == 1 and gui_logger != None:
-            gui_logger.log_error(log_string)
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
 
 
+
+def check_download_max_hrtf_datasets(download=False, gui_logger=None, report_progress=0):
+    """ 
+    Function checks if max resolution hrtf datasets are locally available, if not found it will download from google drive
+    Returns:
+       Status code: 0 = Success, 1 = Failure, 2 = Cancelled
+    """
+    status=1
+    message=''
+    
+    try:
+        
+        #log results
+        log_string = 'Checking for missing datasets'
+        hf.log_with_timestamp(log_string, gui_logger)
+        
+        #for each max res dataset
+        brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get('Dummy Head - Max Resolution')
+        for dataset in brir_hrtf_dataset_list_loaded:
             
+            #for each hrtf in that dataset
+            hrtf_list_new = hrir_processing.get_listener_list(listener_type='Dummy Head / Head & Torso Simulator', dataset_name=dataset, max_res_only=True)
+            for hrtf in hrtf_list_new:
+                #url
+                gdrive_url = hrir_processing.get_gdrive_url_max(listener_type='Dummy Head / Head & Torso Simulator', dataset_name=dataset, name_gui=hrtf )
+                
+                update_required=True
+        
+                #expected file location
+                brir_hrtf_short = hrir_processing.get_name_short(listener_type='Dummy Head / Head & Torso Simulator', dataset_name=dataset, name_gui=hrtf )
+                hrir_dir_base = CN.DATA_DIR_HRIR_NPY_DH
+                sub_directory = 'm'
+                #join spatial res subdirectory
+                hrir_dir_sr = pjoin(hrir_dir_base, sub_directory)
+                # Create dataset subdirectory
+                hrir_dir_ds = pjoin(hrir_dir_sr, dataset)
+                # full filename
+                dl_file = pjoin(hrir_dir_ds, f"{brir_hrtf_short}.npy")
+                
+                # check if file exists
+                if os.path.exists(dl_file):
+                    update_required = False
+        
+                #file already available
+                if update_required==False:
+                    log_string = brir_hrtf_short + '.npy found'
+                    hf.log_with_timestamp(log_string, gui_logger)
+                        
+                #if download updates enabled
+                #download dataset from gdrive and place into relevant folder
+                if download == True and update_required == True:
+                    try:
+                        if report_progress > 0:
+                            message = 'Downloading required dataset(s)'
+                            hf.update_gui_progress(report_progress=report_progress, message=message)
+                    except:
+                        pass
+                    
+                    log_string = 'Downloading ' + brir_hrtf_short + '.npy'
+                    hf.log_with_timestamp(log_string, gui_logger)
+           
+                    gdrive_link = gdrive_url
+                    hf.download_file(gdrive_link, dl_file, gui_logger=gui_logger)
+                    #gdown.download(gdrive_link, dl_file, fuzzy=True)
+                    
+                    log_string = brir_hrtf_short + '.npy' + ' downloaded and saved to: ' + dl_file
+                    hf.log_with_timestamp(log_string, gui_logger)
+                    
+                status=0#success if reached this far
+       
+        
+
+    except Exception as ex:
+        log_string = 'Failed to validate versions or update data'
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+    
+    
+    return status
