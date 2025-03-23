@@ -1702,7 +1702,7 @@ def main():
             dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
             dpg.set_value("qc_progress_bar_brir", 1)
             dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-            e_apo_select_direction()#run in case direction not found in case of reduced dataset
+            e_apo_select_direction(force_reset=True)#run in case direction not found in case of reduced dataset
             e_apo_config_acquire()
         else:#else run brir processing from scratch
             qc_start_process_brirs()
@@ -2299,7 +2299,7 @@ def main():
                 dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
                 dpg.set_value("qc_progress_bar_brir", 1)
                 dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-                e_apo_select_direction()#run in case direction not found in case of reduced dataset
+                e_apo_select_direction(force_reset=True)#run in case direction not found in case of reduced dataset
                 if aquire_config==True or aquire_config==None:#custom parameter will be none if called by gui
                     e_apo_config_acquire()
             else:#else run brir processing from scratch
@@ -2528,7 +2528,7 @@ def main():
 
 
 
-    def e_apo_select_direction(sender=None, app_data=None, aquire_config=False):
+    def e_apo_select_direction(sender=None, app_data=None, aquire_config=False, force_reset=False):
         """ 
         GUI function to process updates in E-APO config section
         """
@@ -2589,11 +2589,13 @@ def main():
             
             #set reduced dataset to false
             dpg.set_value("qc_brir_reduce_dataset", False)
+            
             #reset progress and disable brir conv as not started yet
-            dpg.set_value("qc_e_apo_curr_brir_set", '')
-            dpg.set_value("qc_progress_bar_brir", 0)
-            dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
-            dpg.set_value("e_apo_brir_conv", False)
+            if force_reset == True:#only when triggered by apply button or toggle
+                dpg.set_value("qc_e_apo_curr_brir_set", '')
+                dpg.set_value("qc_progress_bar_brir", 0)
+                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
+                dpg.set_value("e_apo_brir_conv", False)
             
             log_string = 'Selected direction was not found. Likely due to reduced dataset size. Reduce dataset size has now been deactivated'
             hf.log_with_timestamp(log_string, logz)
@@ -2601,7 +2603,8 @@ def main():
             hf.log_with_timestamp(log_string, logz)
             
             #trigger apply brir params 
-            qc_apply_brir_params()
+            #qc_apply_brir_params()#do not use button due to cancellation logic
+            e_apo_toggle_brir(app_data=True)#use toggle = true
             
         #use updated azimuths
         brir_dict=get_brir_dict()
@@ -3757,31 +3760,31 @@ def main():
                                                                             dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rr_loaded, callback=e_apo_config_acquire)
                                                                     if j == 3:#elevation
                                                                         if i == 0:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_fl"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 1:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_fr"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 2:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_c"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 3:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_sl"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 4:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_sr"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 5:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_rl"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 6:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=e_apo_select_direction)
                                                                             with dpg.tooltip("e_apo_elev_angle_rr"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                     if j == 4:#azimuth
