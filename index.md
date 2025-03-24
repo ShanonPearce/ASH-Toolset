@@ -1,10 +1,12 @@
-The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones.
+
 
 **[Download Latest Windows Release](https://github.com/ShanonPearce/ASH-Toolset/releases)**
 
 **[Source Code](https://github.com/ShanonPearce/ASH-Toolset)**
 
 ![screenshot](https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/docs/images/ash_toolset_sample_a.png)
+
+The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones.
 
 ## Features <a name="Features"></a> 
 - **Headphone Correction** — Generate headphone correction filters in WAV format for IR convolution or as configurations for graphic equalisers.
