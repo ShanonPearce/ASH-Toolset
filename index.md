@@ -1,14 +1,9 @@
-### Table of Contents
-1. [Features](#Features)
-2. [Installation](#Installation)
-3. [Usage](#Usage)
-4. [Supporting Information](#Supporting-Information)
-5. [License](#License)
-6. [Contact](#Contact)
-7. [Acknowledgments](#Acknowledgments)
-
 # ASH Toolset
 The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones
+
+Latest Windows Release: https://github.com/ShanonPearce/ASH-Toolset/releases/latest
+
+Source Code: https://github.com/ShanonPearce/ASH-Toolset
 
 ![screenshot](https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/docs/images/ash_toolset_sample_a_small.png)
 
@@ -39,19 +34,19 @@ The app contains the following 3 tabs:
 
 ### Headphone Correction
 In the 'Quick Configuration’ tab, this tool is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
-**1**. **Select a headphone brand** to filter down on the headphone list.
-**2**. **Select a specific headphone**.
-**3**. **Select a specific sample**. Note that in the ‘Filter & Dataset export’ tab, all samples will be exported for the selected headphone.
-**4**. (‘Filter & Dataset export’ tab only) Select which files to include in the export.
+1. Select a headphone brand to filter down on the headphone list.
+2. Select a specific headphone.
+3. Select a specific sample. Note that in the ‘Filter & Dataset export’ tab, all samples will be exported for the selected headphone.
+4. (‘Filter & Dataset export’ tab only) Select which files to include in the export.
    - FIR Filters: Minimum phase FIRs in WAV format for convolution. 1 channel at specified sample rate and bit depth. This is filter type is required for the app to auto-configure 'config.txt' in Equalizer APO.
    - Stereo FIR Filters: Minimum phase FIRs in WAV format for convolution. 2 channels at specified sample rate and bit depth.
    - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with the FIR filters. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
    - Graphic EQ Filters (127 bands): Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
    - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
    - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
-**5**. **Select a sample rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated fitlers should match the sample rate of the sound device.
-**6**. **Select a bit depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-**7**. Click the **'Apply Selection'** button to apply the selected filter in Equalizer APO or click the **'Process'** button to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Outputs` but can be changed using the change folder option.
+5. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated fitlers should match the sample rate of the sound device.
+6. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+7. Click the 'Apply Selection' button to apply the selected filter in Equalizer APO or click the 'Process' button to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Outputs` but can be changed using the change folder option.
 
 
 ![hpcf steps](https://github.com/ShanonPearce/ASH-Toolset/blob/main/docs/images/hpcf_steps_small.png?raw=true)
@@ -59,56 +54,56 @@ In the 'Quick Configuration’ tab, this tool is used to apply headphone correct
 ###  Binaural Room Simulation over Headphones
 #### Quick Configuration
 In the 'Quick Configuration’ tab, this tool is used to apply customised binaural room simulations over headphones in equalizer APO. 
-**1**. **Select acoustic space** from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
-**2**. **Select Gain for Direct Sound** in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-**3**. **Select Room Target** from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
-**4**. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+1. Select acoustic space from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
+2. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
+3. Select Room Target from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
+4. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
    - In-Ear Headphones, high strength
    - In-Ear Headphones, low strength
    - Over-Ear/On-Ear Headphones, high strength
    - Over-Ear/On-Ear Headphones, low strength
-**5**. **Select Listener Type** from below options.
+5. Select Listener Type from below options.
    - Dummy Head / Head & Torso Simulator
    - Human Listener
    - User SOFA Input
-**6**. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
-**7**. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`.
-**8**. **Select a sample rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
-**9**. **Select a bit depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-**10**. Click the **'Apply Parameters'** button to apply the binaural simulation in Equalizer APO.
+6. Select Dataset from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
+7. Select Listener from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`.
+8. Select a sample rate for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
+9. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+10. Click the 'Apply Parameters' button to apply the binaural simulation in Equalizer APO.
 
 ![brir steps_qc](https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/docs/images/brir_steps_qc.png)
 
 #### Filter & Dataset export
 In the ‘Filter & Dataset export’ tab, this is used to export a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation.
-**1**. **Select acoustic space** from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
-**2**. **Select Gain for Direct Sound** in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-**3**. **Select Room Target** from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
-**4**. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+1. Select acoustic space from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
+2. Select Gain for Direct Sound in dB. Select a value between -8dB and 8dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
+3. Select Room Target from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
+4. Select Headphone Compensation from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
    - In-Ear Headphones, high strength
    - In-Ear Headphones, low strength
    - Over-Ear/On-Ear Headphones, high strength
    - Over-Ear/On-Ear Headphones, low strength
-**5**. **Select spatial resolution** from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size. Low' is recommended unless additional directions or SOFA export is required.
+5. Select spatial resolution from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size. Low' is recommended unless additional directions or SOFA export is required.
    - Low: Elevation angles ranging from -30 to 30 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
    - Medium: Elevation angles ranging from -45 to 45 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
    - High: Elevation angles ranging from -50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps. Azimuth angles ranging from 0 to 360 degrees in 5 degree steps.
    - Max: Elevation angles ranging from -40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps. Azimuth angles ranging from 0 to 360 degrees in 2 degree steps.
-**6**. **Select Listener Type** from below options.
+6. Select Listener Type from below options.
    - Dummy Head / Head & Torso Simulator
    - Human Listener
    - User SOFA Input
-**7**. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
-**8**. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`.
-**9**. **Select a sample rate** for the WAV or SOFA files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
-**10**. **Select a bit depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-**11**. **Select which files to include in the export**.
+7. Select Dataset from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
+8. Select Listener from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`.
+9. Select a sample rate for the WAV or SOFA files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated BRIRs should match the sample rate of the sound device.
+10. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+11. Select which files to include in the export.
     - Direction specific WAV BRIRs: Binaural Room Impulse Responses (BRIRs) in WAV format for convolution. One file for each source direction and 2 channels per file at specified sample rate and bit depth. This is file type is required for the app to auto-configure 'config.txt' in Equalizer APO.
     - True Stereo WAV BRIRs: True Stereo BRIR in WAV format for convolution. One file with 4 channels representing L and R speakers (LL LR RL RR) at specified sample rate and bit depth.
     - HeSuVi WAV BRIRs: BRIRs in HeSuVi compatible WAV format. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz. The directions of the channels can be configured in the 'HeSuVi Channel Configuration' tab on the right.
     - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
     - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format. The SOFA convention can be selected in the Misc. Settings section under 'Additional Tools & Settings' tab.
-**12**. Click the **'process'** button to export the binaural dataset to the output directory.
+12. Click the 'process' button to export the binaural dataset to the output directory.
 
 ![brir steps_de](https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/docs/images/brir_steps_de.png)
 
@@ -134,10 +129,10 @@ If your audio device does not support a 7.1 surround channel configuration, a vi
 
 As an alternative to above method in Equalizer APO, the generated filters can be applied using HeSuVi.
 
-**1.** If using HeSuVi for the first time, download [HeSuVi](https://sourceforge.net/projects/hesuvi/) and follow the installation and usage steps outlined in the [HeSuVi Wiki](https://sourceforge.net/p/hesuvi/wiki/Help/).
-**2.** Open or restart HeSuVi
-**3.** The binaural room simulations can be selected in the `Virtualisation` tab. The simulation can be found under the `Common HRIRs` section at the top of the list.
-**4.** The headphone correction filters can be selected in the `Equalizer` tab. The filters can be found under `_HpCFs` at the bottom of the list.
+1. If using HeSuVi for the first time, download [HeSuVi](https://sourceforge.net/projects/hesuvi/) and follow the installation and usage steps outlined in the [HeSuVi Wiki](https://sourceforge.net/p/hesuvi/wiki/Help/).
+2. Open or restart HeSuVi
+3. The binaural room simulations can be selected in the `Virtualisation` tab. The simulation can be found under the `Common HRIRs` section at the top of the list.
+4. The headphone correction filters can be selected in the `Equalizer` tab. The filters can be found under `_HpCFs` at the bottom of the list.
 
 ![HeSuVi HPCF example](https://github.com/ShanonPearce/ASH-Toolset/blob/main/docs/images/hesuvi_hpcf_example_small.png?raw=true)
 ![HeSuVi BRIR example](https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/docs/images/hesuvi_brir_example_small.png)
