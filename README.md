@@ -7,9 +7,10 @@
 2. [Background](#Background)
 3. [Getting Started](#Getting-Started)
 4. [Usage](#Usage)
-5. [License](#License)
-6. [Contact](#Contact)
-7. [Acknowledgments](#Acknowledgments)
+5. [Supporting Information](#Supporting-Information)
+6. [License](#License)
+7. [Contact](#Contact)
+8. [Acknowledgments](#Acknowledgments)
 
 # ASH Toolset
 The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones
@@ -248,6 +249,54 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 - Folders follow the same naming as above filters and binaural datasets
 - A set of IR convolution configuration files are created for each binaural dataset and for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
 - A set of IR convolution configuration files are created for each headphone correction filter
+
+## Supporting Information <a name="Supporting-Information"></a> 
+
+### Supported SOFA Conventions
+
+| Convention          | Version | SOFAConventionsVersion | Read | Write |
+|---------------------|---------|------------------------|------|-------|
+| GeneralFIR          | 1       | 1                      | Yes  | Yes   |
+| SimpleFreeFieldHRIR | 1       | 1                      | Yes  | Yes   |
+| SimpleFreeFieldHRIR | 0.6     | 0.4                    | Yes  | No    |
+| SimpleFreeFieldHRIR | 0.5     | 0.3                    | Yes  | No    |
+| GeneralFIRE         | 1       | 1                      | Yes  | No    |
+| GeneralFIRE         | 0.6     | 0.1                    | Yes  | No    |
+
+### Acoustic Spaces
+
+| Name             | Estimated RT60 (ms) |
+|------------------|---------------------|
+| Audio Lab A      | 312                 |
+| Audio Lab B      | 400                 |
+| Audio Lab C      | 567                 |
+| Audio Lab D      | 208                 |
+| Audio Lab E      | 471                 |
+| Audio Lab F      | 648                 |
+| Audio Lab G      | 370                 |
+| Audio Lab H      | 531                 |
+| Audio Lab I      | 541                 |
+| Auditorium       | 1455                |
+| Broadcast Studio | 1183                |
+| Concert Hall     | 1809                |
+| Conference Room  | 506                 |
+| Control Room     | 291                 |
+| Hall             | 1906                |
+| Large Room A     | 624                 |
+| Large Room B     | 576                 |
+| Lecture Room     | 704                 |
+| Office           | 408                 |
+| Outdoors A       | 2135                |
+| Outdoors B       | 1183                |
+| Seminar Room A   | 839                 |
+| Seminar Room B   | 710                 |
+| Small Room A     | 500                 |
+| Small Room B     | 437                 |
+| Small Room C     | 467                 |
+| Small Room D     | 463                 |
+| Studio A         | 398                 |
+| Studio B         | 723                 |
+| Tatami Room      | 518                 |
 
 
 ## License <a name="License"></a> 
