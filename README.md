@@ -53,14 +53,19 @@ Python libraries:
   pip install dearpygui-extend==0.1.3
   pip install mat73==0.63
   pip install matplotlib==3.7.0
-  pip install numpy==2.0.1
+  pip install numpy==2.2.4
+  pip install pandas==2.2.3
   pip install pyfar==0.6.5
   pip install scipy==1.11.4
   pip install soundfile==0.12.1
   pip install gdown==5.2.0
   pip install librosa==0.10.2.post1
   pip install thefuzz==0.22.1
+  pip install fuzzywuzzy==0.18.0
   pip install SOFASonix==1.0.7
+  pip install h5py==3.11.0
+  pip install noisereduce==3.0.2
+  pip install Requests==2.32.3
   ```
 Data files:
 
