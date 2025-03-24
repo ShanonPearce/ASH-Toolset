@@ -276,6 +276,58 @@ def get_alternative_url(listener_type="", dataset_name="", name_gui="", gui_logg
         
     return url
 
+def get_flip_azim_flag(listener_type="", dataset_name="", name_gui="", gui_logger=None):
+    """
+    Retrieves a flip azimuth flag based on the listener type and dataset name and gui name.
+    
+    Args:
+        listener_type (str, optional): The type of listener ('Dummy Head / Head & Torso Simulator' or 'Human Listener'). Defaults to "".
+        dataset_name (str, optional): The name of the dataset to filter by (only used for 'Human Listener'). Defaults to "".
+        name_gui (str, optional): The GUI name to match in the dataset. Defaults to "".
+        gui_logger (object, optional): A logger object for GUI-related logging. Defaults to None.
+
+    Returns:
+        bool: True if the flag is "yes", otherwise False.
+    """
+    
+    
+    try:
+    
+        flag = ""
+        
+        if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
+            
+            #HRTF related - individual npy datasets
+            #load lists from csv file
+            try:
+            
+                #directories
+                csv_directory = CN.DATA_DIR_HRIR_NPY
+                #read metadata from csv. Expects reverberation_metadata.csv
+                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file = pjoin(csv_directory, metadata_file_name)
+                with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+                    reader = DictReader(inputfile)
+                    for row in reader:#rows 2 and onward
+                        #store each row as a dictionary
+                        #append to list of dictionaries
+                        if row.get('dataset') == dataset_name and row.get('hrtf_type') ==listener_type and row.get('name_gui') ==name_gui: #added check
+                            flag = row.get('flip_azimuths_fb')
+    
+            except Exception as e:
+                log_string=f"Error loading listener list: {e}"
+                hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
+                pass
+   
+        else:
+            flag = ""
+            
+    except Exception as ex:
+        log_string=f"Error occurred: {ex}"
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+        
+    return flag.lower() == "yes" if flag else False
+
 def get_polarity(listener_type="", dataset_name="", name_gui="", gui_logger=None):
     """
     Retrieves a polarity string based on the listener type and dataset name and gui name.
@@ -658,7 +710,8 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         sofa_source_positions = loadsofa.SourcePosition    
         
         #extract data and place into npy array (resample if required)
-        hrir_out = sofa_dataset_transform(convention_name=convention_name, sofa_data_ir=sofa_data_ir, sofa_samplerate=sofa_samplerate, sofa_source_positions=sofa_source_positions, reverse_azim=False, gui_logger=gui_logger)
+        #flip_azimuths_fb = get_flip_azim_flag(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=None)
+        hrir_out = sofa_dataset_transform(convention_name=convention_name, sofa_data_ir=sofa_data_ir, sofa_samplerate=sofa_samplerate, sofa_source_positions=sofa_source_positions, flip_azimuths_fb=False, reverse_azim_rot=False, gui_logger=gui_logger)
         
         #exit if stop thread flag is true
         stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
@@ -723,14 +776,14 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         #create min phase FIR
         hrir_df_inv_fir = hf.mag_to_min_fir(hrir_fft_avg_mag_inv, crop=1, out_win_size=1024, n_fft=CN.N_FFT)
         
-        #also apply normalisation at 1khz
-        mag_range_a=CN.SPECT_SNAP_M_F0 #mag_range_a=int(CN.SPECT_SNAP_F0*n_fft/CN.FS)
-        mag_range_b=CN.SPECT_SNAP_M_F1 #mag_range_b=int(CN.SPECT_SNAP_F1*n_fft/CN.FS)
-        avg_mag = np.mean(hrir_fft_avg_mag_sm[mag_range_a:mag_range_b])
-        hrir_df_inv_fir = np.divide(hrir_df_inv_fir,avg_mag)
+        # #also apply normalisation at 1khz 3.1.1 -> disabled
+        # mag_range_a=CN.SPECT_SNAP_M_F0 #mag_range_a=int(CN.SPECT_SNAP_F0*n_fft/CN.FS)
+        # mag_range_b=CN.SPECT_SNAP_M_F1 #mag_range_b=int(CN.SPECT_SNAP_F1*n_fft/CN.FS)
+        # avg_mag = np.mean(hrir_fft_avg_mag_sm[mag_range_a:mag_range_b])
+        # hrir_df_inv_fir = np.divide(hrir_df_inv_fir,avg_mag)
         
         if CN.PLOT_ENABLE == True:
-            hf.plot_data(hrir_fft_avg_mag_sm,'hrir_fft_avg_mag_sm', normalise=1)  
+            hf.plot_data(hrir_fft_avg_mag_sm,'hrir_fft_avg_mag_sm', normalise=0)  
         
         if report_progress > 0:
             progress = 15/100
@@ -751,8 +804,22 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         for t in ts:
            t.join()
 
-   
-        #adjust levels?
+        #exit if stop thread flag is true
+        stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
+        if stop_thread == True:
+            status=2#2=cancelled
+            return status
+        
+        #apply high pass filter
+        ts = []
+        for elev in range(total_elev_hrir):
+            t = threading.Thread(target=apply_hp_to_hrirs, args = (hrir_out, elev, total_samples_hrir, total_azim_hrir, direction_matrix_process))
+            ts.append(t)
+            t.start()
+        for t in ts:
+           t.join()
+        
+        
    
         log_string = 'SOFA dataset processed'
         hf.log_with_timestamp(log_string, gui_logger)
@@ -852,7 +919,35 @@ def apply_eq_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, direc
                 hrir_out[set_id,elev,azim,chan,:] = np.zeros(total_samples_hrir)#zero out directions that wont be exported    
   
   
-def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_source_positions, reverse_azim=False, gui_logger=None, spatial_res=2):
+def apply_hp_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, direction_matrix_process):
+    """
+    Function applies equalisation to brirs in numpy array
+    :param hrir_out: numpy array containing brirs
+    :return: None
+    """ 
+    set_id=0
+    f_crossover_var=120
+    for azim in range(total_azim_hrir):
+        for chan in range(CN.TOTAL_CHAN_BRIR):  
+            
+            #only apply equalisation if direction is in direction matrix
+            if direction_matrix_process[elev][azim][0][0] == 1: 
+            
+                #convolve BRIR with filters
+                hrir_eq_b = np.copy(hrir_out[set_id,elev,azim,chan,:])#
+                #apply DF eq
+                hrir_eq_b = hf.signal_highpass_filter(hrir_eq_b, f_crossover_var, CN.FS, CN.ORDER)
+                hrir_out[set_id,elev,azim,chan,:] = np.copy(hrir_eq_b[0:total_samples_hrir])
+            
+            else:
+                hrir_out[set_id,elev,azim,chan,:] = np.zeros(total_samples_hrir)#zero out directions that wont be exported    
+  
+  
+    
+  
+  
+  
+def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_source_positions, flip_azimuths_fb=False, reverse_azim_rot=False, gui_logger=None, spatial_res=2):
 
     """ 
     Function peforms the following transformations:
@@ -866,7 +961,7 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
         sofa_data_ir (npy array): data IR array from sofa file, usually 3 dimensions, measurements x receivers x samples
         sofa_samplerate (int):  sample rate
         sofa_source_positions(npy array):source positions array from sofa file, 3 spherical dimensions, azimuth (deg) x elevation (deg) x distance, 2d array: position x coordinate tuple
-        reverse_azim (bool): flag to reverse azimuth direction, positive = CCW by default
+        reverse_azim_rot (bool): flag to reverse azimuth direction, positive = CCW by default
     """
     hrir_out=None
     try:
@@ -918,7 +1013,7 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
             for azim in range(output_azims):
                 azim_deg = int(azim*azim_nearest)
                 #get nearest direction
-                nearest_dir_idx = sofa_find_nearest_direction(sofa_source_positions=sofa_source_positions, target_elevation=elev_deg, target_azimuth=azim_deg, reverse_azim=reverse_azim)
+                nearest_dir_idx = sofa_find_nearest_direction(sofa_source_positions=sofa_source_positions, target_elevation=elev_deg, target_azimuth=azim_deg, flip_azimuths_fb=flip_azimuths_fb, reverse_azim_rot=reverse_azim_rot)
                 
                 #grab HRIR of this direction
                 hrir_selected=np.zeros((total_chan_hrir,n_samples))
@@ -951,7 +1046,7 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
     return hrir_out
 
 
-def sofa_find_nearest_direction(sofa_source_positions, target_elevation, target_azimuth, reverse_azim=False, spatial_res=2, gui_logger=None):
+def sofa_find_nearest_direction(sofa_source_positions, target_elevation, target_azimuth, flip_azimuths_fb=False, reverse_azim_rot=False, spatial_res=2, gui_logger=None):
     """
     Function returns an int corresponding to index of nearest available azimuth and elevation angle for a specified hrtf and azimuth and elevation
     Used to determine elevations and azimuths available to read from sofa dataset
@@ -962,8 +1057,15 @@ def sofa_find_nearest_direction(sofa_source_positions, target_elevation, target_
     try:
         
         target_elevation = int(target_elevation)
-        if reverse_azim == True and int(target_azimuth)>0:
-            target_azimuth = 360-int(target_azimuth)
+        target_azimuth = int(target_azimuth)
+        if reverse_azim_rot == True and target_azimuth>0:
+            target_azimuth = 360-target_azimuth
+        elif flip_azimuths_fb == True:
+            if target_azimuth <= 180:
+                target_azimuth = 180-target_azimuth
+            else:
+                target_azimuth = 180+360-target_azimuth
+            
         else:
             target_azimuth = int(target_azimuth)
         n_positions = sofa_source_positions.shape[0]
