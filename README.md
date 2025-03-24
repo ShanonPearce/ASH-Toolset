@@ -14,7 +14,7 @@
 # ASH Toolset
 The Audio Spatialisation for Headphones Toolset is a set of tools for headphone correction and binaural synthesis of spatial audio systems on headphones
 
-![screenshot](docs/images/ash_toolset_sample.png)
+![screenshot](docs/images/ash_toolset_sample_a.png)
 
 ## Features <a name="Features"></a> 
 - **Headphone Correction** — Generate headphone correction filters in WAV format for IR convolution or as configurations for graphic equalisers.
@@ -138,7 +138,7 @@ In the 'Quick Configuration’ tab, this tool is used to apply customised binaur
 9. Select a bit depth for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
 10. Click the 'Apply Parameters' button to apply the binaural simulation in Equalizer APO.
 
-![brir steps](docs/images/brir_steps.png)
+![brir steps](docs/images/brir_steps_qc.png)
 
 #### Filter & Dataset export
 In the ‘Filter & Dataset export’ tab, this is used to export a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation.
@@ -171,7 +171,7 @@ In the ‘Filter & Dataset export’ tab, this is used to export a customised bi
     - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format. The SOFA convention can be selected in the Misc. Settings section under 'Additional Tools & Settings' tab.
 12. Click the 'process' button to export the binaural dataset to the output directory.
 
-![brir steps](docs/images/brir_steps.png)
+![brir steps](docs/images/brir_steps_de.png)
 
 ### Using the Correction Filters and Binaural Simulations
 
