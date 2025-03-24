@@ -15,7 +15,7 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 
 ## Windows Installation <a name="Installation"></a> 
 
-1.  Download the [latest release](https://github.com/ShanonPearce/ASH-Toolset/releases) and run the installer or download the portable package and unzip to the location of your choice.
+1.  Download the [latest release](https://github.com/ShanonPearce/ASH-Toolset/releases/latest) and run the installer or download the portable package and unzip to the location of your choice.
 2.  When running the executable, if a Microsoft Defender Smartscreen warning is presented, click 'More info' and 'Run anyway'. This warning may show on some releases due to the code signing certificate of the executable building reputation.
 3.  (optional) If using Equalizer APO for audio processing, download [Equalizer APO](http://sourceforge.net/projects/equalizerapo) and follow the Equalizer APO [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial). 
 4.  (optional) If using HeSuVi for audio processing, download [HeSuVi](https://sourceforge.net/projects/hesuvi/) and follow the installation and usage steps outlined in the [HeSuVi Wiki](https://sourceforge.net/p/hesuvi/wiki/Help/).
