@@ -1104,6 +1104,7 @@ def roll_distribute_concatenate_npy_datasets(input_dir):
 
     data_list = []
     cumulative_sum = None  # Store the cumulative sum of arrays in dimension 4
+    n_fft=CN.N_FFT
 
     for filename in sorted(os.listdir(input_dir)):
         if filename.endswith(".npy"):
@@ -1115,6 +1116,12 @@ def roll_distribute_concatenate_npy_datasets(input_dir):
                     continue
 
                 dim1, dim2, dim3, dim4 = data.shape
+                
+                # Crop dimension 4 if it exceeds n_fft
+                if dim4 > n_fft:
+                    data = data[:, :, :, :n_fft]
+                    print('Cropped to n_fft')
+                    dim4 = n_fft
 
                 # Calculate current sum
                 current_sum = np.sum(data, axis=(0, 1, 2))  # Sum along dimensions 0, 1, and 2
