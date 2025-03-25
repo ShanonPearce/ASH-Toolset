@@ -212,6 +212,123 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 | Studio B         | 723                 |
 | Tatami Room      | 518                 |
 
+## Changelog <a name="Changelog"></a> 
+
+Version 3.1.1:
+- Fixed issue causing duplicate listener names under some datasets
+- Fixed issue causing inconsistent gains across different HRTF datasets
+- Removed incompatible HRTF datasets
+
+Version 3.1.0:
+- Added new Headphone Correction Filters. Refer to hpcf_database_changelog for details.
+- Added new listeners from various public HRTF datasets. Listener types are split into dummy head and individual listener. Some selections will require an internet connection as the source dataset will be automatically downloaded from the web. 
+- Added the ability to load SOFA format HRTF datasets. User SOFA files must be placed in '\ASH Toolset\_internal\data\user\SOFA' folder. SOFA files will be automatically listed under ‘Listener’ once ‘Listener Type’ is set to ‘User SOFA Input’.
+- New acoustic spaces added: Small Room A, Small Room B, Small Room C, Small Room D, Large Room A, Large Room B
+- Added option to upmix from 2.0 stereo to 7.1 surround
+- Added ability to select SOFA convention for SOFA outputs. Option is located under Misc. Settings.
+- Added option to reduce binaural dataset size in quick configuration to reduce processing time and files written. Processes a smaller dataset containing only required directions. 
+- Added ability to configure directions (elevations and azimuths) for Hesuvi WAV outputs. Option is located under ‘HeSuVi Channel Configurations’ tab.
+- Added option to auto adjust preamp for clipping prevention in Equalizer APO
+- Fixed issue causing SOFA export to fail in the windows app
+- Fixed issue causing reset settings button to not reset channel configs
+- Fixed issue on app start sometimes causing convolution to be activate for a headphone filter that is not yet applied
+- Fixed issue causing convolution to be disabled once auto apply is deselected 
+- Various GUI changes including new tab for listener selection, additional supporting information, splash screen.
+
+
+Version 3.0.4:
+- Added an option to add a delay between the direct sound and early reflections. ”Early Reflection Delay (ms)” is located under “Misc. Settings” in “Additional Tools & Log” tab. This will increase the time between the direct sound and early reflections and can be used to increase perceived distance.
+
+Version 3.0.3:
+- BRIRs are now automatically trimmed to remove empty tails and reduce their lengths
+- Fixed issue causing gains to not be adjusted when processing a new binaural simulation in quick configuration when headphone correction is not enabled
+- Adjusted colours to ensure each tab has a consistent colour theme
+- Minor improvement to extension of low frequency response below 20Hz
+
+Version 3.0.2:
+- Fixed issue causing incorrect simulation name to be shown when parameters are changed during processing of new simulation
+- Fixed issue causing the new Force Left/Right Symmetry option to be ignored for binaural dataset exports
+
+Version 3.0.1:
+- Added option to force symmetry of HATS / dummy heads by mirroring left or right sides. This option is located under Additional Tools & Log -> Misc. Settings
+- ‘Include hesuvi.txt’ command in Equalizer APO will automatically be disabled if quick configuration is active in ASH toolset
+- Regenerated ‘broadcast studio’ and ‘hall’ acoustic spaces resulting in some minor improvements to reverberation quality
+
+Version 3.0.0:
+- Added ‘Quick Configuration’ tab which can be used to apply headphone correction and binaural room simulation in Equalizer APO
+- Added ‘Filter & Dataset export’ tab which can be used to export correction filters and binaural datasets to a local directory
+- Added ‘Additional Tools & Log’ tab for miscellaneous options and log messages
+- Improved efficiency of binaural dataset generation resulting in faster processing times
+- Various GUI changes
+- Regenerated audio_lab_h acoustic space resulting in some minor improvements to reverberation quality
+- Minor improvements to low frequency extension
+
+Version 2.4.0:
+- Added new acoustic spaces: Audio Lab I, Lecture Room, Outdoors B, Seminar Room B, Studio B
+- Added  approx. 25 new headphone correction filters
+- Gains are now more consistent across acoustic spaces
+- Data output sub-directory renamed to ‘ASH-Outputs’
+- Added option to auto check for updates on app start. Located under ‘Additional Tools & Settings’
+- Added option to check for updates to acoustic spaces. Located under ‘Additional Tools & Settings’
+- Regenerated existing acoustic spaces resulting in some minor improvements to reverberation quality
+- Minor changes made to GUI
+- Fixed issue causing check for headphone filter updates to fail
+- Fixed issue causing current simulation tag to not update after deleting a dataset
+
+Version 2.3.0:
+- Fixed issue causing HeSuVi exports to fail for acoustic spaces with high reverberation times
+- Improved extension of low frequency response below 20Hz
+- Improvements made to headphone compensation for over ear & on ear headphone types
+- GUI now shows reverberation times and spatial resolution breakdown under ‘Supporting information’ tab
+- Output locations section now show directories for main outputs and HeSuVi outputs separately
+
+Version 2.2.0:
+- Added options for different types of acoustic spaces including audio lab, control room, studio, hall, and more.
+- Added filter previews for HRTFs and headphone compensation
+- Added additional variants for existing room targets with flat mid & high frequencies
+- Added button to cancel processing of binaural dataset
+- Minor GUI changes
+- Filter preview of first headphone no longer shown on app start
+- Fixed issue causing front/back directions to be reversed for the MMHR HATS
+- Fixed issue causing reduced gains and lack of extension in sub frequencies
+
+Version 2.1.0:
+- Added options to select spatial resolution of BRIR dataset. This will increase number of source directions available and increase size of exported dataset
+- Added option to export BRIRs to SOFA format. Only available for High and Max spatial resolution options
+- Fixed issue causing gains to vary between directions
+- Fixed issue causing errors when performing equalizer apo configuration updates when BRIR list was empty
+- Fixed issue causing settings to not be saved when making selections while BRIR processing is running
+- Updated GUI. Output directory selector is now located under filter creation section. Developer tools are now hidden in main release.
+- Added functions to perform head pose tracking via webcam. Currently experimental and can only be enabled under developer tools in the dev distribution
+
+Version 2.0.0:
+- Note: it is recommended to delete any BRIRs exported from previous versions before using the new auto-configure config.txt feature in V2.0.0
+- Added functions to browse exported filters and auto-configure config.txt in Equalizer APO to apply selected filters
+- Added functions to delete exported HpCF or BRIR filters
+- Added sliders for reverberation time and direct gain
+- Added function to reset settings to default. Located under additional tools and settings
+- Added function to show/hide sections of the app and autosize window on app start. Located under additional tools and settings
+- Rearranged GUI elements. Output directory selector is now located under additional tools and settings
+- Reduced size of app window when display resolution is smaller than app window size
+
+Version 1.2.0:
+- Added new HATS / dummy heads: Neumann KU 100 (TH Köln), FABIAN HATS, KEMAR-L (MIT), KEMAR (PKU-IOA).
+- Added new options for headphone compensation. High strength or low strength variants can be selected.
+- Added function to check for latest app version and hpcf dataset version. Located in 'additional tools' section.
+- Added function to delete saved files (BRIRs, HpCFs) from output folder. Located in 'additional tools' section.
+- Fixed issue in GUI. Previously saved settings were not loaded correctly when reopening the app.
+- Fixed issue causing inconsistent direct gains between HATS.
+
+Version 1.1.0:
+- Added WAV export options for 24 bit and 32 bit depths along with 48kHz and 96kHz sample rates.
+- Added search boxes to filter down on brand and headphone.
+- Improved quality of resampled IRs.
+- Adjusted gains of Equalizer APO configurations to align levels of BRIRs across different dummy heads.
+- Added new HpCFs for a range of headphones. Refer to hpcf_database_changelog for list of new additions.
+
+Version 1.0.0:
+- Initial release
+
 ## License <a name="License"></a> 
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
 
