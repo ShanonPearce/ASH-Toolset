@@ -1,4 +1,4 @@
-**A Windows distribution of this project is available here: [latest release](https://github.com/ShanonPearce/ASH-Toolset/releases/latest)**
+**A Windows distribution of this project is available here: [https://sourceforge.net/projects/ash-toolset/](https://sourceforge.net/projects/ash-toolset/)**
 
 ***
 
