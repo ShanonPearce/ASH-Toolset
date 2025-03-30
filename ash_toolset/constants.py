@@ -46,10 +46,10 @@ DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
 
 #crossover frequency for low frequency BRIR integration
 ENABLE_SUB_INTEGRATION = True
-F_CROSSOVER = 120#125
 F_CROSSOVER_HI = 140#140
 F_CROSSOVER_MID = 130
-F_CROSSOVER_LOW = 110#110
+F_CROSSOVER = 120#120, default
+F_CROSSOVER_LOW = 85#110,85
 CUTOFF_SUB = F_CROSSOVER
 PEAK_TO_PEAK_WINDOW_SUB = int(np.divide(SAMP_FREQ,CUTOFF_SUB)*0.95)#np.divide(SAMP_FREQ,CUTOFF_SUB)  #peak to peak within a sufficiently small sample window
 PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
@@ -59,7 +59,7 @@ T_SHIFT_INTERVAL = 25#50
 MIN_T_SHIFT = -1500
 MAX_T_SHIFT = 0
 NUM_INTERVALS = int(np.abs((MAX_T_SHIFT-MIN_T_SHIFT)/T_SHIFT_INTERVAL))
-ORDER=8#6,7
+ORDER=8#8
 DELAY_WIN_MIN_T = 0
 DELAY_WIN_MAX_T = 1200#1500
 GRP_DELAY_MIN_F = 30
@@ -261,10 +261,10 @@ SPATIAL_RES_ELEV_MIN_OUT=[-30, -45, -50, -40 ]#reduced set
 SPATIAL_RES_ELEV_MAX_OUT=[30, 45, 50, 40 ]#reduced set
 SPATIAL_RES_ELEV_NEAREST=[5, 5, 5, 2]#as per hrir dataset
 SPATIAL_RES_AZIM_NEAREST=[5, 5, 5, 2]#as per hrir dataset
-SPATIAL_RES_ELEV_NEAREST_PR=[5, 5, 5, 2]#3.1.0 increased processing resolution from [15, 15, 5, 2]
+SPATIAL_RES_ELEV_NEAREST_PR=[15, 15, 5, 2]#3.1.0 increased processing resolution from [15, 15, 5, 2]
 SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#
-SPATIAL_RES_ELEV_NEAREST_PR_R=[15, 15, 5, 2]#
-SPATIAL_RES_AZIM_NEAREST_PR_R=[5, 5, 5, 2]#
+# SPATIAL_RES_ELEV_NEAREST_PR_R=[15, 15, 5, 2]#
+# SPATIAL_RES_AZIM_NEAREST_PR_R=[5, 5, 5, 2]#
 SPATIAL_RES_ELEV_NEAREST_OUT=[15, 15, 5, 2]#
 SPATIAL_RES_AZIM_NEAREST_OUT=[5, 5, 5, 2]#
 
@@ -294,8 +294,8 @@ EAPO_GAIN_ADJUST = 0.9*1.1*1.1*1.1
 EAPO_QF_ADJUST = 0.5*0.8
 HPCF_FIR_LENGTH = 384#was 1024, then 512
 #gui
-DIRECT_GAIN_MAX=8#6
-DIRECT_GAIN_MIN=-8#-6
+DIRECT_GAIN_MAX=10#8
+DIRECT_GAIN_MIN=-10#-8
 EAPO_ERROR_CODE=501
 ER_RISE_MAX=10#in ms
 ER_RISE_MIN=0#
@@ -392,15 +392,15 @@ try:
             name_src = row.get('name_src')
             if low_rt_flag == "Yes":
                 AC_SPACE_LIST_LOWRT60.append(name_src)
-            low_fc_flag = row.get('low_fc')
-            mid_fc_flag = row.get('mid_fc')
-            hi_fc_flag = row.get('high_fc')
-            if low_fc_flag == "Yes":
-                AC_SPACE_LIST_LOW_FC.append(name_src)
-            if mid_fc_flag == "Yes":
-                AC_SPACE_LIST_MID_FC.append(name_src)
-            if hi_fc_flag == "Yes":
-                AC_SPACE_LIST_HI_FC.append(name_src)
+            # low_fc_flag = row.get('low_fc')
+            # mid_fc_flag = row.get('mid_fc')
+            # hi_fc_flag = row.get('high_fc')
+            # if low_fc_flag == "Yes":
+            #     AC_SPACE_LIST_LOW_FC.append(name_src)
+            # if mid_fc_flag == "Yes":
+            #     AC_SPACE_LIST_MID_FC.append(name_src)
+            # if hi_fc_flag == "Yes":
+            #     AC_SPACE_LIST_HI_FC.append(name_src)
 
 except Exception:
     pass

@@ -22,6 +22,7 @@ import json
 from datetime import date
 from datetime import datetime
 import glob
+import sys
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -30,7 +31,8 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict=None, sofa_conv=None):
+def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=CN.SAMP_FREQ, 
+                bit_depth='PCM_24', spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict={}, sofa_conv=None, use_dict_list=False, brir_dict_list=[]):
     """
     Function to export a customised BRIR to WAV files
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
@@ -51,18 +53,22 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
     
     # get the start time
     st = time.time()
-
+    brir_data =[]
     try:
         
         log_string = 'Preparing BRIRs for export'
         hf.log_with_timestamp(log_string, gui_logger) 
     
-        total_elev_brir = len(brir_arr)
-        total_azim_brir = len(brir_arr[0])
-        total_chan_brir = len(brir_arr[0][0])
-        total_samples_brir = len(brir_arr[0][0][0])    
-        base_elev_idx = total_elev_brir//2
-    
+        if use_dict_list == False:
+            total_samples_brir = len(brir_arr[0][0][0])    
+            #gain adjustment
+            max_amp = np.max(np.abs(brir_arr))
+        else:
+            sample_dict = brir_dict_list[0]
+            sample_brir=sample_dict["out_wav_array"]
+            total_samples_brir = len(sample_brir)    
+            max_amp=1#already adjusted gain
+  
         #hesuvi path
         if 'EqualizerAPO' in primary_path:
             hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
@@ -71,11 +77,9 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
     
         #larger reverb times will need additional samples
         ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
-        est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
         ac_gain = CN.AC_SPACE_GAINS[ac_space_int]
  
-        #gain adjustment
-        max_amp = np.max(np.abs(brir_arr))
+        
         
         #reduce gain if direct gain db is less than max value
         reduction_gain_db = (CN.DIRECT_GAIN_MAX-direct_gain_db)*-1/2
@@ -83,33 +87,22 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
         reduction_gain_db_he = (reduction_gain_db+ac_gain)
         reduction_gain_he = hf.db2mag(reduction_gain_db_he)
         
-        #estimate output array length based on RT60
-        if est_rt60 <=400:
-            out_wav_samples_44 = 33075
-        elif est_rt60 <750:
-            out_wav_samples_44 = 44100
-        elif est_rt60 <1000:
-            out_wav_samples_44 = 55125
-        elif est_rt60 <=1250:
-            out_wav_samples_44 = 63945    
-        elif est_rt60 <=1500:
-            out_wav_samples_44 = 99225 
-        else:
-            out_wav_samples_44 = 127890
-        if out_wav_samples_44 > total_samples_brir:
-            out_wav_samples_44 = max(total_samples_brir-1000,4410)  
-            
-        #attempt to trim array. Calculate point where amplitude falls below threshold, later discards remaining samples
-        ref_array = np.abs(brir_arr[base_elev_idx][0][0][0:out_wav_samples_44])/max_amp
-        crop_samples = hf.get_crop_index(ref_array)
-        if crop_samples > 4000 and crop_samples < out_wav_samples_44:
-            out_wav_samples_44=crop_samples
-        #print(crop_samples)
-        
+        #output array length = input array length due to being already cropped
+        out_wav_samples_44 = total_samples_brir
         #also calculate for 48kHz
         out_wav_samples_48 = round(out_wav_samples_44 * float(48000) / 44100) 
             
-
+        if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
+            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+            elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
+            total_azim_brir = int(360/azim_nearest)#should be identical to above lengths
+            total_elev_brir = int((elev_max-elev_min)/elev_nearest +1)#should be identical to above lengths
+        else:
+            raise ValueError('Invalid spatial resolution')
         
         #
         ## write set of WAVs
@@ -125,84 +118,138 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
             
             if reduce_dataset == True:
                 #case for reduced dataset
-                
-                if os.path.exists(out_file_dir_wav):
-                    try:
-                        files = glob.glob(pjoin(out_file_dir_wav, '*')) #get all files in directory
-                        for f in files:
-                            os.remove(f) #delete each file.
-                        log_string = f"Cleared existing files from directory: {out_file_dir_wav}"
-                        hf.log_with_timestamp(log_string, gui_logger) 
-                    except Exception as e:
-                        log_string = f"Error clearing files from directory: {e}"
-                        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1, exception=e)#log warning
-                else:
-                    os.makedirs(out_file_dir_wav)
-                
                 direction_matrix_out = generate_direction_matrix(spatial_res=spatial_res, variant=3, brir_dict=brir_dict)
             else:
                 #regular case
                 direction_matrix_out = generate_direction_matrix(spatial_res=spatial_res, variant=2)
+            #also a matrix for storing select brirs
+            direction_matrix_store = generate_direction_matrix(spatial_res=spatial_res, variant=1)
             
-                    
-            if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-                elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-                elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
-                elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
-                elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-                azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
-                azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
+            #full brir dataset not provided, using dictionary list
+            if use_dict_list == True:
+                for elev in range(total_elev_brir):
+                    elev_deg = int(elev_min + elev*elev_nearest)
+                    elev_deg_wav=elev_deg
+                    for azim in range(total_azim_brir):
+                        azim_deg = int(azim*azim_nearest)
+                        azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
+                        if direction_matrix_out[elev][azim][0][0] == 1:  
+                            
+                            for data_dict in brir_dict_list:
+                                elev_deg_dict = data_dict["elev_deg_wav"]
+                                azim_deg_dict = data_dict["azim_deg_wav"]
+                                
+                                if elev_deg_dict == elev_deg_wav and azim_deg_dict == azim_deg_wav:#matching direction found
+                                    out_wav_array = data_dict["out_wav_array"]
+                                    #write wav
+                                    out_file_name = 'BRIR' + '_E' + str(elev_deg_wav) + '_A' + str(azim_deg_wav) + '.wav'
+                                    
+                                    out_file_path = pjoin(out_file_dir_wav,out_file_name)
+                                    
+                                    #create dir if doesnt exist
+                                    output_file = Path(out_file_path)
+                                    output_file.parent.mkdir(exist_ok=True, parents=True)
+                                    
+                                    #resample if samp_freq is not 44100
+                                    if samp_freq != CN.SAMP_FREQ:
+                                        out_wav_array = hf.resample_signal(out_wav_array, new_rate = samp_freq)
+                                    
+                                    hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
+            #normal process, use full dataset
             else:
-                raise ValueError('Invalid spatial resolution')
+                #removal of old files
+                if reduce_dataset == True:
+                    #case for reduced dataset, remove previous files
+                    if os.path.exists(out_file_dir_wav):
+                        try:
+                            files = glob.glob(pjoin(out_file_dir_wav, '*')) #get all files in directory
+                            for f in files:
+                                os.remove(f) #delete each file.
+                            log_string = f"Cleared existing files from directory: {out_file_dir_wav}"
+                            hf.log_with_timestamp(log_string, gui_logger) 
+                        except Exception as e:
+                            log_string = f"Error clearing files from directory: {e}"
+                            hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1, exception=e)#log warning
+                    else:
+                        os.makedirs(out_file_dir_wav)
+  
+                #print(str(elev_min))
+                #print(str(elev_nearest))
+                
+                #write stereo wav for each elev and az
+                
+                for elev in range(total_elev_brir):
+                    elev_deg = int(elev_min + elev*elev_nearest)
+                    elev_deg_wav=elev_deg
+                    for azim in range(total_azim_brir):
+                        azim_deg = int(azim*azim_nearest)
+                        azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
+                        
+                        if direction_matrix_out[elev][azim][0][0] == 1 or direction_matrix_store[elev][azim][0][0] == 1: 
+                            out_wav_array=np.zeros((out_wav_samples_44,2))
+                            #grab BRIR
+                            out_wav_array[:,0] = np.copy(brir_arr[elev][azim][0][0:out_wav_samples_44])*reduction_gain/max_amp#L
+                            out_wav_array[:,1] = np.copy(brir_arr[elev][azim][1][0:out_wav_samples_44])*reduction_gain/max_amp#R
+                            
+                        if direction_matrix_store[elev][azim][0][0] == 1:  
+                            # Create a dictionary with the required variables
+                            data_dict = {
+                                "elev_deg_wav": elev_deg_wav,
+                                "azim_deg_wav": azim_deg_wav,
+                                "out_wav_array": np.copy(out_wav_array) # Keep as NumPy array if suitable, before resampling
+                            }
         
-            #print(str(elev_min))
-            #print(str(elev_nearest))
-            
-            
-            
-            #write stereo wav for each elev and az
-            for elev in range(total_elev_brir):
-                elev_deg = int(elev_min + elev*elev_nearest)
-                for azim in range(total_azim_brir):
-                    azim_deg = int(azim*azim_nearest)
-                    azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
-                    if direction_matrix_out[elev][azim][0][0] == 1:  
+                            # Append the dictionary to the list for later use
+                            brir_data.append(data_dict)
+                            
+                        if direction_matrix_out[elev][azim][0][0] == 1:  
+                            #write wav
+                            out_file_name = 'BRIR' + '_E' + str(elev_deg_wav) + '_A' + str(azim_deg_wav) + '.wav'
+                            
+                            out_file_path = pjoin(out_file_dir_wav,out_file_name)
+                            
+                            #create dir if doesnt exist
+                            output_file = Path(out_file_path)
+                            output_file.parent.mkdir(exist_ok=True, parents=True)
+                            
+                            #resample if samp_freq is not 44100
+                            if samp_freq != CN.SAMP_FREQ:
+                                out_wav_array = hf.resample_signal(out_wav_array, new_rate = samp_freq)
+                            
+                            hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
+                            
                         
-                        out_wav_array=np.zeros((out_wav_samples_44,2))
-                        #grab BRIR
-                        out_wav_array[:,0] = np.copy(brir_arr[elev][azim][0][0:out_wav_samples_44])*reduction_gain/max_amp#L
-                        out_wav_array[:,1] = np.copy(brir_arr[elev][azim][1][0:out_wav_samples_44])*reduction_gain/max_amp#R
-                        
-                        #write wav
-                        out_file_name = 'BRIR' + '_E' + str(elev_deg) + '_A' + str(azim_deg_wav) + '.wav'
-                        
-                        out_file_path = pjoin(out_file_dir_wav,out_file_name)
-                        
-                        #create dir if doesnt exist
-                        output_file = Path(out_file_path)
-                        output_file.parent.mkdir(exist_ok=True, parents=True)
-                        
-                        #resample if samp_freq is not 44100
-                        if samp_freq != CN.SAMP_FREQ:
-                            out_wav_array = hf.resample_signal(out_wav_array, new_rate = samp_freq)
-                        
-                        hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
     
+                # #save dict list within gui element
+                # dpg.configure_item('e_apo_brir_conv',user_data=brir_data)
+                
+                # # Calculate the memory usage of the list of dictionaries
+                # memory_usage_bytes = 0
+                # for data_dict in brir_data:
+                #     memory_usage_bytes += sys.getsizeof(data_dict["elev_deg_wav"])
+                #     memory_usage_bytes += sys.getsizeof(data_dict["azim_deg_wav"])
+                #     memory_usage_bytes += data_dict["out_wav_array"].nbytes  # Get size of NumPy array
+                # memory_usage_mb = memory_usage_bytes / (1024 * 1024)  # Convert bytes to megabytes
+                # print(f"Memory usage of the dictionary list: {memory_usage_mb:.2f} MB")
+    
+            #finished
             log_string = 'BRIR WAV set saved to: ' + str(out_file_dir_wav)
             hf.log_with_timestamp(log_string, gui_logger) 
+  
+            
 
         #
         ## write SOFA file
         #
          
-        if sofa_export == True:
+        if sofa_export == True and use_dict_list == False:
             export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
     
         #
         ## write set of HESUVI WAVs
         #
         
-        if brir_ts_export == True or hesuvi_export == True:
+        if (brir_ts_export == True or hesuvi_export == True) and use_dict_list == False:
         
             if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
                 elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
@@ -228,7 +275,7 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
                 selected_az=0
                 selected_elev=0
                 #change azimuth depending on source azim ID
-                if brir_dict is not None: 
+                if brir_dict: 
                     if n == 0 :
                         selected_elev=int(brir_dict.get('h_elev_c'))
                         selected_az=int(brir_dict.get('h_azim_c'))
@@ -328,7 +375,7 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
                     brir_out_44_ts[3,:]=data_pad[0:out_wav_samples_44,1]
             
             
-        if brir_ts_export == True:
+        if brir_ts_export == True and use_dict_list == False:
             #
             #true stereo
             #
@@ -351,7 +398,7 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
             log_string = 'BRIR WAV True stereo saved to: ' + str(out_file_dir_wav)
             hf.log_with_timestamp(log_string, gui_logger) 
         
-        if hesuvi_export == True:
+        if hesuvi_export == True and use_dict_list == False:
             
             #
             #hesuvi 44khz
@@ -401,14 +448,14 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
         
-        
+    return brir_data#return dict list even if empty
         
 
-def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
+def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
     """
     Function returns a numpy array containing a matrix of elevations and azimuths marked for export (variant) or processing
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
-    :param variant: int, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 3 = reduce dataset flagged (specified directions), 0 = no reduction
+    :param variant: int,  0 = full range for processing, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 3 = reduce dataset wav flagged (specified directions),
     """
 
     try:
@@ -420,11 +467,9 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
             elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
             elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            elev_nearest_process_r=CN.SPATIAL_RES_ELEV_NEAREST_PR_R[spatial_res]
             elev_nearest_out=CN.SPATIAL_RES_ELEV_NEAREST_OUT[spatial_res] 
             azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
-            azim_nearest_process_r=CN.SPATIAL_RES_AZIM_NEAREST_PR_R[spatial_res] 
             azim_nearest_out=CN.SPATIAL_RES_AZIM_NEAREST_OUT[spatial_res] 
         else:
             raise ValueError('Invalid spatial resolution')
@@ -439,7 +484,7 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
         elev_list = []
         azim_list = []
         #grab elev and azim data for reduced dataset case
-        if variant == 3 and brir_dict is not None: 
+        if variant == 3 and brir_dict: 
             elev_list=(brir_dict.get('elev_list'))
             azim_list=(brir_dict.get('azim_list'))
 
@@ -450,13 +495,9 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
                 azim_deg = int(azim*azim_nearest)
                 azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
                 
-                #reduced dataset case - processing
-                if variant == 4:
-                    if elev_deg%elev_nearest_process_r == 0 and azim_deg%azim_nearest_process_r == 0:  
-                        #populate matrix with 1 if direction applicable
-                        direction_matrix[elev][azim][0][0] = 1
-                #reduced dataset case - post processing and wav output
-                elif variant == 3:
+ 
+                #reduced dataset flagged case - wav output
+                if variant == 3:
                     if elev_deg in elev_list and (azim_deg_wav in azim_list or azim_deg in CN.AZIM_EXTRA_RANGE):
                         #populate matrix with 1 if direction applicable
                         direction_matrix[elev][azim][0][0] = 1
@@ -468,7 +509,7 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
                             #populate matrix with 1 if direction applicable
                             direction_matrix[elev][azim][0][0] = 1
                     elif spatial_res == 2 or spatial_res == 3: 
-                        if variant == 2:#wav export variant is different for high and max
+                        if variant == 2:#wav export variant is different only for high and max
                             if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0:  
                                 #populate matrix with 1 if direction applicable
                                 direction_matrix[elev][azim][0][0] = 1
@@ -476,12 +517,8 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict=None):
                             if elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0:  
                                 #populate matrix with 1 if direction applicable
                                 direction_matrix[elev][azim][0][0] = 1
-                    else:
-                        if (elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0):
-                            #populate matrix with 1 if direction applicable
-                            direction_matrix[elev][azim][0][0] = 1
- 
-                else:
+
+                else:#processing matrix
                     if (elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0):
                         #populate matrix with 1 if direction applicable
                         direction_matrix[elev][azim][0][0] = 1

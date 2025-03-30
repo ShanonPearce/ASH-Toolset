@@ -140,7 +140,6 @@ def main():
     e_apo_hpcf_sel_default=''
     e_apo_brir_curr_default=''
     e_apo_brir_sel_default=''
-    brir_reduce_dataset_default=True
     tab_selected_default=0
     hrtf_symmetry_default=CN.HRTF_SYM_LIST[0]
     er_rise_default=0
@@ -228,7 +227,6 @@ def main():
     e_apo_brir_curr_loaded = e_apo_brir_curr_default
     e_apo_brir_sel_loaded = e_apo_brir_sel_default
     e_apo_brir_sel_loaded = e_apo_brir_sel_default
-    brir_reduce_dataset_loaded=brir_reduce_dataset_default
     qc_brir_hp_type_loaded=qc_brir_hp_type_default
     qc_hrtf_loaded=hrtf_default
     qc_room_target_loaded=qc_room_target_default
@@ -339,7 +337,6 @@ def main():
             e_apo_hpcf_sel_loaded = config['DEFAULT']['hpcf_selected']
             e_apo_brir_curr_loaded = config['DEFAULT']['brir_set_current']
             e_apo_brir_sel_loaded = config['DEFAULT']['brir_set_selected']
-            brir_reduce_dataset_loaded = ast.literal_eval(config['DEFAULT']['brir_reduce_dataset'])
             audio_channels_loaded=config['DEFAULT']['channel_config']
             tab_selected_loaded=int(config['DEFAULT']['tab_selected']) 
             qc_brir_hp_type_loaded = config['DEFAULT']['qc_brir_headphone_type']
@@ -1686,10 +1683,65 @@ def main():
         #update user data
         dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
     
+    def e_apo_toggle_brir_gui(sender=None, app_data=None):
+        """ 
+        GUI function to toggle brir convolution
+        app_data is the toggle
+        
+        """
+        aquire_config=True
+        use_dict_list=False
+        force_run_process=False
+
+        e_apo_toggle_brir_custom(app_data=app_data, aquire_config=aquire_config, use_dict_list=use_dict_list, force_run_process=force_run_process)
+
     
+    def e_apo_toggle_brir_custom(app_data=None, aquire_config=True, use_dict_list=False, force_run_process=False):
+        """ 
+        GUI function to toggle brir convolution - with custom parameters passed in
+        app_data is the toggle
+        
+        """
+        
+        process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
+        if app_data == False:#toggled off
+            dpg.set_value("qc_e_apo_curr_brir_set", '')
+            #call main config writer function
+            if aquire_config==True:#custom parameter will be none if called by gui
+                e_apo_config_acquire()
+            
+            if process_brirs_running == True:
+                #stop processing if already processing brirs
+                qc_stop_process_brirs()
+            else:
+                #reset progress
+                dpg.set_value("qc_progress_bar_brir", 0)
+                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
+            
+        else:#toggled on
+            #check if saved brir set name is matching with currently selected params
+            brir_name_full = calc_brir_set_name(full_name=True)
+            brir_name = calc_brir_set_name(full_name=False)
+            sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
+            #if matching and not forced to run, enable brir conv in config
+            if brir_name_full == sel_brir_set and force_run_process==False:#custom parameter will be none if called by gui
+                dpg.set_value("e_apo_brir_conv", True)
+                dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
+                dpg.set_value("qc_progress_bar_brir", 1)
+                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
+                e_apo_activate_direction(force_reset=True)#run in case direction not found in case of reduced dataset
+                if aquire_config==True:#custom parameter will be none if called by gui
+                    e_apo_config_acquire()
+            else:#else run brir processing from scratch
+                if process_brirs_running == False:#only start if not already running
+                    qc_start_process_brirs(use_dict_list=use_dict_list)
+
+    
+
+
     def qc_apply_brir_params(sender=None, app_data=None):
         """ 
-        GUI function to apply brir parameters
+        GUI function to apply brir parameters, used for button press
         """
 
         #check if saved brir set name is matching with currently selected params
@@ -1702,20 +1754,20 @@ def main():
             dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
             dpg.set_value("qc_progress_bar_brir", 1)
             dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-            e_apo_select_direction(force_reset=True)#run in case direction not found in case of reduced dataset
+            e_apo_activate_direction(force_reset=True)#run in case direction not found in case of reduced dataset
             e_apo_config_acquire()
         else:#else run brir processing from scratch
-            qc_start_process_brirs()
+            qc_start_process_brirs()#this may trigger a cancel if already running
             
        
-    def qc_start_process_brirs(sender=None, app_data=None, user_data=None):
+    def qc_start_process_brirs(use_dict_list=False):
         """ 
         GUI function to start or stop processing of BRIRs thread
         """
         #thread bool
         process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
         
-        if process_brirs_running == False:
+        if process_brirs_running == False:#if not already running
 
             #set thread running flag
             process_brirs_running = True
@@ -1729,14 +1781,14 @@ def main():
             dpg.configure_item('qc_progress_bar_brir',user_data=stop_thread_flag)
             
             #start thread
-            thread = threading.Thread(target=qc_process_brirs, args=(), daemon=True)
+            thread = threading.Thread(target=qc_process_brirs, args=(use_dict_list,), daemon=True)
             thread.start()
    
-        else:
+        else:#if already running, cancel it
             
             qc_stop_process_brirs()
 
-    def qc_stop_process_brirs(sender=None, app_data=None, user_data=None):
+    def qc_stop_process_brirs():
         """ 
         GUI function to stop processing of BRIRs thread
         """
@@ -1746,11 +1798,12 @@ def main():
         dpg.configure_item('qc_progress_bar_brir',user_data=stop_thread_flag)
         
 
-    def qc_process_brirs(sender=None, app_data=None, user_data=None):
+    def qc_process_brirs(use_dict_list=False):
         """ 
         GUI function to process BRIRs
+        use_dict_list: bool, true = this function should use a prepopulated dict list containing BRIR data, false = generate new brir dataset
         """
-
+        #grab parameters
         brir_directional_export = True
         brir_ts_export = False
         hesuvi_export = False
@@ -1762,7 +1815,6 @@ def main():
         direct_gain_db = round(direct_gain_db,1)#round to nearest .1 dB
         ac_space = dpg.get_value("qc_acoustic_space_combo")
         ac_space_int = CN.AC_SPACE_LIST_GUI.index(ac_space)
-        ac_space_short = CN.AC_SPACE_LIST_SHORT[ac_space_int]
         ac_space_src = CN.AC_SPACE_LIST_SRC[ac_space_int]
         hp_type = dpg.get_value("qc_brir_hp_type")
         pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
@@ -1776,59 +1828,76 @@ def main():
         spat_res_int = 0
         er_delay_time = dpg.get_value('er_delay_time_tag')
         er_delay_time = round(er_delay_time,1)#round to nearest .1 dB
-        brir_dict=get_brir_dict()
-        #qc_brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
-        reduce_dataset = (dpg.get_value("qc_brir_reduce_dataset"))
-        #calculate name
+        reduce_dataset = True#(dpg.get_value("qc_brir_reduce_dataset"))
+        brir_dict_list=dpg.get_item_user_data("e_apo_brir_conv")#contains previously processed brirs
         brir_name = calc_brir_set_name(full_name=False)
         brir_name_full = calc_brir_set_name(full_name=True)
         out_dataset_name = CN.FOLDER_BRIRS_LIVE 
+        force_use_brir_dict=dpg.get_item_user_data("qc_e_apo_curr_brir_set")
+        if use_dict_list == False and force_use_brir_dict == False:#grab relevant config data from gui elements
+            brir_dict=get_brir_dict()
+        else:
+            brir_dict=dpg.get_item_user_data("qc_e_apo_sel_brir_set")#grab from previously stored values
         
         """
         #Run BRIR integration
         """
-        brir_gen, status = brir_generation.generate_integrated_brir(brir_name=out_dataset_name, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, early_refl_delay_ms=er_delay_time, 
+        if use_dict_list == False or not brir_dict_list:#run brir integration process
+            brir_gen, status = brir_generation.generate_integrated_brir(brir_name=out_dataset_name, direct_gain_db=direct_gain_db, room_target=room_target, spatial_res=spat_res_int, early_refl_delay_ms=er_delay_time, 
                                                             pinna_comp=pinna_comp, report_progress=1, gui_logger=logz, acoustic_space=ac_space_src, hrtf_symmetry=hrtf_symmetry, reduce_dataset=reduce_dataset, brir_dict=brir_dict)
+        else:
+            brir_gen= np.array([])
+            status=0
         
         """
         #Run BRIR export
         """
-        if brir_gen.size != 0 and status == 0:
-
+        if (brir_gen.size != 0 and status == 0) or (use_dict_list == True and brir_dict_list):#either brir dataset was generated or dict list was provided
+            #mute and disable conv before exporting files -> avoids conflicts
             gain_oa_selected=dpg.get_value('e_apo_gain_oa')
             dpg.set_value("e_apo_gain_oa", CN.EAPO_MUTE_GAIN)
             dpg.set_value("e_apo_brir_conv", False)
             e_apo_config_acquire(estimate_gain=False)
-            
-            brir_export.export_brir(brir_arr=brir_gen, acoustic_space=ac_space_src, brir_name=out_dataset_name, primary_path=output_path, samp_freq=samp_freq_int, 
+            #run export function
+            brir_dict_list_new = brir_export.export_brir(brir_arr=brir_gen, acoustic_space=ac_space_src, brir_name=out_dataset_name, primary_path=output_path, samp_freq=samp_freq_int, 
                                 bit_depth=bit_depth, brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, 
-                                gui_logger=logz, direct_gain_db=direct_gain_db, spatial_res=spat_res_int, sofa_export=sofa_export, reduce_dataset=reduce_dataset, brir_dict=brir_dict)
+                                gui_logger=logz, direct_gain_db=direct_gain_db, spatial_res=spat_res_int, sofa_export=sofa_export, reduce_dataset=reduce_dataset, brir_dict=brir_dict,
+                                use_dict_list=use_dict_list, brir_dict_list=brir_dict_list)
         
             #set progress to 100 as export is complete (assume E-APO export time is negligible)
             progress = 100/100
             hf.update_gui_progress(report_progress=1, progress=progress, message='Processed')
-            
             #rewrite config file
             dpg.set_value("e_apo_brir_conv", True)
-            #update current brir set text
-            dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
-            dpg.set_value("qc_e_apo_sel_brir_set", brir_name_full)
-            
+            #save dict list within gui element
+            if brir_dict_list_new:#only update if not empty list
+                dpg.configure_item('e_apo_brir_conv',user_data=brir_dict_list_new)
+            if use_dict_list == False:#only update if normal process
+                #update current brir set text
+                dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
+                dpg.set_value("qc_e_apo_sel_brir_set", brir_name_full)
             #unmute before writing configs once more
             dpg.set_value("e_apo_gain_oa", gain_oa_selected)
             dpg.set_value("e_apo_brir_conv", True)
             #wait before updating config
             sleep(0.1)
+            #update directions to previously stored values if flagged
+            if use_dict_list == True or force_use_brir_dict == True:
+                e_apo_update_direction(aquire_config=False, brir_dict_new=brir_dict)
+            #Reset user data flag
+            dpg.configure_item('qc_e_apo_curr_brir_set',user_data=False)
+            #rewrite config file
             e_apo_config_acquire()
-            save_settings(update_brir_pars=True)
             
-            #if live set, also write a file containing name of dataset
-            #write txt
-            out_file_path = pjoin(output_path, CN.PROJECT_FOLDER_BRIRS,out_dataset_name,'dataset_name.txt')
-            # Open the file in write mode
-            with open(out_file_path, 'w') as file:
-                # Write the word "name" to the file
-                file.write(brir_name)
+            if use_dict_list == False:#only update if normal process
+                save_settings(update_brir_pars=True)
+                #if live set, also write a file containing name of dataset
+                out_file_path = pjoin(output_path, CN.PROJECT_FOLDER_BRIRS,out_dataset_name,'dataset_name.txt')
+                with open(out_file_path, 'w') as file:
+                    file.write(brir_name)
+            else:
+                save_settings(update_brir_pars=False)
+                
         elif status == 1:
             progress = 0/100
             hf.update_gui_progress(report_progress=1, progress=progress, message='Failed to generate dataset. Refer to log')
@@ -1861,7 +1930,6 @@ def main():
         ac_space = dpg.get_value("qc_acoustic_space_combo")
         ac_space_int = CN.AC_SPACE_LIST_GUI.index(ac_space)
         ac_space_short = CN.AC_SPACE_LIST_SHORT[ac_space_int]
-        ac_space_src = CN.AC_SPACE_LIST_SRC[ac_space_int]
         hp_type = dpg.get_value("qc_brir_hp_type")
         pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
         pinna_comp = pinna_comp_int
@@ -1870,11 +1938,10 @@ def main():
         hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
         er_delay_time = dpg.get_value('er_delay_time_tag')
         er_delay_time = round(er_delay_time,1)#round to nearest .1 dB
-        brir_reduce_dataset = dpg.get_value('qc_brir_reduce_dataset')
         brir_dict=get_brir_dict()
         qc_brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
         if full_name==True:
-            brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(brir_reduce_dataset)
+            brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) 
         else:
             brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + CN.ROOM_TARGET_LIST_SHORT[room_target] + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp]
     
@@ -1961,7 +2028,6 @@ def main():
         dpg.set_value("geq_hpcf_toggle", geq_hpcf_exp_default)
         dpg.set_value("geq_31_hpcf_toggle", geq_31_exp_default)
         dpg.set_value("hesuvi_hpcf_toggle", hesuvi_hpcf_exp_default)
-        dpg.set_value("qc_brir_reduce_dataset", brir_reduce_dataset_default)
         dpg.set_value("dir_brir_toggle", dir_brir_exp_default)
         dpg.set_value("ts_brir_toggle", ts_brir_exp_default)
         dpg.set_value("hesuvi_brir_toggle", hesuvi_brir_exp_default)
@@ -1988,8 +2054,8 @@ def main():
         reset_hpcf_progress()
         reset_brir_progress()
         qc_reset_progress()
-        e_apo_toggle_hpcf(app_data=False)
-        e_apo_toggle_brir(app_data=False)
+        e_apo_toggle_hpcf_gui(app_data=False)
+        e_apo_toggle_brir_gui(app_data=False)
         
         #reset output directory
         if e_apo_path is not None:
@@ -2169,7 +2235,6 @@ def main():
             config['DEFAULT']['brir_set_selected'] = str(dpg.get_value('qc_e_apo_sel_brir_set'))
             config['DEFAULT']['channel_config'] = str(dpg.get_value('audio_channels_combo'))
             config['DEFAULT']['prevent_clip'] = str(dpg.get_value('e_apo_prevent_clip'))
-            config['DEFAULT']['brir_reduce_dataset'] = str(dpg.get_value('qc_brir_reduce_dataset'))
             config['DEFAULT']['qc_brir_headphone_type'] = qc_hp_type_str    # update
             
             config['DEFAULT']['qc_brir_room_target'] = qc_room_target_str    # update
@@ -2207,7 +2272,7 @@ def main():
         #disable brir convolution
         dpg.set_value("qc_e_apo_sel_brir_set", 'Deleted')
         dpg.set_value("e_apo_brir_conv", False)
-        e_apo_toggle_brir(app_data=False)
+        e_apo_toggle_brir_gui(app_data=False)
         
         
         
@@ -2222,7 +2287,7 @@ def main():
         #disable hpcf convolution
         dpg.set_value("e_apo_hpcf_conv", False)
         dpg.set_value("qc_e_apo_sel_hpcf", 'Deleted')
-        e_apo_toggle_hpcf(app_data=False)
+        e_apo_toggle_hpcf_gui(app_data=False)
         
 
     #
@@ -2234,10 +2299,17 @@ def main():
         GUI function to toggle auto apply hpcf convolution
         """
         if app_data == True:
-            e_apo_toggle_hpcf(app_data=True)
+            e_apo_toggle_hpcf_gui(app_data=True)
         
 
-    def e_apo_toggle_hpcf(sender=None, app_data=True, aquire_config=True):
+    def e_apo_toggle_hpcf_gui(sender=None, app_data=True):
+        """ 
+        GUI function to toggle hpcf convolution
+        """
+        aquire_config=True
+        e_apo_toggle_hpcf_custom(app_data=app_data, aquire_config=aquire_config)
+            
+    def e_apo_toggle_hpcf_custom(app_data=True, aquire_config=True):
         """ 
         GUI function to toggle hpcf convolution
         """
@@ -2267,44 +2339,6 @@ def main():
                     e_apo_config_acquire()
             else:#else run hpcf processing from scratch
                 qc_process_hpcfs(app_data=force_output)
-            
-    def e_apo_toggle_brir(sender=None, app_data=None, aquire_config=True):
-        """ 
-        GUI function to toggle brir convolution
-        """
-        process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
-        if app_data == False:
-            dpg.set_value("qc_e_apo_curr_brir_set", '')
-            #call main config writer function
-            if aquire_config==True or aquire_config==None:#custom parameter will be none if called by gui
-                e_apo_config_acquire()
-            
-            if process_brirs_running == True:
-                #stop processing if already processing brirs
-                qc_stop_process_brirs()
-            else:
-                #reset progress
-                dpg.set_value("qc_progress_bar_brir", 0)
-                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
-            
-        else:
-            
-            #check if saved brir set name is matching with currently selected params
-            brir_name_full = calc_brir_set_name(full_name=True)
-            brir_name = calc_brir_set_name(full_name=False)
-            sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
-            #if matching, enable brir conv in config
-            if brir_name_full == sel_brir_set:
-                dpg.set_value("e_apo_brir_conv", True)
-                dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
-                dpg.set_value("qc_progress_bar_brir", 1)
-                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-                e_apo_select_direction(force_reset=True)#run in case direction not found in case of reduced dataset
-                if aquire_config==True or aquire_config==None:#custom parameter will be none if called by gui
-                    e_apo_config_acquire()
-            else:#else run brir processing from scratch
-                if process_brirs_running == False:
-                    qc_start_process_brirs()
 
     def get_brir_dict():
         """ 
@@ -2406,16 +2440,24 @@ def main():
         
 
 
-    def e_apo_config_acquire(sender=None, app_data=None, estimate_gain=True):
+    def e_apo_config_acquire(estimate_gain=True):
         """ 
         GUI function to acquire lock on function to write updates to custom E-APO config
         """
-        if estimate_gain == None:#custom parameter will be none if called by gui. estimate gain if triggered by gui
-            estimate_gain=True
 
         e_apo_conf_lock.acquire()
         e_apo_config_write(estimate_gain=estimate_gain)
         e_apo_conf_lock.release()
+        
+    def e_apo_config_acquire_gui(sender=None, app_data=None):
+        """ 
+        GUI function to acquire lock on function to write updates to custom E-APO config
+        """
+        estimate_gain=True
+        e_apo_conf_lock.acquire()
+        e_apo_config_write(estimate_gain=estimate_gain)
+        e_apo_conf_lock.release()
+          
 
     def e_apo_config_write(estimate_gain=True):
         """ 
@@ -2528,9 +2570,94 @@ def main():
 
 
 
-    def e_apo_select_direction(sender=None, app_data=None, aquire_config=False, force_reset=False):
+    def e_apo_update_direction(sender=None, app_data=None, aquire_config=False, brir_dict_new={}):
         """ 
-        GUI function to process updates in E-APO config section
+        GUI function to process updates to directions in E-APO config section
+        """
+        
+        if brir_dict_new:
+            #if brir dict is provided, grab values
+            elev_fl=brir_dict_new.get('elev_fl')
+            elev_fr=brir_dict_new.get('elev_fr')
+            elev_c=brir_dict_new.get('elev_c')
+            elev_sl=brir_dict_new.get('elev_sl')
+            elev_sr=brir_dict_new.get('elev_sr')
+            elev_rl=brir_dict_new.get('elev_rl')
+            elev_rr=brir_dict_new.get('elev_rr')
+            azim_fl=brir_dict_new.get('azim_fl')
+            azim_fr=brir_dict_new.get('azim_fr')
+            azim_c=brir_dict_new.get('azim_c')
+            azim_sl=brir_dict_new.get('azim_sl')
+            azim_sr=brir_dict_new.get('azim_sr')
+            azim_rl=brir_dict_new.get('azim_rl')
+            azim_rr=brir_dict_new.get('azim_rr')
+            #then update gui values to align
+            dpg.set_value("e_apo_elev_angle_fl", elev_fl)
+            dpg.set_value("e_apo_elev_angle_fr", elev_fr)
+            dpg.set_value("e_apo_elev_angle_c", elev_c)
+            dpg.set_value("e_apo_elev_angle_sl", elev_sl)
+            dpg.set_value("e_apo_elev_angle_sr", elev_sr)
+            dpg.set_value("e_apo_elev_angle_rl", elev_rl)
+            dpg.set_value("e_apo_elev_angle_rr", elev_rr)
+            dpg.set_value("e_apo_az_angle_fl", azim_fl)
+            dpg.set_value("e_apo_az_angle_fr", azim_fr)
+            dpg.set_value("e_apo_az_angle_c", azim_c)
+            dpg.set_value("e_apo_az_angle_sl", azim_sl)
+            dpg.set_value("e_apo_az_angle_sr", azim_sr)
+            dpg.set_value("e_apo_az_angle_rl", azim_rl)
+            dpg.set_value("e_apo_az_angle_rr", azim_rr)
+        else:
+            #else grab azimuths from gui elements and proceed. No update required to gui values
+            brir_dict_new=get_brir_dict()
+            azim_fl=brir_dict_new.get('azim_fl')
+            azim_fr=brir_dict_new.get('azim_fr')
+            azim_c=brir_dict_new.get('azim_c')
+            azim_sl=brir_dict_new.get('azim_sl')
+            azim_sr=brir_dict_new.get('azim_sr')
+            azim_rl=brir_dict_new.get('azim_rl')
+            azim_rr=brir_dict_new.get('azim_rr')
+        
+        #update gui elements and write new config 
+  
+        #update each azimuth based drawing
+        azimuth=int(azim_fl)
+        dpg.apply_transform("fl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("fl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+        azimuth=int(azim_fr)
+        dpg.apply_transform("fr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("fr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+        azimuth=int(azim_c)
+        dpg.apply_transform("c_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("c_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+        azimuth=int(azim_sl)
+        dpg.apply_transform("sl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("sl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+        azimuth=int(azim_sr)
+        dpg.apply_transform("sr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("sr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+        azimuth=int(azim_rl)
+        dpg.apply_transform("rl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("rl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+        azimuth=int(azim_rr)
+        dpg.apply_transform("rr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+        dpg.apply_transform("rr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
+            
+        #finally rewrite config file
+        if aquire_config == True or aquire_config == None:#custom parameter will be none if called by gui
+            e_apo_config_acquire()
+
+
+    def e_apo_activate_direction_gui(sender=None, app_data=None):
+        """ 
+        GUI function to process updates to directions in E-APO config section
+        """
+        aquire_config=True 
+        force_reset=False
+        e_apo_activate_direction(aquire_config=aquire_config, force_reset=force_reset)
+
+    def e_apo_activate_direction(aquire_config=False, force_reset=False):
+        """ 
+        GUI function to process updates to directions in E-APO config section
         """
         #get current selections
         base_folder_selected=dpg.get_value('qc_selected_folder_base')
@@ -2538,6 +2665,10 @@ def main():
         brir_set_folder=CN.FOLDER_BRIRS_LIVE
         brir_dict=get_brir_dict()
         #print(brir_dict)
+        
+        #Get brir_dict for desired directions, store in a gui element
+        dpg.configure_item('qc_e_apo_sel_brir_set',user_data=brir_dict)
+        
         #run function to check if all brirs currently exist (returns true if brirs are disabled)
         all_brirs_found = e_apo_config_creation.dataset_all_brirs_found(primary_path=base_folder_selected, brir_set=brir_set_folder, brir_dict=brir_dict, channel_config = channels_selected)
         
@@ -2567,86 +2698,91 @@ def main():
                     
                 else:
                     raise ValueError('Settings not loaded due to version mismatch')
+                    
+                #update directions to previously saved values
+                dpg.set_value("e_apo_elev_angle_fl", e_apo_elev_angle_fl_loaded)
+                dpg.set_value("e_apo_elev_angle_fr", e_apo_elev_angle_fr_loaded)
+                dpg.set_value("e_apo_elev_angle_c", e_apo_elev_angle_c_loaded)
+                dpg.set_value("e_apo_elev_angle_sl", e_apo_elev_angle_sl_loaded)
+                dpg.set_value("e_apo_elev_angle_sr", e_apo_elev_angle_sr_loaded)
+                dpg.set_value("e_apo_elev_angle_rl", e_apo_elev_angle_rl_loaded)
+                dpg.set_value("e_apo_elev_angle_rr", e_apo_elev_angle_rr_loaded)
+                dpg.set_value("e_apo_az_angle_fl", e_apo_az_angle_fl_loaded)
+                dpg.set_value("e_apo_az_angle_fr", e_apo_az_angle_fr_loaded)
+                dpg.set_value("e_apo_az_angle_c", e_apo_az_angle_c_loaded)
+                dpg.set_value("e_apo_az_angle_sl", e_apo_az_angle_sl_loaded)
+                dpg.set_value("e_apo_az_angle_sr", e_apo_az_angle_sr_loaded)
+                dpg.set_value("e_apo_az_angle_rl", e_apo_az_angle_rl_loaded)
+                dpg.set_value("e_apo_az_angle_rr", e_apo_az_angle_rr_loaded)
                 
             except:
                 pass
             
-            #update directions to previously saved values
-            dpg.set_value("e_apo_elev_angle_fl", e_apo_elev_angle_fl_loaded)
-            dpg.set_value("e_apo_elev_angle_fr", e_apo_elev_angle_fr_loaded)
-            dpg.set_value("e_apo_elev_angle_c", e_apo_elev_angle_c_loaded)
-            dpg.set_value("e_apo_elev_angle_sl", e_apo_elev_angle_sl_loaded)
-            dpg.set_value("e_apo_elev_angle_sr", e_apo_elev_angle_sr_loaded)
-            dpg.set_value("e_apo_elev_angle_rl", e_apo_elev_angle_rl_loaded)
-            dpg.set_value("e_apo_elev_angle_rr", e_apo_elev_angle_rr_loaded)
-            dpg.set_value("e_apo_az_angle_fl", e_apo_az_angle_fl_loaded)
-            dpg.set_value("e_apo_az_angle_fr", e_apo_az_angle_fr_loaded)
-            dpg.set_value("e_apo_az_angle_c", e_apo_az_angle_c_loaded)
-            dpg.set_value("e_apo_az_angle_sl", e_apo_az_angle_sl_loaded)
-            dpg.set_value("e_apo_az_angle_sr", e_apo_az_angle_sr_loaded)
-            dpg.set_value("e_apo_az_angle_rl", e_apo_az_angle_rl_loaded)
-            dpg.set_value("e_apo_az_angle_rr", e_apo_az_angle_rr_loaded)
+            log_string = 'Selected direction was not found'
+            hf.log_with_timestamp(log_string, logz)
             
-            #set reduced dataset to false
-            dpg.set_value("qc_brir_reduce_dataset", False)
+            brir_dict_list=dpg.get_item_user_data("e_apo_brir_conv")
             
             #reset progress and disable brir conv as not started yet
-            if force_reset == True:#only when triggered by apply button or toggle
+            if force_reset == True and not brir_dict_list:#only when triggered by apply button or toggle and no stored brir data
                 dpg.set_value("qc_e_apo_curr_brir_set", '')
                 dpg.set_value("qc_progress_bar_brir", 0)
                 dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
                 dpg.set_value("e_apo_brir_conv", False)
             
-            log_string = 'Selected direction was not found. Likely due to reduced dataset size. Reduce dataset size has now been deactivated'
-            hf.log_with_timestamp(log_string, logz)
-            log_string = 'Processing full sized binaural dataset'
-            hf.log_with_timestamp(log_string, logz)
-            
-            #trigger apply brir params 
-            #qc_apply_brir_params()#do not use button due to cancellation logic
-            e_apo_toggle_brir(app_data=True)#use toggle = true
-            
+            #If files not found, check if dict list is not empty, 
+            if brir_dict_list:#list is not empty
+                #if list populated, export new wavs from dict list for matching directions 
+                log_string = 'Exporting missing direction(s)'
+                hf.log_with_timestamp(log_string, logz)
+                #attempt to export wavs
+                e_apo_toggle_brir_custom(app_data=True, use_dict_list=True, force_run_process=True)#do not use button due to cancellation logic
+            else:
+                #Update user data to flag that stored BRIR dict should be used for azimuths
+                dpg.configure_item('qc_e_apo_curr_brir_set',user_data=True)
+                log_string = 'Processing and exporting missing direction(s)'
+                hf.log_with_timestamp(log_string, logz)
+                #If list not populated, trigger new brir processing (likely restarted app)
+                e_apo_toggle_brir_custom(app_data=True, use_dict_list=False, force_run_process=True)#do not use button due to cancellation logic
+                
+  
         #use updated azimuths
-        brir_dict=get_brir_dict()
-        azim_fl_selected=brir_dict.get('azim_fl')
-        azim_fr_selected=brir_dict.get('azim_fr')
-        azim_c_selected=brir_dict.get('azim_c')
-        azim_sl_selected=brir_dict.get('azim_sl')
-        azim_sr_selected=brir_dict.get('azim_sr')
-        azim_rl_selected=brir_dict.get('azim_rl')
-        azim_rr_selected=brir_dict.get('azim_rr')
+        brir_dict_new=get_brir_dict()
+        azim_fl_selected=brir_dict_new.get('azim_fl')
+        azim_fr_selected=brir_dict_new.get('azim_fr')
+        azim_c_selected=brir_dict_new.get('azim_c')
+        azim_sl_selected=brir_dict_new.get('azim_sl')
+        azim_sr_selected=brir_dict_new.get('azim_sr')
+        azim_rl_selected=brir_dict_new.get('azim_rl')
+        azim_rr_selected=brir_dict_new.get('azim_rr')
+        
+        #update gui elements and write new config 
   
         #update each azimuth based drawing
         azimuth=int(azim_fl_selected)
         dpg.apply_transform("fl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("fl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
-        
         azimuth=int(azim_fr_selected)
         dpg.apply_transform("fr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("fr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
-        
         azimuth=int(azim_c_selected)
         dpg.apply_transform("c_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("c_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
-        
         azimuth=int(azim_sl_selected)
         dpg.apply_transform("sl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("sl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
-        
         azimuth=int(azim_sr_selected)
         dpg.apply_transform("sr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("sr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
-        
         azimuth=int(azim_rl_selected)
         dpg.apply_transform("rl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("rl_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
-        
         azimuth=int(azim_rr_selected)
         dpg.apply_transform("rr_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
         dpg.apply_transform("rr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
         #finally rewrite config file
-        if aquire_config == True or aquire_config == None:#custom parameter will be none if called by gui
+        if aquire_config == True:#custom parameter will be none if called by gui
             e_apo_config_acquire()
 
 
@@ -2730,19 +2866,25 @@ def main():
         dpg.set_value("e_apo_prevent_clip", e_apo_prevent_clip_default)
         #also reset channel config
         dpg.set_value("audio_channels_combo", audio_channels_default)
-        e_apo_select_channels(app_data=dpg.get_value('audio_channels_combo'))
+        e_apo_select_channels(app_data=audio_channels_default,aquire_config=False)
         #update drawings for azimuths
-        e_apo_select_direction()
+        e_apo_activate_direction()
         
         #finally rewrite config file
         e_apo_config_acquire()
   
-    def e_apo_select_channels(sender=None, app_data=None, aquire_config=True):
+    def e_apo_select_channels_gui(sender=None, app_data=None):
         """ 
         GUI function to process updates in E-APO config section
         """
-        #print(f"app_data: {app_data}")
-        #print(f"aquire_config: {aquire_config}")
+        aquire_config=True
+        e_apo_select_channels(app_data=app_data, aquire_config=aquire_config)  
+  
+    def e_apo_select_channels(app_data=None, aquire_config=True):
+        """ 
+        GUI function to process updates in E-APO config section
+        """
+
         try:
             if app_data == '2.0 Stereo Upmix to 7.1':
                 dpg.configure_item("upmixing_table", show=True)
@@ -2897,7 +3039,7 @@ def main():
             print(f"An error occurred: {e}")  # Log the error
             
         #finally rewrite config file
-        if aquire_config == True or aquire_config == None:#custom parameter will be none if called by gui
+        if aquire_config == True:#custom parameter will be none if called by gui
             e_apo_config_acquire()
             
 
@@ -2933,7 +3075,7 @@ def main():
         #thread bool
         if process_brirs_running == False:
             #check if saved brir set name is matching with currently selected params
-            brir_name = calc_brir_set_name()
+            brir_name = calc_brir_set_name(full_name=True)
             sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
             if brir_name != sel_brir_set:
                 #reset progress bar
@@ -3277,11 +3419,12 @@ def main():
         hpcf_is_active=dpg.get_value('e_apo_hpcf_conv')
         brir_is_active=dpg.get_value('e_apo_brir_conv')
 
-        e_apo_toggle_hpcf(app_data=hpcf_is_active, aquire_config=False)
-        e_apo_toggle_brir(app_data=brir_is_active, aquire_config=False)
+        e_apo_toggle_hpcf_custom(app_data=hpcf_is_active, aquire_config=False)
+        e_apo_toggle_brir_custom(app_data=brir_is_active, aquire_config=False)
         #finally acquire config once
         e_apo_config_acquire()
         
+    
         
      
     #
@@ -3423,8 +3566,8 @@ def main():
                 dpg.add_theme_color(dpg.mvPlotCol_Line, _hsv_to_rgb(k/7.0, 0.25, 0.6), category=dpg.mvThemeCat_Plots) 
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, _hsv_to_rgb(j/7.0, 0.7, 0.7))
         with dpg.theme(tag="__theme_j"):
-            i=4.1
-            j=4.1
+            i=4.2
+            j=4.2
             with dpg.theme_component(dpg.mvAll):  
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, _hsv_to_rgb(i/7.0, 0.4, 0.5))   
                 dpg.add_theme_color(dpg.mvThemeCol_TabActive, _hsv_to_rgb(i/7.0, 0.3, 0.5)) 
@@ -3498,7 +3641,7 @@ def main():
                                 dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=30, width=356, overlay=CN.PROGRESS_START, tag="qc_progress_bar_hpcf")
                                 dpg.bind_item_theme(dpg.last_item(), "__theme_h")
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="Enable Headphone Correction", default_value = e_apo_enable_hpcf_loaded,  tag='e_apo_hpcf_conv', callback=e_apo_toggle_hpcf)
+                                dpg.add_checkbox(label="Enable Headphone Correction", default_value = e_apo_enable_hpcf_loaded,  tag='e_apo_hpcf_conv', callback=e_apo_toggle_hpcf_gui)
                                 #dpg.add_text("                                    ")
                                 
                             dpg.add_separator()
@@ -3571,37 +3714,34 @@ def main():
                                 subtitle_6_qc = dpg.add_text("Apply Simulation in Equalizer APO")
                                 dpg.bind_item_font(subtitle_6_qc, bold_font)
                                 dpg.add_text("                                                      ")
-                                dpg.add_checkbox(label="Reduce Dataset Size", default_value = brir_reduce_dataset_loaded,  tag='qc_brir_reduce_dataset', callback=qc_update_brir_param)
-                                with dpg.tooltip("qc_brir_reduce_dataset"):
-                                    dpg.add_text("Processes a smaller dataset containing only required directions")  
-                                    dpg.add_text("Processing time and number of files written will be reduced") 
+                  
                             dpg.add_separator()
                             
                             with dpg.group(horizontal=True):
-                                dpg.add_button(label=CN.PROCESS_BUTTON_BRIR,user_data=CN.PROCESS_BRIRS_RUNNING,tag="qc_brir_tag", callback=qc_apply_brir_params, width=145)
+                                dpg.add_button(label=CN.PROCESS_BUTTON_BRIR,user_data=CN.PROCESS_BRIRS_RUNNING,tag="qc_brir_tag", callback=qc_apply_brir_params, width=145)#user data is thread running flag
                                 dpg.bind_item_theme(dpg.last_item(), "__theme_a")
                                 dpg.bind_item_font(dpg.last_item(), large_font)
                                 with dpg.tooltip("qc_brir_tag"):
                                     dpg.add_text("This will generate the binaural simulation and apply it in Equalizer APO")   
-                                dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=30, width=340, overlay=CN.PROGRESS_START, tag="qc_progress_bar_brir",user_data=CN.STOP_THREAD_FLAG)
+                                dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=30, width=340, overlay=CN.PROGRESS_START, tag="qc_progress_bar_brir",user_data=CN.STOP_THREAD_FLAG)#user data is thread cancel flag
                                 dpg.bind_item_theme(dpg.last_item(), "__theme_h")
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = e_apo_enable_brir_loaded,  tag='e_apo_brir_conv', callback=e_apo_toggle_brir)
+                                dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = e_apo_enable_brir_loaded,  tag='e_apo_brir_conv', callback=e_apo_toggle_brir_gui, user_data=[])#user data will be a dict list
                                 dpg.add_text("                                    ")
                      
                             dpg.add_separator()
                             dpg.add_text("Current Simulation: ")
                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                            dpg.add_text(default_value=e_apo_brir_curr_loaded,  tag='qc_e_apo_curr_brir_set' , wrap=510)
+                            dpg.add_text(default_value=e_apo_brir_curr_loaded,  tag='qc_e_apo_curr_brir_set' , wrap=510, user_data=False)#user data used for flagging use of below BRIR dict
                             dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.bind_item_theme(dpg.last_item(), "__theme_f")
-                            dpg.add_text(default_value=e_apo_brir_sel_loaded, tag='qc_e_apo_sel_brir_set',show=False)
+                            dpg.add_text(default_value=e_apo_brir_sel_loaded, tag='qc_e_apo_sel_brir_set',show=False, user_data={})#user data used for storing snapshot of BRIR dict 
                     #right most section
                     with dpg.group():    
                         #Section for channel config, plotting
-                        with dpg.child_window(width=590, height=422):
+                        with dpg.child_window(autosize_x=True, height=422):
                             with dpg.tab_bar(tag='qc_inner_tab_bar'):
-                                with dpg.tab(label="Channel Configuration", parent="qc_inner_tab_bar"):
+                                with dpg.tab(label="Channel Configuration", parent="qc_inner_tab_bar",tag='qc_cc_tab'):
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
                                             with dpg.group(horizontal=True):
@@ -3614,12 +3754,12 @@ def main():
                                                 dpg.add_text("Preamplification (dB) :  ")
                                                 dpg.add_input_float(label=" ",format="%.1f", width=100,min_value=-100, max_value=20,min_clamped=True,max_clamped=True, tag='e_apo_gain_oa',default_value=e_apo_gain_oa_loaded, callback=e_apo_adjust_preamp)
                                                 dpg.add_text("  ")
-                                                dpg.add_checkbox(label="Auto-adjust Preamp ", default_value = e_apo_prevent_clip_loaded,  tag='e_apo_prevent_clip', callback=e_apo_config_acquire)
+                                                dpg.add_checkbox(label="Auto-adjust Preamp ", default_value = e_apo_prevent_clip_loaded,  tag='e_apo_prevent_clip', callback=e_apo_config_acquire_gui)
                                                 with dpg.tooltip("e_apo_prevent_clip"):
                                                     dpg.add_text("This will auto-adjust the preamp to prevent clipping for 2.0 inputs")
                                             with dpg.group(horizontal=True):
                                                 dpg.add_text("Audio Channels:  ")
-                                                dpg.add_combo(CN.AUDIO_CHANNELS, width=180, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=e_apo_select_channels)
+                                                dpg.add_combo(CN.AUDIO_CHANNELS, width=180, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=e_apo_select_channels_gui)
                                             with dpg.group(horizontal=True):
                                                 with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
                                                     borders_outerH=True, borders_innerH=True, no_host_extendX=True,
@@ -3678,11 +3818,11 @@ def main():
                                                                             dpg.add_text('Rear channels are delayed by specified samples')
                                                                 elif j == 1:#peak gain
                                                                     if i == 0:
-                                                                        dpg.add_combo(CN.UPMIXING_METHODS, width=100, label="",  tag='e_apo_upmix_method',default_value=e_apo_upmix_method_loaded, callback=e_apo_config_acquire)
+                                                                        dpg.add_combo(CN.UPMIXING_METHODS, width=100, label="",  tag='e_apo_upmix_method',default_value=e_apo_upmix_method_loaded, callback=e_apo_config_acquire_gui)
                                                                     elif i == 1:
-                                                                        dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_side_delay',min_clamped=True,max_clamped=True, default_value=e_apo_side_delay_loaded, callback=e_apo_config_acquire)
+                                                                        dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_side_delay',min_clamped=True,max_clamped=True, default_value=e_apo_side_delay_loaded, callback=e_apo_config_acquire_gui)
                                                                     elif i == 2:
-                                                                        dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_rear_delay',min_clamped=True,max_clamped=True, default_value=e_apo_rear_delay_loaded, callback=e_apo_config_acquire)  
+                                                                        dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_rear_delay',min_clamped=True,max_clamped=True, default_value=e_apo_rear_delay_loaded, callback=e_apo_config_acquire_gui)  
                                                                     
                                             with dpg.group(horizontal=True):
                                                 with dpg.group():
@@ -3723,85 +3863,85 @@ def main():
                                                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                                                     if j == 1:#Mute
                                                                         if i == 0:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fl',default_value=e_apo_mute_fl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fl',default_value=e_apo_mute_fl_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         elif i == 1:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fr',default_value=e_apo_mute_fr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fr',default_value=e_apo_mute_fr_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         elif i == 2:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_c',default_value=e_apo_mute_c_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_c',default_value=e_apo_mute_c_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         elif i == 3:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sl',default_value=e_apo_mute_sl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sl',default_value=e_apo_mute_sl_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         elif i == 4:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sr',default_value=e_apo_mute_sr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sr',default_value=e_apo_mute_sr_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         elif i == 5:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rl',default_value=e_apo_mute_rl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rl',default_value=e_apo_mute_rl_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         elif i == 6:
-                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rr',default_value=e_apo_mute_rr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rr',default_value=e_apo_mute_rr_loaded, callback=e_apo_config_acquire_gui)
                                                                             dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                     if j == 2:#gain
                                                                         if i == 0:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fl',min_clamped=True,max_clamped=True, default_value=e_apo_gain_fl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fl',min_clamped=True,max_clamped=True, default_value=e_apo_gain_fl_loaded, callback=e_apo_config_acquire_gui)
                                                                         elif i == 1:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_fr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_fr_loaded, callback=e_apo_config_acquire_gui)
                                                                         elif i == 2:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_c',min_clamped=True,max_clamped=True,default_value=e_apo_gain_c_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_c',min_clamped=True,max_clamped=True,default_value=e_apo_gain_c_loaded, callback=e_apo_config_acquire_gui)
                                                                         elif i == 3:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sl',min_clamped=True,max_clamped=True,default_value=e_apo_gain_sl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sl',min_clamped=True,max_clamped=True,default_value=e_apo_gain_sl_loaded, callback=e_apo_config_acquire_gui)
                                                                         elif i == 4:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_sr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_sr_loaded, callback=e_apo_config_acquire_gui)
                                                                         elif i == 5:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rl',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rl_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rl',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rl_loaded, callback=e_apo_config_acquire_gui)
                                                                         elif i == 6:
-                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rr_loaded, callback=e_apo_config_acquire)
+                                                                            dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rr_loaded, callback=e_apo_config_acquire_gui)
                                                                     if j == 3:#elevation
                                                                         if i == 0:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_fl"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 1:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_fr"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 2:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_c"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 3:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_sl"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 4:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_sr"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 5:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_rl"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         elif i == 6:
-                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=e_apo_activate_direction_gui)
                                                                             with dpg.tooltip("e_apo_elev_angle_rr"):
                                                                                 dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                     if j == 4:#azimuth
                                                                         if i == 0:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=70, label="",  tag='e_apo_az_angle_fl',default_value=e_apo_az_angle_fl_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=70, label="",  tag='e_apo_az_angle_fl',default_value=e_apo_az_angle_fl_loaded, callback=e_apo_activate_direction_gui)
                                                                         elif i == 1:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=70, label="",  tag='e_apo_az_angle_fr',default_value=e_apo_az_angle_fr_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=70, label="",  tag='e_apo_az_angle_fr',default_value=e_apo_az_angle_fr_loaded, callback=e_apo_activate_direction_gui)
                                                                         elif i == 2:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=70, label="",  tag='e_apo_az_angle_c',default_value=e_apo_az_angle_c_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=70, label="",  tag='e_apo_az_angle_c',default_value=e_apo_az_angle_c_loaded, callback=e_apo_activate_direction_gui)
                                                                         elif i == 3:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=70, label="",  tag='e_apo_az_angle_sl',default_value=e_apo_az_angle_sl_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=70, label="",  tag='e_apo_az_angle_sl',default_value=e_apo_az_angle_sl_loaded, callback=e_apo_activate_direction_gui)
                                                                         elif i == 4:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=70, label="",  tag='e_apo_az_angle_sr',default_value=e_apo_az_angle_sr_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=70, label="",  tag='e_apo_az_angle_sr',default_value=e_apo_az_angle_sr_loaded, callback=e_apo_activate_direction_gui)
                                                                         elif i == 5:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=70, label="",  tag='e_apo_az_angle_rl',default_value=e_apo_az_angle_rl_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=70, label="",  tag='e_apo_az_angle_rl',default_value=e_apo_az_angle_rl_loaded, callback=e_apo_activate_direction_gui)
                                                                         elif i == 6:
-                                                                            dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=70, label="",  tag='e_apo_az_angle_rr',default_value=e_apo_az_angle_rr_loaded, callback=e_apo_select_direction)
+                                                                            dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=70, label="",  tag='e_apo_az_angle_rr',default_value=e_apo_az_angle_rr_loaded, callback=e_apo_activate_direction_gui)
                                    
                                                 with dpg.drawlist(width=250, height=200, tag="channel_drawing"):
                                                     with dpg.draw_layer():
@@ -3856,7 +3996,7 @@ def main():
                                             
                                               
                   
-                                with dpg.tab(label="Filter Preview", parent="qc_inner_tab_bar"):
+                                with dpg.tab(label="Filter Preview", parent="qc_inner_tab_bar",tag='qc_fp_tab'):
                                     #plotting
                                     #dpg.add_separator()
                                     dpg.add_text("Select a filter from list to preview")
@@ -3875,7 +4015,7 @@ def main():
                                         dpg.add_line_series(default_x, default_y, label="Plot", parent="qc_y_axis", tag="qc_series_tag")
                                         #initial plot
                                         hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=2)
-                                with dpg.tab(label="Supporting Information", parent="qc_inner_tab_bar"):
+                                with dpg.tab(label="Supporting Information", parent="qc_inner_tab_bar",tag='qc_si_tab'):
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
                                             dpg.add_text("Acoustic Properties")
@@ -4179,9 +4319,9 @@ def main():
                     #right most section
                     with dpg.group():    
                         #Section for plotting
-                        with dpg.child_window(width=604, height=467):
+                        with dpg.child_window(autosize_x=True, height=467):
                             with dpg.tab_bar(tag='inner_tab_bar'):
-                                with dpg.tab(label="Filter Preview", parent="inner_tab_bar"):
+                                with dpg.tab(label="Filter Preview", parent="inner_tab_bar",tag='fp_tab'):
                                     # title_3 = dpg.add_text("Filter Preview")
                                     # dpg.bind_item_font(title_3, bold_font)
                                     #plotting
@@ -4202,7 +4342,7 @@ def main():
                                         dpg.add_line_series(default_x, default_y, label="Plot", parent="y_axis", tag="series_tag")
                                         #initial plot
                                         hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
-                                with dpg.tab(label="Supporting Information", parent="inner_tab_bar"):
+                                with dpg.tab(label="Supporting Information", parent="inner_tab_bar",tag='si_tab'):
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
                                             dpg.add_text("Acoustic Properties")
@@ -4285,7 +4425,7 @@ def main():
                                                             elif j == 2:#SOFAConventionsVersion
                                                                 dpg.add_text(CN.SOFA_OUTPUT_CONVERS[i])
                                                                     
-                                with dpg.tab(label="HeSuVi Channel Configuration", parent="inner_tab_bar"):
+                                with dpg.tab(label="HeSuVi Channel Configuration", parent="inner_tab_bar",tag='hcc_tab'):
                                     dpg.add_text("Adjust source directions for HeSuVi export")
                                     dpg.add_button(label="Reset to Default",  callback=reset_channel_config)
                                     with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
@@ -4698,7 +4838,7 @@ def main():
 
     #section to log tool version on startup
     #log results
-    log_string = 'Started Audio Spatialisation for Headphones Toolset - Version: ' + __version__
+    log_string = 'Started ASH Toolset - Version: ' + __version__
     hf.log_with_timestamp(log_string, logz)
     
     #check for updates on start

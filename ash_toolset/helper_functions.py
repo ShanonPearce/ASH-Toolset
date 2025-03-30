@@ -29,6 +29,43 @@ import logging
 import gdown
 
 
+
+
+def get_array_memory_usage_mb(array: np.ndarray) -> None:
+    """
+    Calculates and prints the memory consumption of a NumPy array in megabytes,
+    along with the data type.
+
+    Args:
+        array: The NumPy array to analyze.
+    """
+    memory_usage_bytes = array.nbytes
+    memory_usage_mb = memory_usage_bytes / (1024 * 1024)  # Convert bytes to megabytes
+    data_type = array.dtype
+
+    print(f"Data type: {data_type}")
+    print(f"Memory usage: {memory_usage_mb:.2f} MB")  # Print to 2 decimal places
+
+def crop_array_last_dimension(array: np.ndarray, num_samples: int) -> np.ndarray:
+    """
+    Crops the last dimension of a multi-dimensional NumPy array to a specified number of samples.
+
+    Args:
+        array: A multi-dimensional NumPy array.
+        num_samples: The desired number of samples in the last dimension.
+
+    Returns:
+        A new NumPy array with the last dimension cropped to num_samples.
+
+    Raises:
+        ValueError: If num_samples is greater than the size of the last dimension.
+    """
+
+    if num_samples > array.shape[-1]:
+        raise ValueError("num_samples cannot be greater than the size of the last dimension.")
+
+    return array[..., :num_samples]
+
 def get_crop_index(input_array, threshold=CN.THRESHOLD_CROP):
     """
     Calculates the index at which a 1D NumPy array should be cropped 
@@ -597,7 +634,7 @@ def measure_rt60(h, fs=1, decay_db=60, plot=False, rt60_tgt=None):
 
 
 
-def signal_lowpass_filter(data, cutoff, fs, order=5, method=1):
+def signal_lowpass_filter(data, cutoff, fs, order=5, method=1, filtfilt=False):
     """
     Function takes a time domain signal as an input and applies low pass filter
     :param data: numpy array, time domain signal
@@ -609,34 +646,37 @@ def signal_lowpass_filter(data, cutoff, fs, order=5, method=1):
     """   
     #Say I have a digital butterworth lowpass filter with an order of 3 and a cutoff of 4Hz at -3dB. this filter should have a roll-off of 6*3 = 18dB/Octave.
     #48db/octave = order of 8?
+    if filtfilt == True:#doubles the effective order of the filtering when compared to a simple forward filter. 
+        order=int(order/2)
     
     if method == 1:
         #method 1
         sos = butter(order, cutoff, fs=fs, btype='low', output='sos', analog=False)
-        #A forward-backward digital filter using cascaded second-order sections.
-        y = sps.sosfilt(sos, data)
+
     elif method == 2:
         #method 2
         sos = sps.cheby1(order, 3, cutoff, btype='low', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)
     elif method == 3:
         #method 3
         sos = sps.cheby2(order, 40, cutoff, btype='low', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)
     elif method == 4:
         #method 4
         sos = sps.ellip(order, 5, 40, cutoff, btype='low', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)  
     else:
         #method 5
         sos = sps.bessel(order, cutoff, btype='low', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)  
+        
+    #A forward-backward digital filter using cascaded second-order sections.
+    if filtfilt == True:
+        y = sps.sosfiltfilt(sos, data, padtype='even', padlen=30000) #Uses sosfiltfilt instead of sosfilt → Ensures zero-phase distortion and more stable filtering.
+    else:
+        y = sps.sosfilt(sos, data)
         
         
     return y
 
 
-def signal_highpass_filter(data, cutoff, fs, order=5, method=1):
+def signal_highpass_filter(data, cutoff, fs, order=5, method=1, filtfilt=False):
     """
     Function takes a time domain signal as an input and applies high pass filter
     :param data: numpy array, time domain signal
@@ -646,32 +686,84 @@ def signal_highpass_filter(data, cutoff, fs, order=5, method=1):
     :param method: int, 1=butter, 2=chevy1, 3=cheby2, 4=ellip, 5=bessel
     :return: numpy array, high pass filtered signal
     """  
+    if filtfilt == True:#doubles the effective order of the filtering when compared to a simple forward filter. 
+        order=int(order/2)
     
     if method == 1:
         #method 1
         sos = butter(order, cutoff, fs=fs, btype='high', output='sos', analog=False)
-        #A forward-backward digital filter using cascaded second-order sections.
-        y = sps.sosfilt(sos, data)
+        
     elif method == 2:
         #method 2
         sos = sps.cheby1(order, 3, cutoff, btype='high', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)
     elif method == 3:
         #method 3
         sos = sps.cheby2(order, 40, cutoff, btype='high', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)
     elif method == 4:
         #method 4
         sos = sps.ellip(order, 5, 40, cutoff, btype='high', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data)
     else:
         #method 5
         sos = sps.bessel(order, cutoff, btype='high', analog=False, output='sos', fs=fs)
-        y = sps.sosfilt(sos, data) 
+        
+    #A forward-backward digital filter using cascaded second-order sections.
+    if filtfilt == True:
+        y = sps.sosfiltfilt(sos, data, padtype='even', padlen=30000) #Uses sosfiltfilt instead of sosfilt → Ensures zero-phase distortion and more stable filtering.
+    else:
+        y = sps.sosfilt(sos, data)
     
     return y
 
+def get_filter_sos( cutoff, fs, order=5, method=1, filtfilt=False, b_type='high'):
+    """
+    Function takes a time domain signal as an input and calculates SOS filter
+    :param cutoff: int, cutoff frequency in Hz
+    :param fs: int, sample frequency in Hz
+    :param order: int, filter order
+    :param method: int, 1=butter, 2=chevy1, 3=cheby2, 4=ellip, 5=bessel
+    :param b_type: str, 'low' or 'high'
+    :return: sos filter object
+    """  
+    if filtfilt == True:#doubles the effective order of the filtering when compared to a simple forward filter. 
+        order=int(order/2)
 
+    if method == 1:
+        #method 1
+        sos = butter(order, cutoff, fs=fs, btype=b_type, output='sos', analog=False)
+        
+    elif method == 2:
+        #method 2
+        sos = sps.cheby1(order, 3, cutoff, btype=b_type, analog=False, output='sos', fs=fs)
+    elif method == 3:
+        #method 3
+        sos = sps.cheby2(order, 40, cutoff, btype=b_type, analog=False, output='sos', fs=fs)
+    elif method == 4:
+        #method 4
+        sos = sps.ellip(order, 5, 40, cutoff, btype=b_type, analog=False, output='sos', fs=fs)
+    else:
+        #method 5
+        sos = sps.bessel(order, cutoff, btype=b_type, analog=False, output='sos', fs=fs)
+        
+
+    return sos
+
+
+def apply_sos_filter(data, sos, filtfilt=False):
+    """
+    Function takes a time domain signal as an input and applies high or low pass filter
+    :param data: numpy array, time domain signal
+    :param sos:  sos filter object
+    :param filtfilt: bool, flag to use filtfilt
+    :return: numpy array, x pass filtered signal
+    """  
+
+    #A forward-backward digital filter using cascaded second-order sections.
+    if filtfilt == True:
+        y = sps.sosfiltfilt(sos, data, padtype='even', padlen=30000) #Uses sosfiltfilt instead of sosfilt → Ensures zero-phase distortion and more stable filtering.
+    else:
+        y = sps.sosfilt(sos, data)
+    
+    return y
 
 
 def group_delay(sig):
@@ -947,7 +1039,7 @@ def find_delay_and_roll_lf(arr_a, arr_b):
     delay_win_hops = CN.DELAY_WIN_HOPS_A
     
     
-    cutoff_alignment = CN.F_CROSSOVER_LOW#CN.CUTOFF_ALIGNMENT_AIR
+    cutoff_alignment = 110 #CN.F_CROSSOVER_LOW#CN.CUTOFF_ALIGNMENT_AIR
     
     #peak to peak within a sufficiently small sample window
     peak_to_peak_window = int(np.divide(samp_freq,cutoff_alignment)*0.95) #int(np.divide(samp_freq,cutoff_alignment)) 

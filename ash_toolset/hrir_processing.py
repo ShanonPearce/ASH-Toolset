@@ -23,6 +23,7 @@ from math import sqrt
 from pathlib import Path
 import threading
 import scipy as sp
+import sofar as sf
 
 def get_listener_list(listener_type="", dataset_name="", max_res_only=False, gui_logger=None):
     """
@@ -134,11 +135,11 @@ def get_name_short(listener_type="", dataset_name="", name_gui="", gui_logger=No
         list: A list of listener names.
     """
     
+    name_short = ""
     
     try:
     
-        name_short = ""
-        
+ 
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
             #HRTF related - individual npy datasets
@@ -187,11 +188,11 @@ def get_sofa_url(listener_type="", dataset_name="", name_gui="", gui_logger=None
         list: A list of listener names.
     """
     
+    url = ""
     
     try:
     
-        url = ""
-        
+ 
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
             #HRTF related - individual npy datasets
@@ -238,10 +239,10 @@ def get_alternative_url(listener_type="", dataset_name="", name_gui="", gui_logg
         list: A list of listener names.
     """
     
+    url = ""
     
     try:
     
-        url = ""
         
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
@@ -290,11 +291,11 @@ def get_flip_azim_flag(listener_type="", dataset_name="", name_gui="", gui_logge
         bool: True if the flag is "yes", otherwise False.
     """
     
+    flag = ""
     
     try:
     
-        flag = ""
-        
+ 
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
             #HRTF related - individual npy datasets
@@ -341,11 +342,10 @@ def get_polarity(listener_type="", dataset_name="", name_gui="", gui_logger=None
         list: A list of listener names.
     """
     
+    flip_polarity = "no"
     
     try:
-    
-        flip_polarity = "no"
-        
+  
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
             #HRTF related - individual npy datasets
@@ -393,11 +393,10 @@ def get_gdrive_url_max(listener_type="", dataset_name="", name_gui="", gui_logge
         list: A list of listener names.
     """
     
+    url = ""
     
     try:
     
-        url = ""
-        
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
             #HRTF related - individual npy datasets
@@ -444,11 +443,11 @@ def get_gdrive_url_high(listener_type="", dataset_name="", name_gui="", gui_logg
         list: A list of listener names.
     """
     
+    url = ""
     
     try:
     
-        url = ""
-        
+   
         if listener_type == 'Dummy Head / Head & Torso Simulator' or listener_type == 'Human Listener':
             
             #HRTF related - individual npy datasets
@@ -596,7 +595,61 @@ def hrir_metadata_updates(download_updates=False, gui_logger=None):
     
   
     
-  
+def sofa_load_object(sofa_local_fname, gui_logger=None):
+    """
+    Loads a SOFA file and returns a dictionary of variables starting with 'sofa_'.
+    
+    Args:
+        sofa_local_fname (str): Path to the local SOFA file.
+        gui_logger (optional): Logger for GUI messages.
+    
+    Returns:
+        dict: Dictionary of variables starting with 'sofa_'.
+    """
+    # Initialize an empty dictionary to store variables starting with 'sofa_'
+    sofa_vars = {}
+    
+    try:
+        #first try loading with SOFAsonix
+        try:
+            loadsofa = SOFAFile.load(sofa_local_fname)
+            sofa_vars['sofa_data_ir'] = loadsofa.data_ir
+            sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate[0])
+            sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
+            sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
+            sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
+            sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+        except:
+            log_string = 'Unable to load SOFA file with SOFAsonix. Attempting to load with sofar'
+            hf.log_with_timestamp(log_string, gui_logger=None)
+            
+            try:
+                #if fails, try loading with SOFAR
+                loadsofa = sf.read_sofa(sofa_local_fname)
+                sofa_vars['sofa_data_ir'] = loadsofa.Data_IR
+                sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate)
+                sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
+                sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
+                sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
+                sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+                
+                log_string = 'Loaded Successfully with sofar'
+                hf.log_with_timestamp(log_string, gui_logger=None)
+            
+            except:
+                log_string = 'Unable to load SOFA file. Likely due to unsupported convention version.'
+                hf.log_with_timestamp(log_string, gui_logger=None)
+        
+                raise ValueError('Unable to load SOFA file')
+        
+    
+    except Exception as ex:
+
+        log_string = 'SOFA load workflow failed'
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+        
+    return sofa_vars
+    
 
 
 def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir_hrtf_short, report_progress=0, gui_logger=None, spatial_res=2):
@@ -634,9 +687,9 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         # Check if the file already exists
         if os.path.exists(sofa_local_fname):
             #attempt to load the sofa file
-            try:
-                loadsofa = SOFAFile.load(sofa_local_fname)
-            except:
+            
+            loadsofa = sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
+            if not loadsofa:#empty dict returned
                 log_string = 'Unable to load SOFA file. Likely due to unsupported convention version'
                 hf.log_with_timestamp(log_string, gui_logger)
                 return status
@@ -660,9 +713,8 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
             
             if response == True:
                 #attempt to load the sofa file
-                try:
-                    loadsofa = SOFAFile.load(sofa_local_fname)
-                except:
+                loadsofa = sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
+                if not loadsofa:#empty dict returned
                     log_string = 'Unable to load SOFA file. Likely due to unsupported convention version'
                     hf.log_with_timestamp(log_string, gui_logger)
                     return status
@@ -676,9 +728,8 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
                 
                 if response == True:
                     #attempt to load the sofa file
-                    try:
-                        loadsofa = SOFAFile.load(sofa_local_fname)
-                    except:
+                    loadsofa = sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
+                    if not loadsofa:#empty dict returned
                         log_string = 'Unable to load SOFA file. Likely due to unsupported convention version'
                         hf.log_with_timestamp(log_string, gui_logger)
                         return status
@@ -702,12 +753,11 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
             
             
         # View the convention parameters
-        #loadsofa.view()
         # Copy impulse response data
-        convention_name = loadsofa.GLOBAL_SOFAConventions
-        sofa_data_ir = loadsofa.data_ir
-        sofa_samplerate = int(loadsofa.Data_SamplingRate[0])
-        sofa_source_positions = loadsofa.SourcePosition    
+        convention_name = loadsofa['sofa_convention_name']
+        sofa_data_ir = loadsofa['sofa_data_ir']
+        sofa_samplerate = loadsofa['sofa_samplerate']
+        sofa_source_positions = loadsofa['sofa_source_positions']    
         
         #extract data and place into npy array (resample if required)
         #flip_azimuths_fb = get_flip_azim_flag(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=None)
@@ -966,7 +1016,7 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
     hrir_out=None
     try:
         
-        if convention_name == 'GeneralFIR' or convention_name == 'SimpleFreeFieldHRIR' or convention_name == 'GeneralFIRE':
+        if convention_name in CN.SOFA_COMPAT_CONV:
             #in GeneralFIRE convention, dim 1 = measurements, dim 2 = receivers (L + R), dim 3 = samples, dim 4 = emitters (speakers):
             #in GeneralFIR and SimpleFreeFieldHRIR conventions, dim 1 = measurements, dim 2 = receivers (L + R), dim 3 = samples e.g. size [648, 2, 2048]
             # Get the lengths of the first 3 dimensions
@@ -1020,7 +1070,13 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
                 for chan in range(total_chan_hrir):
                     if convention_name == 'GeneralFIRE':
                         try: 
-                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:,0])#generalfire case, not tested
+                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,0,:])#GeneralFIRE case, not tested. mREn
+                        except:
+                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
+                        
+                    elif convention_name == 'GeneralFIR-E':
+                        try: 
+                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:,0])#GeneralFIR-E case, not tested.  mrne
                         except:
                             hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
                     else:

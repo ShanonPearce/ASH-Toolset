@@ -28,6 +28,7 @@ import threading
 import gdown
 import datetime
 import concurrent.futures
+from csv import DictReader
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +347,7 @@ def generate_reverberant_brir(gui_logger=None):
         logging.info('Execution time:' + str(elapsed_time) + ' seconds')
         
 
-def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp, early_refl_delay_ms = 0, reduce_reverb=False, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0], reduce_dataset=False, brir_dict=None):   
+def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp, early_refl_delay_ms = 0, reduce_reverb=False, spatial_res=1, report_progress=0, gui_logger=None, acoustic_space=CN.AC_SPACE_LIST_SRC[0], hrtf_symmetry=CN.HRTF_SYM_LIST[0], reduce_dataset=False, brir_dict={}):   
     """
     Function to generate customised BRIR from below parameters
 
@@ -388,15 +389,17 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         else:
             n_fft=CN.N_FFT_L      
 
+        
+        
         #variable crossover depending on acoustic space
-        if acoustic_space in CN.AC_SPACE_LIST_HI_FC:
-            f_crossover_var=CN.F_CROSSOVER_HI
-        elif acoustic_space in CN.AC_SPACE_LIST_MID_FC:
-            f_crossover_var=CN.F_CROSSOVER_MID
-        elif acoustic_space in CN.AC_SPACE_LIST_LOW_FC:
-            f_crossover_var=CN.F_CROSSOVER_LOW
-        else:
-            f_crossover_var=CN.F_CROSSOVER
+        f_crossover_var,order_var= get_ac_f_crossover(name_src=acoustic_space, gui_logger=gui_logger)
+        
+        #filters
+        lp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=False, b_type='low')
+        hp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=False, b_type='high')
+
+        ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
+        est_rt60 = CN.AC_SPACE_FADE_START[ac_space_int]
 
         #impulse
         impulse=np.zeros(CN.N_FFT)
@@ -425,8 +428,19 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         initial_removal_win_rev[initial_hanning_start:initial_hanning_start+int(initial_hanning_size/2)] = hann_initial
         initial_removal_win_rev[initial_hanning_start+int(initial_hanning_size/2):]=data_pad_ones[initial_hanning_start+int(initial_hanning_size/2):]
 
-
-
+        #direction matrices
+        
+        #get matrix of desired directions to process
+        direction_matrix_process = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=0)
+        #get matrix of desired output directions
+        # if reduce_dataset == True:
+        #     #case for reduced dataset
+        #     direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=3, brir_dict=brir_dict)
+        # else:
+        #     #regular case
+        #     direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=1)
+        #regular case
+        direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=1)
 
 
         log_string = 'Loading input filters'
@@ -534,16 +548,9 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         # load HRIRs
         #
         
-        #get matrix of desired directions to process
-        if reduce_dataset == True or brir_name != CN.FOLDER_BRIRS_LIVE:
-            #case for reduced dataset or dataset export
-            direction_matrix_process = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=4)
-        else:
-            #regular case - quick configuration
-            direction_matrix_process = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=0)
 
         #get relevant information from dict
-        if brir_dict != None:
+        if brir_dict:
             if brir_name == CN.FOLDER_BRIRS_LIVE: 
                 brir_hrtf_type=brir_dict.get('qc_brir_hrtf_type')
                 brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
@@ -702,8 +709,7 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         
         #get start id for noise reduction fade out
         rt60_comp_factor=0.95
-        ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
-        est_rt60 = CN.AC_SPACE_FADE_START[ac_space_int]
+        
         n_fade_win_start = int(((est_rt60*rt60_comp_factor)/1000)*CN.FS)
         if est_rt60 > 0:
             noise_fade = True
@@ -773,7 +779,7 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         # azim_ind = int(30/azim_nearest)
         # hrir_sample = np.copy(hrir_selected[elev_ind][azim_ind][0][:])
         # hrir_sample=hf.zero_pad_last_dimension(data=hrir_sample, n_fft=n_fft)#zero pad
-        # reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb)
+        # reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb, order_var)
 
 
 
@@ -900,7 +906,7 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
   
         if CN.ENABLE_SUB_INTEGRATION == True:
         
-            sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub)
+            sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var)
             
             if report_progress > 0:
                 progress = 60/100
@@ -911,9 +917,14 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
             #
             brir_eq_a_l = np.copy(sub_brir_ir[0][:])
             brir_eq_a_r = np.copy(sub_brir_ir[1][:])
+            # #apply lp filter
+            # brir_eq_b_l = hf.signal_lowpass_filter(brir_eq_a_l, f_crossover_var, CN.FS, order_var)
+            # brir_eq_b_r = hf.signal_lowpass_filter(brir_eq_a_r, f_crossover_var, CN.FS, order_var)
             #apply lp filter
-            brir_eq_b_l = hf.signal_lowpass_filter(brir_eq_a_l, f_crossover_var, CN.FS, CN.ORDER)
-            brir_eq_b_r = hf.signal_lowpass_filter(brir_eq_a_r, f_crossover_var, CN.FS, CN.ORDER)
+            brir_eq_b_l = hf.apply_sos_filter(brir_eq_a_l, lp_sos, filtfilt=False)
+            brir_eq_b_r = hf.apply_sos_filter(brir_eq_a_r, lp_sos, filtfilt=False)
+            
+            
             sub_brir_ir[0][:] = brir_eq_b_l[0:n_fft] 
             sub_brir_ir[1][:] = brir_eq_b_r[0:n_fft]
             
@@ -928,7 +939,7 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
             # Use ThreadPoolExecutor to integrate sub brir
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 futures = [executor.submit(integrate_sub_brirs, brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process,
-                                        f_crossover_var, sub_brir_ir)
+                                         sub_brir_ir, hp_sos)
                            for elev in range(total_elev_hrir)]
                 for future in concurrent.futures.as_completed(futures):
                     future.result()  # Optionally, handle exceptions
@@ -997,13 +1008,6 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
             progress = 80/100
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
         
-        #get matrix of desired output directions
-        if reduce_dataset == True:
-            #case for reduced dataset
-            direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=3, brir_dict=brir_dict)
-        else:
-            #regular case
-            direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=1)
 
         #exit if stop thread flag is true
         stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
@@ -1014,11 +1018,36 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
 
 
         
-
+        #section to prepare to crop BRIR output
+        #larger reverb times will need additional samples
+       #estimate output array length based on RT60
+        if est_rt60 <=400:#determines the most samples to keep based on estimated rt60
+            out_samples_est = 33075
+        elif est_rt60 <750:
+            out_samples_est = 44100
+        elif est_rt60 <1000:
+            out_samples_est = 55125
+        elif est_rt60 <=1250:
+            out_samples_est = 63945    
+        elif est_rt60 <=1500:
+            out_samples_est = 99225 
+        else:
+            out_samples_est = 127890
+        if out_samples_est > n_fft:
+            out_samples_est = max(n_fft-1000,4410)      
+        #attempt to trim array. Calculate point where amplitude falls below threshold, later discards remaining samples
+        brir_sample = np.abs(brir_out[0][0][0][:])
+        norm_factor = np.max(brir_sample)
+        ref_array = np.divide(brir_sample,norm_factor)
+        crop_samples = hf.get_crop_index(ref_array)
+        if crop_samples < 4000 or crop_samples > out_samples_est:
+            crop_samples=out_samples_est
         #get end index for convolutions
-        brir_sample = brir_out[0][0][0][:]
-        crop_samples = hf.get_crop_index(brir_sample)
         #print(crop_samples)
+        
+        # brir_sample = brir_out[0][0][0][:]
+        # crop_samples = hf.get_crop_index(brir_sample)
+        # #print(crop_samples)
         
         #use multiple threads to perform EQ
         #Use ThreadPoolExecutor to perform EQ
@@ -1049,6 +1078,15 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         if report_progress > 0:
             progress = 90/100
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
+            
+        
+        #crop before returning
+        brir_out=hf.crop_array_last_dimension(brir_out, crop_samples)
+        # Convert the data type to float32 and replace the original array, no longer need higher precision
+        brir_out = brir_out.astype(np.float32)
+            
+            
+            
 
     except Exception as ex:
         status=1#1=failed
@@ -1069,7 +1107,7 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
     return brir_out,status
 
 
-def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub):
+def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var):
     """
     Function performs time domain alignment of sub brir array
     :param sub_brir_ir: numpy array containing sub brirs
@@ -1115,7 +1153,7 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
         sum_ir_c = np.add(brir_sample,subrir_shift_c)
 
         #calculate distance from peak to peak within a 400 sample window
-        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, order_var)
         peak_to_peak_iter=0
         for hop_id in range(CN.DELAY_WIN_HOPS):
             samples = hop_id*CN.DELAY_WIN_HOP_SIZE
@@ -1145,7 +1183,7 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
         sum_ir_c = np.add(brir_sample,subrir_shift_c)
 
         #calculate distance from peak to peak within a 400 sample window
-        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, order_var)
         peak_to_peak_iter=0
         for hop_id in range(CN.DELAY_WIN_HOPS):
             samples = hop_id*CN.DELAY_WIN_HOP_SIZE
@@ -1197,7 +1235,7 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
         logging.info('(SUB) peak_to_peak_max_p = ' + str(peak_to_peak_max_p))
 
 
-def reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb):
+def reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb, order_var):
     """
     Function performs time domain alignment of reverb brir array
     :param sub_brir_ir: numpy array containing sub brirs
@@ -1230,7 +1268,7 @@ def reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, i
         sum_ir_c = np.add(hrir_sample,reverb_shift_c)
 
         #calculate distance from peak to peak within a 400 sample window
-        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, order_var)
         peak_to_peak_iter=0
         for hop_id in range(CN.DELAY_WIN_HOPS):
             samples = hop_id*CN.DELAY_WIN_HOP_SIZE
@@ -1260,7 +1298,7 @@ def reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, i
         sum_ir_c = np.add(hrir_sample,reverb_shift_c)
 
         #calculate distance from peak to peak within a 400 sample window
-        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
+        sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, order_var)
         peak_to_peak_iter=0
         for hop_id in range(CN.DELAY_WIN_HOPS):
             samples = hop_id*CN.DELAY_WIN_HOP_SIZE
@@ -1428,7 +1466,7 @@ def apply_eq_to_brirs_v2(brir_out, elev, n_fft, total_azim_hrir, direction_matri
 
 
 
-def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, f_crossover_var, sub_brir_ir):
+def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_process, sub_brir_ir, hp_sos):
     """
     Function applies final stages of sub brir integration
     :param brir_out: numpy array containing brirs
@@ -1444,8 +1482,11 @@ def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix
             if direction_matrix_process[elev][azim][0][0] == 1: 
             
                 brir_eq_a_h = np.copy(brir_out[elev][azim][chan][:])
+                
                 #apply hp filter
-                brir_eq_b_h = hf.signal_highpass_filter(brir_eq_a_h, f_crossover_var, CN.FS, CN.ORDER)
+                #brir_eq_b_h = hf.signal_highpass_filter(brir_eq_a_h, f_crossover_var, CN.FS, order_var)
+                brir_eq_b_h = hf.apply_sos_filter(brir_eq_a_h, hp_sos, filtfilt=False)
+                
                 brir_out[elev][azim][chan][:] = brir_eq_b_h[0:n_fft] 
   
     #add SUB BRIR into output BRIR array
@@ -1995,3 +2036,52 @@ def check_download_max_hrtf_datasets(download=False, gui_logger=None, report_pro
     
     
     return status
+
+
+
+def get_ac_f_crossover(name_src="", gui_logger=None):
+    """
+    Retrieves a crossover freq (int) for lf integration for a specific acoustic space
+    
+    Args:
+        name_src (str, optional): Name of acoustic space
+        gui_logger (object, optional): A logger object for GUI-related logging. Defaults to None.
+    
+    Returns:
+        fc: crossover freq (int), order (int)
+    """
+    
+    fc = CN.F_CROSSOVER
+    order = CN.ORDER
+    
+    try:
+
+        #load lists from csv file
+        try:
+        
+            #directories
+            csv_directory = pjoin(CN.DATA_DIR_INT, 'reverberation')
+            #read metadata from csv. Expects reverberation_metadata.csv 
+            metadata_file_name = 'reverberation_metadata.csv'
+            metadata_file = pjoin(csv_directory, metadata_file_name)
+            with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+                reader = DictReader(inputfile)
+                for row in reader:#rows 2 and onward
+                    #store each row as a dictionary
+                    #append to list of dictionaries
+                    if row.get('name_src') == name_src: #added check
+                        fc = int(row.get('f_crossover'))
+                        order = int(row.get('order_crossover'))
+ 
+        except Exception as e:
+            log_string=f"Error loading reverberation metadata: {e}"
+            hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
+            pass
+            
+    except Exception as ex:
+        log_string=f"Error occurred: {ex}"
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+   
+        
+    return fc,order
+
