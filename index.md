@@ -183,40 +183,24 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 
 ### Acoustic Spaces
 
-| Name             | Estimated RT60 (ms) |
-|------------------|---------------------|
-| Audio Lab A      | 312                 |
-| Audio Lab B      | 400                 |
-| Audio Lab C      | 567                 |
-| Audio Lab D      | 208                 |
-| Audio Lab E      | 471                 |
-| Audio Lab F      | 648                 |
-| Audio Lab G      | 370                 |
-| Audio Lab H      | 531                 |
-| Audio Lab I      | 541                 |
-| Auditorium       | 1455                |
-| Broadcast Studio | 1183                |
-| Concert Hall     | 1809                |
-| Conference Room  | 506                 |
-| Control Room     | 291                 |
-| Hall             | 1906                |
-| Large Room A     | 624                 |
-| Large Room B     | 576                 |
-| Lecture Room     | 704                 |
-| Office           | 408                 |
-| Outdoors A       | 2135                |
-| Outdoors B       | 1183                |
-| Seminar Room A   | 839                 |
-| Seminar Room B   | 710                 |
-| Small Room A     | 500                 |
-| Small Room B     | 437                 |
-| Small Room C     | 467                 |
-| Small Room D     | 463                 |
-| Small Room E     | 476                 |
-| Small Room F     | 474                 |
-| Studio A         | 398                 |
-| Studio B         | 723                 |
-| Tatami Room      | 518                 |
+| Name             | Estimated RT60 (ms) | Name           | Estimated RT60 (ms) |
+| ---------------- | ------------------- | -------------- | ------------------- |
+| Audio Lab A      | 312                 | Large Room B   | 576                 |
+| Audio Lab B      | 400                 | Lecture Room   | 704                 |
+| Audio Lab C      | 567                 | Office         | 408                 |
+| Audio Lab D      | 208                 | Outdoors A     | 2135                |
+| Audio Lab E      | 471                 | Outdoors B     | 1183                |
+| Audio Lab F      | 648                 | Seminar Room A | 839                 |
+| Audio Lab G      | 370                 | Seminar Room B | 710                 |
+| Audio Lab H      | 531                 | Small Room A   | 500                 |
+| Audio Lab I      | 541                 | Small Room B   | 437                 |
+| Auditorium       | 1455                | Small Room C   | 467                 |
+| Broadcast Studio | 1183                | Small Room D   | 463                 |
+| Concert Hall     | 1809                | Small Room E   | 476                 |
+| Conference Room  | 506                 | Small Room F   | 474                 |
+| Control Room     | 291                 | Studio A       | 398                 |
+| Hall             | 1906                | Studio B       | 723                 |
+| Large Room A     | 624                 | Tatami Room    | 518                 |
 
 ## Changelog <a name="Changelog"></a> 
 
@@ -352,4 +336,4 @@ Project Link: [https://github.com/ShanonPearce/ASH-Toolset](https://github.com/S
 
 ## Acknowledgments <a name="Acknowledgments"></a> 
 
-This project makes use of various publicly available HRIR, RIR, and BRIR datasets. Refer to the sheets provided in the [github docs folder ](https://github.com/ShanonPearce/ASH-Toolset/tree/main/docs) for information on the raw datasets used in this project
+This project makes use of various publicly available HRIR, RIR, and BRIR datasets. Refer to the sheets provided in the [github docs folder ](https://github.com/ShanonPearce/ASH-Toolset/tree/main/docs) for information on the raw datasets used in this project. Further information on the HRTF datasets can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files). 
