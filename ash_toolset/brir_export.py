@@ -220,9 +220,6 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
                             
                         
     
-                # #save dict list within gui element
-                # dpg.configure_item('e_apo_brir_conv',user_data=brir_data)
-                
                 # # Calculate the memory usage of the list of dictionaries
                 # memory_usage_bytes = 0
                 # for data_dict in brir_data:

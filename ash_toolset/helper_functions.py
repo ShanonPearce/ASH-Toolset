@@ -1039,7 +1039,7 @@ def find_delay_and_roll_lf(arr_a, arr_b):
     delay_win_hops = CN.DELAY_WIN_HOPS_A
     
     
-    cutoff_alignment = 110 #CN.F_CROSSOVER_LOW#CN.CUTOFF_ALIGNMENT_AIR
+    cutoff_alignment = 110 #3.1.2 = 110Hz
     
     #peak to peak within a sufficiently small sample window
     peak_to_peak_window = int(np.divide(samp_freq,cutoff_alignment)*0.95) #int(np.divide(samp_freq,cutoff_alignment)) 

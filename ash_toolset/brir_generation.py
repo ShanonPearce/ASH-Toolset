@@ -465,15 +465,6 @@ def generate_integrated_brir(brir_name, direct_gain_db, room_target, pinna_comp,
         pinna_comp_fir = np.load(npy_fname)
 
 
-        #
-        # load RT60 Target Response (FIR)
-        #
-        mat_fname = pjoin(CN.DATA_DIR_INT, 'room_rt60_target_response_fir.mat')
-        rt60_target_mat = mat73.loadmat(mat_fname)
-        rt60_target_fir=np.zeros(n_fft)
-        rt60_target_fir[0:4096] = rt60_target_mat['ref_room_late_fir'][0:4096]
-        data_fft = np.fft.fft(rt60_target_fir)#ensure left channel is taken for both channels
-        rt60_target_mag=np.abs(data_fft)
     
         #
         # load additional headphone eq

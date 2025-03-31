@@ -2734,7 +2734,9 @@ def calc_subrir(gui_logger=None):
         #section for loading estimated sub BRIR datasets and integrating into reference
         #
         
-        num_sub_sets=5 
+        num_sub_sets=5 #3.1.2 =6
+        eval_polarity = CN.EVAL_POLARITY
+        #eval_polarity = False
         
         #create numpy array for new BRIR dataset   
         subrir_sets=np.zeros((num_sub_sets,1,total_chan_brir,n_fft))
@@ -2753,11 +2755,18 @@ def calc_subrir(gui_logger=None):
                 ir_set='sub_set_e'
             elif sub_set_id == 4:
                 ir_set='sub_set_f'
-            if sub_set_id == 3:#wav
+            elif sub_set_id == 5:
+                ir_set='sub_set_g'
+            elif sub_set_id == 6:
+                ir_set='sub_set_h'
+            if sub_set_id == 3 or sub_set_id == 6:#wav
                 brir_reverberation=np.zeros((CN.INTERIM_ELEVS,1,2,n_fft))
                 #read wav files
                 brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
-                filename='BRIR_R32_C1_E0_A30_eq.wav'
+                if sub_set_id == 3:
+                    filename='BRIR_R32_C1_E0_A30_eq.wav'
+                if sub_set_id == 6:
+                    filename='BRIR_R05_C2_E0_A-30 EQ.wav'
                 wav_fname = pjoin(brir_out_folder, filename)
                 samplerate, data = wavfile.read(wav_fname)
                 #samp_freq=samplerate
@@ -2864,7 +2873,7 @@ def calc_subrir(gui_logger=None):
             peak_to_peak_max_n = np.max(delay_eval_set_sub_n[:])
             index_shift_n = np.argmax(delay_eval_set_sub_n[:])
             
-            if peak_to_peak_max_p > peak_to_peak_max_n or CN.EVAL_POLARITY == False or sub_set_id == 3:
+            if peak_to_peak_max_p > peak_to_peak_max_n or eval_polarity == False:#or sub_set_id == 3 or sub_set_id == 6
                 index_shift=index_shift_p
                 sub_polarity=1
             else:
@@ -3295,6 +3304,59 @@ def calc_subrir(gui_logger=None):
                     sub_brir_ir_pre = np.copy(sub_brir_ir_new)
                     sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
                     
+                    filter_type="lowshelf"
+                    fc=20
+                    sr=samp_freq
+                    q=1.0
+                    gain_db=3.5
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                elif sub_set_id == 5:
+                    
+                    filter_type="lowshelf"
+                    fc=40
+                    sr=samp_freq
+                    q=1.0
+                    gain_db=8
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=26
+                    sr=samp_freq
+                    q=4
+                    gain_db=-3
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=27
+                    sr=samp_freq
+                    q=7
+                    gain_db=-1.5
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    filter_type="peaking"
+                    fc=65
+                    sr=samp_freq
+                    q=2
+                    gain_db=-3
+                    pyquad = pyquadfilter.PyQuadFilter(sr)
+                    pyquad.set_params(filter_type, fc, q, gain_db)
+                    sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+                    sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                    
+                    
             #save interim result
             out_file_name = str(sub_set_id) + '_after_eq_rolled_brir.wav'
             out_file_path = pjoin(brir_out_folder,out_file_name)
@@ -3329,7 +3391,10 @@ def calc_subrir(gui_logger=None):
                 subrir_sets_interim[sub_set_id,set_num,chan,:] = np.copy(sub_brir_ir_new[chan][:])
   
         #ratios for merging
-        ratio_list = [0.05,0.21,0.16,0.14,0.28,0.16]#v3.0.2 [0.20,0.22,0.16,0.14,0.28] v3.0.3 [0.05,0.21,0.16,0.14,0.28,0.16]
+        ratio_list = [0.05,0.21,0.16,0.14,0.28,0.16]     
+        #v3.0.2 [0.20,0.22,0.16,0.14,0.28] 
+        #v3.0.3 [0.05,0.21,0.16,0.14,0.28,0.16], [0.05,0.21,0.16,0.14,0.28,0.16]   
+        #v3.1.2  n2 [0.03,0.20,0.15,0.13,0.29,0.15, 0.05] n3 [0.03,0.21,0.16,0.14,0.30,0.16] n4 [0,0.17,0.15,0.14,0.33,0.16, 0.05],  [0,0.14,0.14,0.13,0.33,0.15, 0.05, 0.06] n6 [0.00,0.21,0.16,0.14,0.33,0.16] 
 
         sub_brir_ir_new = np.zeros((2,n_fft))
         #prepopulate with reference subrir
@@ -3362,10 +3427,113 @@ def calc_subrir(gui_logger=None):
         if additional_filt == 1:
   
             filter_type="lowshelf"
-            fc=14
+            fc=13
             sr=samp_freq
             q=1.0
-            gain_db=9.3#10
+            gain_db=10.5#9.3
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=2
+            sr=samp_freq
+            q=2.0
+            gain_db=-6.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=3
+            sr=samp_freq
+            q=2.0
+            gain_db=-6.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+
+            filter_type="peaking"
+            fc=5
+            sr=samp_freq
+            q=2.9
+            gain_db=-5.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=11
+            sr=samp_freq
+            q=12
+            gain_db=2.5
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=12
+            sr=samp_freq
+            q=12
+            gain_db=2.5
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=18
+            sr=samp_freq
+            q=6
+            gain_db=0.5
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            filter_type="peaking"
+            fc=26
+            sr=samp_freq
+            q=6
+            gain_db=0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+
+                 
+            filter_type="peaking"
+            fc=32
+            sr=samp_freq
+            q=3
+            gain_db=1
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+                   
+            filter_type="peaking"
+            fc=46
+            sr=samp_freq
+            q=2
+            gain_db=-1.0
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+            
+            
+
+            filter_type="peaking"
+            fc=51
+            sr=samp_freq
+            q=8
+            gain_db=0.2
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3375,8 +3543,8 @@ def calc_subrir(gui_logger=None):
             filter_type="peaking"
             fc=55
             sr=samp_freq
-            q=4
-            gain_db=-0.5
+            q=5
+            gain_db=-0.9
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3385,8 +3553,8 @@ def calc_subrir(gui_logger=None):
             filter_type="peaking"
             fc=77
             sr=samp_freq
-            q=6
-            gain_db=-1.0
+            q=8
+            gain_db=-1.2
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
@@ -3402,47 +3570,7 @@ def calc_subrir(gui_logger=None):
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
    
-            
-            filter_type="peaking"
-            fc=146
-            sr=samp_freq
-            q=8
-            gain_db=-0.4
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-  
  
-            filter_type="peaking"
-            fc=30
-            sr=samp_freq
-            q=2.5
-            gain_db=1.4
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-
-            filter_type="peaking"
-            fc=3
-            sr=samp_freq
-            q=3
-            gain_db=-3.0
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-
-            filter_type="peaking"
-            fc=4
-            sr=samp_freq
-            q=3
-            gain_db=-3.0
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
             
             filter_type="peaking"
             fc=70
@@ -3455,34 +3583,48 @@ def calc_subrir(gui_logger=None):
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
             
             filter_type="peaking"
-            fc=120
+            fc=119
             sr=samp_freq
-            q=2
-            gain_db=-0.6
+            q=4
+            gain_db=-0.95
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
+          
             filter_type="peaking"
-            fc=46
+            fc=125
             sr=samp_freq
-            q=2
-            gain_db=-1.0
+            q=15
+            gain_db=1.3
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
             
+
             filter_type="peaking"
             fc=142
             sr=samp_freq
-            q=2
+            q=2.5
             gain_db=-1.1
             pyquad = pyquadfilter.PyQuadFilter(sr)
             pyquad.set_params(filter_type, fc, q, gain_db)
             sub_brir_ir_pre = np.copy(sub_brir_ir_new)
             sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+  
+            
+            
+            filter_type="peaking"
+            fc=145
+            sr=samp_freq
+            q=7
+            gain_db=-0.5
+            pyquad = pyquadfilter.PyQuadFilter(sr)
+            pyquad.set_params(filter_type, fc, q, gain_db)
+            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
+            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
+  
 
             if CN.LOG_INFO == True:
                 logging.info('filter_type = ' + str(filter_type))

@@ -1871,7 +1871,11 @@ def main():
             dpg.set_value("e_apo_brir_conv", True)
             #save dict list within gui element
             if brir_dict_list_new:#only update if not empty list
-                dpg.configure_item('e_apo_brir_conv',user_data=brir_dict_list_new)
+                old_data=dpg.get_item_user_data("e_apo_brir_conv")
+                # Prevent memory leak by clearing old references
+                if isinstance(old_data, list):
+                    old_data.clear()
+                dpg.configure_item('e_apo_brir_conv',user_data=brir_dict_list_new)#use later if changing directions
             if use_dict_list == False:#only update if normal process
                 #update current brir set text
                 dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
