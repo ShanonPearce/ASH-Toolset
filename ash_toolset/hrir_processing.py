@@ -7,9 +7,6 @@ Created on Sun Mar  9 16:20:38 2025
 
 import numpy as np
 from os.path import join as pjoin
-import mat73
-import time
-import logging
 from ash_toolset import helper_functions as hf
 from ash_toolset import constants as CN
 from ash_toolset import brir_export
@@ -17,13 +14,11 @@ from csv import DictReader
 import numpy as np
 import os
 import gdown
-from SOFASonix import SOFAFile
-import dearpygui.dearpygui as dpg
 from math import sqrt
 from pathlib import Path
 import threading
 import scipy as sp
-import sofar as sf
+
 
 def get_listener_list(listener_type="", dataset_name="", max_res_only=False, gui_logger=None):
     """
@@ -595,61 +590,6 @@ def hrir_metadata_updates(download_updates=False, gui_logger=None):
     
   
     
-def sofa_load_object(sofa_local_fname, gui_logger=None):
-    """
-    Loads a SOFA file and returns a dictionary of variables starting with 'sofa_'.
-    
-    Args:
-        sofa_local_fname (str): Path to the local SOFA file.
-        gui_logger (optional): Logger for GUI messages.
-    
-    Returns:
-        dict: Dictionary of variables starting with 'sofa_'.
-    """
-    # Initialize an empty dictionary to store variables starting with 'sofa_'
-    sofa_vars = {}
-    
-    try:
-        #first try loading with SOFAsonix
-        try:
-            loadsofa = SOFAFile.load(sofa_local_fname)
-            sofa_vars['sofa_data_ir'] = loadsofa.data_ir
-            sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate[0])
-            sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
-            sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
-            sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
-            sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
-        except:
-            log_string = 'Unable to load SOFA file with SOFAsonix. Attempting to load with sofar'
-            hf.log_with_timestamp(log_string, gui_logger=None)
-            
-            try:
-                #if fails, try loading with SOFAR
-                loadsofa = sf.read_sofa(sofa_local_fname)
-                sofa_vars['sofa_data_ir'] = loadsofa.Data_IR
-                sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate)
-                sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
-                sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
-                sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
-                sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
-                
-                log_string = 'Loaded Successfully with sofar'
-                hf.log_with_timestamp(log_string, gui_logger=None)
-            
-            except:
-                log_string = 'Unable to load SOFA file. Likely due to unsupported convention version.'
-                hf.log_with_timestamp(log_string, gui_logger=None)
-        
-                raise ValueError('Unable to load SOFA file')
-        
-    
-    except Exception as ex:
-
-        log_string = 'SOFA load workflow failed'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-        
-    return sofa_vars
-    
 
 
 def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir_hrtf_short, report_progress=0, gui_logger=None, spatial_res=2):
@@ -688,7 +628,7 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         if os.path.exists(sofa_local_fname):
             #attempt to load the sofa file
             
-            loadsofa = sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
+            loadsofa = hf.sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
             if not loadsofa:#empty dict returned
                 log_string = 'Unable to load SOFA file. Likely due to unsupported convention version'
                 hf.log_with_timestamp(log_string, gui_logger)
@@ -713,7 +653,7 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
             
             if response == True:
                 #attempt to load the sofa file
-                loadsofa = sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
+                loadsofa = hf.sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
                 if not loadsofa:#empty dict returned
                     log_string = 'Unable to load SOFA file. Likely due to unsupported convention version'
                     hf.log_with_timestamp(log_string, gui_logger)
@@ -728,7 +668,7 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
                 
                 if response == True:
                     #attempt to load the sofa file
-                    loadsofa = sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
+                    loadsofa = hf.sofa_load_object(sofa_local_fname)#use custom function to load object, returns dict
                     if not loadsofa:#empty dict returned
                         log_string = 'Unable to load SOFA file. Likely due to unsupported convention version'
                         hf.log_with_timestamp(log_string, gui_logger)
@@ -891,7 +831,10 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         # full filename
         npy_fname = pjoin(hrir_dir, f"{brir_hrtf_short}.npy")
                 
-        
+        # Convert the data type to float32 and replace the original array, no longer need higher precision
+        if hrir_out.dtype == np.float64:
+            hrir_out = hrir_out.astype(np.float32)
+            
         #save npy
         output_file = Path(npy_fname)
         output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1015,6 +958,12 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
     """
     hrir_out=None
     try:
+        #filters
+        cutoff=10000#14000
+        fs=CN.FS
+        order=8
+        method=1
+        lp_sos = hf.get_filter_sos(cutoff=cutoff, fs=fs, order=order, b_type='low')
         
         if convention_name in CN.SOFA_COMPAT_CONV:
             #in GeneralFIRE convention, dim 1 = measurements, dim 2 = receivers (L + R), dim 3 = samples, dim 4 = emitters (speakers):
@@ -1048,13 +997,30 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
         #HRIR array will be populated with all HRIRs
         hrir_out=np.zeros((total_sets,output_elevs,output_azims,total_chan_hrir,total_samples_hrir))
         hrir_selected=np.zeros((total_chan_hrir,n_samples))
+        #hrir_sample=np.zeros((total_chan_hrir,n_samples))
         
         populate_samples = min(total_samples_hrir,n_samples)
         samp_freq_ash =CN.SAMP_FREQ
         #resample if samp_freq is not 44100
         if sofa_samplerate != samp_freq_ash:
+            populate_samples_re = round(populate_samples * float(samp_freq_ash) / sofa_samplerate)#recalculate no. samples 
+            populate_samples = min(populate_samples,populate_samples_re)
             log_string = 'Resampling dataset'
             hf.log_with_timestamp(log_string, gui_logger)
+            
+        # #retrieve sample as reference for shifting
+        # sample_elev_deg = 0
+        # sample_azim_deg=0
+        # #get nearest direction
+        # nearest_dir_idx = sofa_find_nearest_direction(sofa_source_positions=sofa_source_positions, target_elevation=sample_elev_deg, target_azimuth=sample_azim_deg, flip_azimuths_fb=flip_azimuths_fb, reverse_azim_rot=reverse_azim_rot)
+        # #grab sample HRIR
+        # for chan in range(total_chan_hrir):
+        #     query_sofa_data(convention_name,hrir_sample,sofa_data_ir,nearest_dir_idx,chan)
+        # #resample if samp_freq is not 44100
+        # if sofa_samplerate != samp_freq_ash:
+        #     hrir_sample = hf.resample_signal(hrir_sample, original_rate = sofa_samplerate, new_rate = samp_freq_ash, axis=1, scale=True)
+        # #shift
+        # hrir_sample=shift_2d_impulse_response(hrir_sample, lp_sos, target_index=57)#46
                 
         #for each direction in output array
         #for each elev and az
@@ -1068,38 +1034,52 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
                 #grab HRIR of this direction
                 hrir_selected=np.zeros((total_chan_hrir,n_samples))
                 for chan in range(total_chan_hrir):
-                    if convention_name == 'GeneralFIRE':
-                        try: 
-                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,0,:])#GeneralFIRE case, not tested. mREn
-                        except:
-                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
-                        
-                    elif convention_name == 'GeneralFIR-E':
-                        try: 
-                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:,0])#GeneralFIR-E case, not tested.  mrne
-                        except:
-                            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
-                    else:
-                        hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
+                    query_sofa_data(convention_name,hrir_selected,sofa_data_ir,nearest_dir_idx,chan)
         
+                
                 #resample if samp_freq is not 44100
                 if sofa_samplerate != samp_freq_ash:
-                    hrir_selected = hf.resample_signal(hrir_selected, new_rate = samp_freq_ash, axis=0)
+                    hrir_selected = hf.resample_signal(hrir_selected, original_rate = sofa_samplerate, new_rate = samp_freq_ash, axis=1, scale=True)
                     
                 #shift
-                hrir_selected=shift_2d_impulse_response(hrir_selected, target_index=47)
+                hrir_selected=shift_2d_impulse_response(hrir_selected, lp_sos, target_index=58)#46
+                #hrir_selected=shift_2d_impulse_response_cc(hrir_selected, hrir_sample, lp_sos)#use cross correlation to align in TD
+                
                 
                 #place into npy array (also crops)
                 for chan in range(total_chan_hrir):
                     hrir_out[set_id,elev,azim,chan,0:populate_samples] = np.copy(hrir_selected[chan,0:populate_samples])
                 
 
-        
+        #resample if samp_freq is not 44100
+        if sofa_samplerate != samp_freq_ash:
+            log_string_a = 'source samplerate: ' + str(sofa_samplerate) + ', resampled to: '+ str(samp_freq_ash)
+            hf.log_with_timestamp(log_string_a)
+            
     except Exception as ex:
         log_string = 'SOFA transform failed'
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
     return hrir_out
+
+def query_sofa_data(convention_name,hrir_selected,sofa_data_ir,nearest_dir_idx,chan):
+    """
+    Function to copy data from sofa dataset
+    """
+    
+    if convention_name == 'GeneralFIRE':
+        try: 
+            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,0,:])#GeneralFIRE case, not tested. mREn
+        except:
+            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
+        
+    elif convention_name == 'GeneralFIR-E':
+        try: 
+            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:,0])#GeneralFIR-E case, not tested.  mrne
+        except:
+            hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
+    else:
+        hrir_selected[chan,:] = np.copy(sofa_data_ir[nearest_dir_idx,chan,:])
 
 
 def sofa_find_nearest_direction(sofa_source_positions, target_elevation, target_azimuth, flip_azimuths_fb=False, reverse_azim_rot=False, spatial_res=2, gui_logger=None):
@@ -1154,7 +1134,8 @@ def sofa_find_nearest_direction(sofa_source_positions, target_elevation, target_
         
     return nearest_idx
 
-def shift_2d_impulse_response(arr, target_index=50):
+
+def shift_2d_impulse_response(arr, lp_sos, target_index=50):
     """
     Shifts a 2D NumPy array so that the earliest peak across all rows in the second 
     dimension (largest absolute value) aligns at the specified target index.
@@ -1166,6 +1147,9 @@ def shift_2d_impulse_response(arr, target_index=50):
     Returns:
         np.ndarray: A 2D NumPy array with all rows shifted by the same amount.
     """
+    
+    #apply low pass before shifting
+    arr_lp = hf.apply_sos_filter(arr, lp_sos)
 
     N, M = arr.shape  # Get shape of array
 
@@ -1173,7 +1157,9 @@ def shift_2d_impulse_response(arr, target_index=50):
     target_index = min(target_index, M - 1)
 
     # Find peak indices across all rows (global peak detection)
-    peak_indices = np.argmax(np.abs(arr), axis=1)  # Find peak per row
+    #peak_indices = np.argmax(np.abs(arr_lp), axis=1)  # Find peak per row
+    peak_indices = np.argmax(arr_lp, axis=1)  # check only positive values
+    
     earliest_peak_index = np.min(peak_indices)  # Find the earliest peak
 
     # Compute global shift amount
@@ -1187,5 +1173,48 @@ def shift_2d_impulse_response(arr, target_index=50):
         shifted_arr[:, :shift_amount] = 0  # Zero out leading elements
     elif shift_amount < 0:
         shifted_arr[:, shift_amount:] = 0  # Zero out trailing elements
+
+    return shifted_arr
+
+
+def shift_2d_impulse_response_cc(arr, hrir_sample, lp_sos, max_shift_samples=100):
+    """
+    Shifts a 2D impulse response array to align with a reference using cross-correlation between 
+    the most energetic channels in both the target and reference.
+
+    Args:
+        arr (np.ndarray): 2D array of shape (channels, samples).
+        hrir_sample (np.ndarray): Reference 2D array of shape (channels, samples).
+        max_shift_samples (int): Max samples to shift (positive or negative).
+
+    Returns:
+        np.ndarray: Shifted 2D array aligned with the reference.
+    """
+
+
+    # Apply low-pass filter
+    #apply low pass before shifting
+    arr_lp = hf.apply_sos_filter(arr, lp_sos)
+    ref_lp = hf.apply_sos_filter(hrir_sample, lp_sos)
+
+    # Find channel with highest peak (abs) in both arrays
+    best_channel_arr = np.argmax(np.max(np.abs(arr_lp), axis=1))
+    best_channel_ref = np.argmax(np.max(np.abs(ref_lp), axis=1))
+
+    # Cross-correlation between these two peak channels
+    xcorr = np.correlate(arr_lp[best_channel_arr], ref_lp[best_channel_ref], mode='full')
+    lag = np.argmax(xcorr) - (len(arr_lp[best_channel_arr]) - 1)
+
+    # Clip lag
+    lag = int(np.clip(lag, -max_shift_samples, max_shift_samples))
+
+    # Apply shift
+    shifted_arr = np.roll(arr, -lag, axis=1)
+
+    # Zero out wrapped values
+    if lag > 0:
+        shifted_arr[:, -lag:] = 0
+    elif lag < 0:
+        shifted_arr[:, :-lag] = 0
 
     return shifted_arr

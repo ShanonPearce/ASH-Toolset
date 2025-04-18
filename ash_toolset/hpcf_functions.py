@@ -26,7 +26,6 @@ from ash_toolset import helper_functions as hf
 import csv
 import string
 from ash_toolset import e_apo_config_creation
-import difflib
 from scipy.interpolate import CubicSpline
 import dearpygui.dearpygui as dpg
 import gdown
@@ -869,7 +868,7 @@ def hpcf_sample_id_to_name(sample_id):
     
         
 
-def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=44100, geq_freq_arr = np.array([]), output_string_type = 2):
+def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=CN.SAMP_FREQ, geq_freq_arr = np.array([]), output_string_type = 2):
     """
     Function takes an FIR as an input and returns EQ filter. Supports Graphic EQ Full, Graphic EQ
     :param fir_array: numpy array 1d, contains time domain FIR filter at 44100Hz
@@ -1266,7 +1265,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
 
 
 
-def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=True, gui_logger=None, samp_freq=44100, bit_depth='PCM_24', force_output=False):
+def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=True, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
     """
     Function exports filter to a wav or txt file
     To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 103 Band
@@ -1321,7 +1320,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         hpcf_fir = np.array(hpcf_fir_list)
         
         #resample if samp_freq is not 44100
-        if samp_freq != 44100:
+        if samp_freq != CN.SAMP_FREQ:
             hpcf_fir = hf.resample_signal(hpcf_fir, new_rate = samp_freq)
         
         out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
@@ -1367,11 +1366,15 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         #
         #save Graphic EQ to txt file
         #
-        hpcf_geq = hpcf_dict.get('graphic_eq')
+        
 
         out_file_path = pjoin(out_file_dir_geq, hpcf_name_geq)
         
         if geq_export == True:
+            #hpcf_geq = hpcf_dict.get('graphic_eq')
+            #20250408: calculate instead of storing in database
+            hpcf_geq = hpcf_fir_to_geq(fir_array=hpcf_fir,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=CN.GEQ_SET_F_127)
+            
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1400,11 +1403,15 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         #
         #save Graphic EQ 31 band to txt file
         #
-        hpcf_geq_31 = hpcf_dict.get('graphic_eq_31')
+        
 
         out_file_path = pjoin(out_file_dir_geq_31, hpcf_name_geq)
         
         if geq_31_export == True:
+            #hpcf_geq_31 = hpcf_dict.get('graphic_eq_31')
+            #20250408: calculate instead of storing in database
+            hpcf_geq_31 = hpcf_fir_to_geq(fir_array=hpcf_fir,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=CN.GEQ_SET_F_31)
+            
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1433,7 +1440,10 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         #
         #save Graphic EQ 103 band to txt file
         #
-        hpcf_geq_103 = hpcf_dict.get('graphic_eq_103')
+        if geq_103_export == True or hesuvi_export == True:
+            #hpcf_geq_103 = hpcf_dict.get('graphic_eq_103')
+            #20250408: calculate instead of storing in database
+            hpcf_geq_103 = hpcf_fir_to_geq(fir_array=hpcf_fir,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=CN.GEQ_SET_F_103)
 
         out_file_path = pjoin(out_file_dir_geq_103, hpcf_name_geq)
         
@@ -1500,7 +1510,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=True, report_progress=0, gui_logger=None, samp_freq=44100, bit_depth='PCM_24', force_output=False):
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=True, report_progress=0, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1675,16 +1685,22 @@ def hpcf_generate_averages(conn, gui_logger=None):
  
                 
                 #get graphic eq filter 127 band
-                geq_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_127)
+               # geq_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_127)
+                #20250408: no longer required to store geq data. Replace with empty string
+                geq_str = ''
                 
                 #get graphic eq filter 31 band
-                geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_31)
+                #geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_31)
+                #20250408: no longer required to store geq data. Replace with empty string
+                geq_31_str = ''
                 
                 ##get graphic eq 32 band filter
                 #geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=1,sample_rate=CN.SAMP_FREQ)
                 
                 #get graphic eq filter 103 band
-                geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_103)
+                #geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_103)
+                #20250408: no longer required to store geq data. Replace with empty string
+                geq_103_str = ''
 
                 #last modified text
                 created_on = now_datetime
@@ -2276,16 +2292,23 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                     
                     
                     #get graphic eq filter 127 band
-                    geq_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_127)
+                    #geq_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_127)
+                    #20250408: no longer required to store geq data. Replace with empty string
+                    geq_str = ''
                     
                     #get graphic eq filter 31 band
-                    geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
-                    
+                    #geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
+                    #20250408: no longer required to store geq data. Replace with empty string
+                    geq_31_str = ''
+                
                     ##get graphic eq 32 band filter
                     #geq_32_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=1,sample_rate=samplerate)
                        
                     #get graphic eq filter 31 band
-                    geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
+                    #geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_out_fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
+                    #20250408: no longer required to store geq data. Replace with empty string
+                    geq_103_str = ''
+    
     
                     #calculate sample id
                     sample_id = largest_id+1
@@ -2539,11 +2562,17 @@ def hpcf_generate_variants(conn, gui_logger=None):
                             fir_json_str = json.dumps(fir_list)
                                          
                             #get graphic eq filter 127 band
-                            geq_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_127)
+                            #geq_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_127)
+                            #20250408: no longer required to store geq data. Replace with empty string
+                            geq_str = ''
                             #get graphic eq filter 31 band
-                            geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_31)
+                            #geq_31_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_31)
+                            #20250408: no longer required to store geq data. Replace with empty string
+                            geq_31_str = ''
                             #get graphic eq filter 103 band
-                            geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_103)
+                            #geq_103_str = hpcf_fir_to_geq(fir_array=hpcf_avg_fir_array,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=geq_set_f_103)
+                            #20250408: no longer required to store geq data. Replace with empty string
+                            geq_103_str = ''
                             #last modified text
                             created_on = now_datetime
                     
@@ -2808,7 +2837,7 @@ def remove_select_hpcfs(primary_path, headphone, gui_logger=None):
     
 def crop_hpcf_firs(conn, gui_logger=None):
     """
-    Function iterates through all FIRs in the database and crops to 512 samples
+    Function iterates through all FIRs in the database and crops to X samples
     """
     
     try:

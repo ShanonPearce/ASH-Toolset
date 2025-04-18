@@ -19,11 +19,8 @@ import os
 from math import sqrt
 from SOFASonix import SOFAFile
 import json
-from datetime import date
 from datetime import datetime
 import glob
-import sys
-
 logger = logging.getLogger(__name__)
 log_info=1
 
@@ -31,8 +28,8 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, direct_gain_db=CN.DIRECT_GAIN_MAX, samp_freq=CN.SAMP_FREQ, 
-                bit_depth='PCM_24', spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict={}, sofa_conv=None, use_dict_list=False, brir_dict_list=[]):
+def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, 
+                 spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict={}, sofa_conv=None, use_dict_list=False, brir_dict_list=[]):
     """
     Function to export a customised BRIR to WAV files
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
@@ -74,6 +71,37 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
             hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
         else:
             hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
+    
+        #get relevant information from dict
+        if brir_dict:
+            if brir_name == CN.FOLDER_BRIRS_LIVE: 
+                brir_hrtf_type=brir_dict.get('qc_brir_hrtf_type')
+                brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
+                brir_hrtf = brir_dict.get('qc_brir_hrtf')
+                brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
+                room_target = brir_dict.get("qc_room_target")
+                direct_gain_db = brir_dict.get("qc_direct_gain_db")
+                acoustic_space= brir_dict.get("qc_ac_space_src")
+                pinna_comp = brir_dict.get("qc_pinna_comp")
+                samp_freq = brir_dict.get("qc_samp_freq_int")
+                bit_depth = brir_dict.get("qc_bit_depth")
+            else:
+                brir_hrtf_type=brir_dict.get('brir_hrtf_type')
+                brir_hrtf_dataset=brir_dict.get('brir_hrtf_dataset')
+                brir_hrtf = brir_dict.get('brir_hrtf')
+                brir_hrtf_short=brir_dict.get('brir_hrtf_short')
+                room_target = brir_dict.get("room_target")
+                direct_gain_db = brir_dict.get("direct_gain_db")
+                acoustic_space= brir_dict.get("ac_space_src")
+                pinna_comp = brir_dict.get("pinna_comp")
+                samp_freq = brir_dict.get("samp_freq_int")
+                bit_depth = brir_dict.get("bit_depth")
+            
+            
+            hrtf_symmetry = brir_dict.get("hrtf_symmetry")
+            early_refl_delay_ms = brir_dict.get("er_delay_time")
+        else:
+            raise ValueError('brir_dict not populated')
     
         #larger reverb times will need additional samples
         ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
@@ -235,13 +263,7 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
   
             
 
-        #
-        ## write SOFA file
-        #
-         
-        if sofa_export == True and use_dict_list == False:
-            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
-    
+  
         #
         ## write set of HESUVI WAVs
         #
@@ -323,7 +345,7 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
       
                 #create a copy and resample to 48kHz
                 data_pad_48k=np.zeros((out_wav_samples_48,2))           
-                data_pad_48k = hf.resample_signal(data_pad)
+                data_pad_48k = hf.resample_signal(data_pad, new_rate = 48000)
       
                 #place each channel into output array as per HeSuVi channel mapping
                 if n == 0 :#C
@@ -431,7 +453,16 @@ def export_brir(brir_arr, acoustic_space, brir_name, primary_path, brir_dir_expo
             log_string = 'BRIR HESUVI WAV saved to: ' + str(out_file_dir_wav_48)
             hf.log_with_timestamp(log_string, gui_logger) 
         
+        #
+        ## write SOFA file
+        #
+         
+        if sofa_export == True and use_dict_list == False:
+            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
+    
+    
  
+    
     except Exception as ex:
         log_string = 'Failed to export BRIRs'
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error

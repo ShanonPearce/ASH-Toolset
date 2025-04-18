@@ -14,7 +14,6 @@ import time
 import logging
 from datetime import date
 from ash_toolset import constants as CN
-from ash_toolset import brir_export
 from scipy.io import wavfile
 import numpy as np
 from ash_toolset import helper_functions as hf
@@ -851,7 +850,7 @@ def get_exported_sample_list(headphone, primary_path):
         logging.error("Error occurred", exc_info = ex) 
         return []
     
-def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_config=0, calc_mode=0, channel_config = '2.0 Stereo'):
+def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_config=0, calc_mode=0, channel_config = '2.0 Stereo', freq_mode='default'):
     """
     Function reads BRIR folders in output directory and returns float containing estimated peak gain.
     :param primary_path: string, base path
@@ -1035,13 +1034,24 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
                             brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_sr_mag))             
             #calculate peak gain from BRIRs
             #need to take into account: overall gain from config, individual channel gains, hpcf gain, & brir gains
+            if freq_mode == 'Align Low Frequencies':#low frequency mode - only assess low frequency levels
+                min_freq = 10
+                max_freq = 120
+            elif freq_mode == 'Align Mid Frequencies':#mid frequency mode - only assess mid frequency levels
+                min_freq = 800
+                max_freq = 1200
+            else:
+                min_freq = 10
+                max_freq = 19000
             data_fft = np.fft.fft(brir_in_arr_l[0:CN.N_FFT])
             mag_fft=np.abs(data_fft)
+            mag_fft = hf.level_spectrum_ends(mag_fft, min_freq, max_freq, smooth_win = 0)
             db_fft = hf.mag2db(mag_fft)
             result_spectrum_l=np.add(result_spectrum_l,db_fft)
             
             data_fft = np.fft.fft(brir_in_arr_r[0:CN.N_FFT])
             mag_fft=np.abs(data_fft)
+            mag_fft = hf.level_spectrum_ends(mag_fft, min_freq, max_freq, smooth_win = 0)
             db_fft = hf.mag2db(mag_fft)
             result_spectrum_r=np.add(result_spectrum_r,db_fft)
             

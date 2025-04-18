@@ -20,14 +20,656 @@ import librosa
 from difflib import SequenceMatcher, _nlargest  # necessary imports of functions used by modified get_close_matches
 from thefuzz import fuzz
 from thefuzz import process
-from fuzzywuzzy import process, fuzz
 import functools
 import os
 import re
 import requests
 import logging
 import gdown
+from SOFASonix import SOFAFile
+import sofar as sof
+import csv
+import random
 
+
+def sort_names_by_values(names, values, descending=False):
+    """
+    Sorts a list of names based on corresponding integer values.
+
+    Parameters:
+        names (list of str): A list of names.
+        values (list of int): A list of integer values corresponding to each name.
+        descending (bool): If True, sorts in descending order. Defaults to False (ascending).
+
+    Returns:
+        list of str: A new list of names sorted according to the order of values.
+
+    Raises:
+        ValueError: If the input lists are not the same length.
+        TypeError: If 'names' is not a list of strings or 'values' is not a list of integers.
+    """
+    # Validate input types
+    if not isinstance(names, list) or not isinstance(values, list):
+        raise TypeError("Both 'names' and 'values' must be lists.")
+    
+    if len(names) != len(values):
+        raise ValueError("Both lists must be of the same length.")
+    
+    if not all(isinstance(name, str) for name in names):
+        raise TypeError("All elements in 'names' must be strings.")
+    
+    if not all(isinstance(value, int) for value in values):
+        raise TypeError("All elements in 'values' must be integers.")
+
+    if not names:
+        return []
+
+    # Pair and sort based on the values
+    paired_list = list(zip(names, values))
+    sorted_pairs = sorted(paired_list, key=lambda pair: pair[1], reverse=descending)
+    sorted_names = [name for name, _ in sorted_pairs]
+    
+    return sorted_names
+
+def biased_spherical_coordinate_sampler(azim_src_set, elev_src_set, num_samples,
+                                                                     biased_azimuth_centers=np.array([45, 135, 225, 315]),
+                                                                     azimuth_bias_strength=20, plot_distribution=False):
+    """
+    Efficiently samples spherical coordinates (azimuth and elevation) with a bias
+    towards specified azimuth angles, accounting for circular wrap-around.
+    Optionally plots the distribution of selected azimuths.
+
+    Args:
+        azim_src_set (np.ndarray): Array of possible azimuth angles (degrees), sorted.
+        elev_src_set (np.ndarray): Array of possible elevation angles (degrees).
+        num_samples (int): The number of spherical coordinates to sample.
+        biased_azimuth_centers (np.ndarray, optional): Array of azimuth angles
+            (degrees) around which the bias will be applied. Defaults to [45, 135, 225, 315].
+        azimuth_bias_strength (int, optional): Controls the strength of the azimuth 
+            bias (higher value = stronger bias, narrower distribution). Defaults to 20. note: higher is weaker bias
+        plot_distribution (bool, optional): If True, plots a histogram of the
+            selected azimuth angles after sampling. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing two lists:
+            - selected_azimuths (list): List of randomly selected azimuth angles.
+            - selected_elevations (list): List of randomly selected elevation angles.
+    """
+    selected_azimuths = []
+    selected_elevations = []
+    num_azim = len(azim_src_set)
+    probabilities = np.zeros(num_azim, dtype=float)
+
+    for i, azim in enumerate(azim_src_set):
+        prob = 0.0
+        for center in biased_azimuth_centers:
+            diff = np.abs(azim - center)
+            circular_diff = np.min([diff, 360 - diff])
+            prob += np.exp(-(circular_diff**2) / (2 * azimuth_bias_strength**2))
+        probabilities[i] = prob
+
+    probabilities /= np.sum(probabilities)
+
+    # Create a CDF for efficient random sampling
+    cdf = np.cumsum(probabilities)
+
+    for _ in range(num_samples):
+        # Efficiently sample azimuth using CDF
+        rand_val = random.random()
+        selected_azimuth_index = np.searchsorted(cdf, rand_val)
+        selected_azimuth = azim_src_set[selected_azimuth_index]
+        selected_azimuths.append(selected_azimuth)
+
+        # Randomly select an elevation angle (no bias)
+        random_elevation_index = random.randint(0, len(elev_src_set) - 1)
+        selected_elevation = elev_src_set[random_elevation_index]
+        selected_elevations.append(selected_elevation)
+
+    if plot_distribution:
+        plt.figure(figsize=(10, 6))
+        plt.hist(selected_azimuths, bins=np.arange(azim_src_set.min(), azim_src_set.max() + 10, 10), edgecolor='black')
+        plt.xlabel("Azimuth Angle (degrees)")
+        plt.ylabel("Frequency")
+        plt.title("Distribution of Selected Azimuth Angles (Circular, Efficient)")
+        plt.xticks(np.arange(0, 361, 45))
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return selected_azimuths, selected_elevations
+
+
+
+
+
+
+def octave_smooth(freqs, values, fraction=1/3):
+    """
+    Efficiently applies fractional octave smoothing to a frequency-domain spectrum.
+
+    Args:
+        freqs (np.ndarray): Array of frequencies (Hz), must be sorted.
+        values (np.ndarray): Array of corresponding values (e.g., group delay).
+        fraction (float, optional): The fractional octave band (e.g., 1/3 for third-octave).
+                                     Defaults to 1/3.
+
+    Returns:
+        np.ndarray: Array of smoothed values.
+    """
+    smoothed = np.copy(values)
+    log_freqs = np.log2(freqs, where=freqs > 0, out=np.full_like(freqs, np.nan))
+    fraction_half = fraction / 2
+
+    for i, f_log in enumerate(log_freqs):
+        if np.isnan(f_log):
+            continue
+
+        lower_log_f = f_log - fraction_half
+        upper_log_f = f_log + fraction_half
+
+        lower_idx = np.searchsorted(log_freqs, lower_log_f, side='left')
+        upper_idx = np.searchsorted(log_freqs, upper_log_f, side='right')
+
+        if lower_idx < upper_idx:
+            smoothed[i] = np.nanmean(values[lower_idx:upper_idx])
+        # If no frequencies fall within the band, the original value is kept (already initialized)
+
+    return smoothed
+
+def octave_smooth_slow(freqs, values, fraction=1/3):
+    smoothed = np.zeros_like(values)
+    for i, f in enumerate(freqs):
+        if f <= 0:
+            smoothed[i] = values[i]
+            continue
+        f1 = f * 2**(-fraction / 2)
+        f2 = f * 2**(fraction / 2)
+        idx = np.where((freqs >= f1) & (freqs <= f2))[0]
+        if len(idx) > 0:
+            smoothed[i] = np.nanmean(values[idx])
+        else:
+            smoothed[i] = values[i]
+    return smoothed
+
+
+def calc_group_delay_from_ir(y, sr=None, n_fft=2048, hop_length=512, smoothing_type='hann', smoothing_window=31, system_delay_ms=None, verbose=False):
+    """
+    Calculates the group delay from a 1D NumPy array representing an impulse response.
+
+    Args:
+        y (np.ndarray): 1D NumPy array representing the impulse response.
+        sr (int): Sample rate of the impulse response in Hz.
+        n_fft (int, optional): Length of the FFT window. Defaults to 2048.
+        hop_length (int, optional): Number of samples between successive FFT windows. Defaults to 512.
+        smoothing_type (str, optional): Type of smoothing ('none', 'hann', 'gaussian', 'savitzky-golay', 'octave'). Defaults to 'hann'.
+        smoothing_window (int, optional): Window size for smoothing (depends on the type). Defaults to 31.
+        system_delay_ms (float, optional): An estimated constant system delay in milliseconds to subtract.
+                                            If None, the function will attempt to estimate it.
+                                            Defaults to None.
+
+    Returns:
+        tuple: A tuple containing two NumPy arrays:
+               - frequencies (np.ndarray): Array of frequencies in Hz.
+               - averaged_group_delay_ms (np.ndarray): Array of averaged group delay values in milliseconds.
+    """
+    import numpy as np
+    from numpy.fft import fft
+    from numpy import unwrap, diff
+    from scipy.signal import savgol_filter, windows
+    from scipy.ndimage import gaussian_filter1d
+
+    
+
+    if not isinstance(y, np.ndarray) or y.ndim != 1:
+        raise ValueError("Input 'y' must be a 1D NumPy array.")
+    if not isinstance(sr, (int, float)) or sr <= 0:
+        raise ValueError("Input 'sr' must be a positive number representing the sample rate.")
+
+    n_frames = (len(y) - n_fft) // hop_length + 1
+    freq_bins = np.fft.fftfreq(n_fft, 1 / sr)
+    group_delays = []
+
+    if verbose:
+        print("Starting group delay calculation...")
+
+    for frame in range(n_frames):
+        start_idx = frame * hop_length
+        end_idx = start_idx + n_fft
+        frame_data = y[start_idx:end_idx]
+
+        yf = fft(frame_data, n=n_fft)
+        phase = np.angle(yf)
+        unwrapped_phase = unwrap(phase)
+        delta_phase = diff(unwrapped_phase)
+        delta_f = np.diff(freq_bins)
+        group_delay = -delta_phase / (2 * np.pi * delta_f)
+        group_delay_ms = group_delay * 1000
+        group_delays.append(group_delay_ms)
+
+    averaged_group_delay_ms = np.mean(group_delays, axis=0)
+
+    if verbose:
+        print(f"Group delay (before smoothing): Min = {np.nanmin(averaged_group_delay_ms)} ms, "
+              f"Max = {np.nanmax(averaged_group_delay_ms)} ms, "
+              f"Mean = {np.nanmean(averaged_group_delay_ms)} ms, "
+              f"Std = {np.nanstd(averaged_group_delay_ms)} ms")
+
+    if np.any(np.isnan(averaged_group_delay_ms)) and verbose:
+        print("Warning: NaN values detected in the averaged group delay.")
+
+    if smoothing_type == 'savitzky-golay' and smoothing_window > 1:
+        smoothed_group_delay_ms = savgol_filter(averaged_group_delay_ms, smoothing_window, 3)
+    elif smoothing_type == 'hann' and smoothing_window > 1 and smoothing_window % 2 == 1:
+        window = windows.hann(smoothing_window)
+        window /= np.sum(window)
+        smoothed_group_delay_ms = np.convolve(averaged_group_delay_ms, window, mode='same')
+    elif smoothing_type == 'gaussian' and smoothing_window > 0:
+        smoothed_group_delay_ms = gaussian_filter1d(averaged_group_delay_ms, smoothing_window)
+    elif smoothing_type == 'octave':
+        freqs = freq_bins[1:len(averaged_group_delay_ms)+1]
+        smoothed_group_delay_ms = octave_smooth(freqs, averaged_group_delay_ms, fraction=1/smoothing_window)
+    else:
+        smoothed_group_delay_ms = averaged_group_delay_ms
+
+    if verbose:
+        print(f"Group delay (after smoothing): Min = {np.nanmin(smoothed_group_delay_ms)} ms, "
+              f"Max = {np.nanmax(smoothed_group_delay_ms)} ms, "
+              f"Mean = {np.nanmean(smoothed_group_delay_ms)} ms, "
+              f"Std = {np.nanstd(smoothed_group_delay_ms)} ms")
+
+    if np.any(np.isnan(smoothed_group_delay_ms)) and verbose:
+        print("Warning: NaN values detected in the smoothed group delay.")
+
+    if system_delay_ms is None:
+        if smoothed_group_delay_ms.size > 0:
+            mid_freq_start = int(len(smoothed_group_delay_ms) * 0.1)
+            mid_freq_end = int(len(smoothed_group_delay_ms) * 0.4)
+            mid_freq_slice = smoothed_group_delay_ms[mid_freq_start:mid_freq_end]
+            if mid_freq_slice.size > 0 and not np.all(np.isnan(mid_freq_slice)):
+                system_delay_ms_estimated = np.nanmedian(mid_freq_slice)
+                if not np.isnan(system_delay_ms_estimated):
+                    smoothed_group_delay_ms -= system_delay_ms_estimated
+                    if verbose:
+                        print(f"Estimated system delay (ms): {system_delay_ms_estimated}")
+    else:
+        smoothed_group_delay_ms -= system_delay_ms
+        if verbose:
+            print(f"Applied system delay (ms): {system_delay_ms}")
+
+    if np.all(smoothed_group_delay_ms == smoothed_group_delay_ms[0]) and verbose:
+        print("Warning: Smoothed group delay is constant across all frequencies.")
+
+    if np.any(np.isnan(smoothed_group_delay_ms)):
+        print("Warning: Final result contains NaN values.")
+
+    if verbose:
+        print(f"Final group delay: Min = {np.nanmin(smoothed_group_delay_ms)} ms, "
+              f"Max = {np.nanmax(smoothed_group_delay_ms)} ms, "
+              f"Mean = {np.nanmean(smoothed_group_delay_ms)} ms, "
+              f"Std = {np.nanstd(smoothed_group_delay_ms)} ms")
+        print("Group delay calculation completed.")
+
+    return freq_bins[1:len(smoothed_group_delay_ms)+1], smoothed_group_delay_ms
+
+
+def save_group_delay_to_csv(frequencies, group_delay_ms, filename="group_delay_analysis.csv"):
+    """
+    Saves frequency and group delay data to a CSV file.
+
+    Args:
+        frequencies (np.ndarray): Array of frequency values (Hz).
+        group_delay_ms (np.ndarray): Array of group delay values (ms).
+        filename (str): Name of the CSV file to save. Defaults to 'group_delay_analysis.csv'.
+    """
+    if not len(frequencies) == len(group_delay_ms):
+        raise ValueError("Frequencies and group delay arrays must be the same length.")
+    
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Frequency (Hz)", "Group Delay (ms)"])
+        for f, gd in zip(frequencies, group_delay_ms):
+            writer.writerow([f, gd])
+    
+    print(f"Group delay data saved to '{os.path.abspath(filename)}'")
+
+
+
+
+def create_weighted_list(length: int, randomize: bool = False, seed: int = None, hot_index: int = None, verbose: bool = True) -> list:
+    """
+    Creates a list of specified length where the sum of all elements is 1.
+
+    Modes:
+    - One-hot: Set a specific index to 1, all others to 0 (if hot_index is specified).
+    - Random: Generate random weights summing to 1 (if randomize=True).
+    - Uniform: All values equal, summing to 1 (default).
+
+    Parameters:
+    length (int): The number of elements in the list (must be > 0).
+    randomize (bool): If True, generate random weights.
+    seed (int, optional): Seed for reproducible randomness (only used if randomize=True).
+    hot_index (int, optional): If set, creates a one-hot list with this index set to 1.
+    verbose (bool): If True, prints the generated weightings.
+
+    Returns:
+    list: A list of floats where the sum is 1.
+
+    Raises:
+    ValueError: If parameters are invalid.
+    """
+    if length <= 0:
+        raise ValueError("Length must be a positive integer.")
+
+    if hot_index is not None:
+        if not 0 <= hot_index < length:
+            raise ValueError(f"hot_index must be between 0 and {length - 1}")
+        one_hot = [0.0] * length
+        one_hot[hot_index] = 1.0
+        if verbose:
+            print(f"One-hot weighting (index {hot_index}): {one_hot}")
+        return one_hot
+
+    if randomize:
+        rng = np.random.default_rng(seed)
+        weights = rng.random(length)
+        weights /= weights.sum()
+        weights_list = weights.tolist()
+        if verbose:
+            print(f"Random weightings (seed={seed}): {weights_list}")
+        return weights_list
+    else:
+        weights = np.ones(length) / length
+        weights_list = weights.tolist()
+        if verbose:
+            print(f"Uniform weightings: {weights_list}")
+        return weights_list
+
+def combine_measurements_4d(arr: np.ndarray) -> np.ndarray:
+    """
+    Combines impulse response samples (dimension 4) of multiple measurements
+    (dimension 2) by summing, reducing the number of measurements to 7.
+
+    Args:
+        arr: The input 4D NumPy array with shape (1, measurements, 2, samples).
+             'measurements' is assumed to be at least 7.
+
+    Returns:
+        A 4D NumPy array with shape (1, 7, 2, samples), where the samples
+        are summed from the original measurements.
+    """
+
+    if arr.ndim != 4:
+        raise ValueError("Input array must be 4-dimensional.")
+
+    if arr.shape[0] != 1:
+        raise ValueError("Dimension 1 must have length 1.")
+
+    if arr.shape[2] != 2:
+        raise ValueError("Dimension 3 must have length 2.")
+
+    num_measurements = arr.shape[1]
+
+    if num_measurements < 7:
+        raise ValueError("Dimension 2 must have length of at least 7.")
+
+    # Calculate the number of measurements to combine per output measurement
+    combine_per = num_measurements // 7
+
+    # Calculate the remaining measurements after even division
+    remainder = num_measurements % 7
+
+    # Initialize the output array
+    output_arr = np.zeros((1, 7, 2, arr.shape[3]))
+
+    # Combine measurements
+    for i in range(7):
+        start_idx = i * combine_per
+        end_idx = (i + 1) * combine_per
+
+        # Handle the remainder: distribute it to the first 'remainder' output measurements
+        if i < remainder:
+            end_idx += 1
+
+        output_arr[0, i, :, :] = np.sum(arr[0, start_idx:end_idx, :, :], axis=0)
+
+    return output_arr
+
+def reshape_array_to_two_dims(arr: np.ndarray) -> np.ndarray:
+    """
+    Reshapes a NumPy array to meet specific dimension requirements.
+    Useful for reshaping SRIRs, where we only want 2 dimensions
+
+    Args:
+        arr: The input NumPy array of arbitrary dimensions.
+
+    Returns:
+        A NumPy array with the following shape:
+        - The last dimension is the longest dimension from the input array.
+        - The first dimension is the product of all other dimensions 
+          merged together.
+    """
+
+    original_shape = arr.shape
+    num_dims = len(original_shape)
+
+    if num_dims == 0:
+        return arr  # Or raise an exception, depending on desired behavior for scalar input
+
+    # Find the longest dimension and its index
+    longest_dim = 0
+    longest_dim_index = -1  # Initialize to -1 to handle empty shapes correctly
+    for i, dim in enumerate(original_shape):
+        if dim > longest_dim:
+            longest_dim = dim
+            longest_dim_index = i
+
+    if num_dims == 1:
+        return arr.reshape(1, original_shape[0])  # Handle 1D array case
+
+    # Calculate the shape of the first dimension of the result
+    other_dims_product = 1
+    for i in range(num_dims):
+        if i != longest_dim_index:
+            other_dims_product *= original_shape[i]
+
+    # Create the new shape tuple
+    new_shape = (other_dims_product, longest_dim)
+
+    # Move the longest axis to the last position using transpose
+    if longest_dim_index != num_dims - 1:
+        axes = list(range(num_dims))
+        axes.pop(longest_dim_index)
+        axes.append(longest_dim_index)
+        arr = arr.transpose(axes)
+
+    # Reshape the array
+    reshaped_arr = arr.reshape(new_shape)
+
+    return reshaped_arr
+
+
+def reshape_array_to_three_dims(arr: np.ndarray) -> np.ndarray:
+    """
+    Reshapes a NumPy array to meet specific dimension requirements.
+    useful for reshaping MultiSpeakerBRIR, where we want to keep an axis with 2 channels, 3 dimensions in total
+
+    Args:
+        arr: The input NumPy array of arbitrary dimensions.
+
+    Returns:
+        A NumPy array with the following shape:
+        - The last dimension is the longest dimension from the input array.
+        - The 2nd last dimension is the dimension from the input array with length 2.
+        - The first dimension is the product of all other dimensions merged together.
+    """
+
+    original_shape = arr.shape
+    num_dims = len(original_shape)
+
+    if num_dims < 2:
+        raise ValueError("Input array must have at least 2 dimensions.")
+
+    # Find the longest dimension and its index
+    longest_dim = 0
+    longest_dim_index = -1
+    for i, dim in enumerate(original_shape):
+        if dim > longest_dim:
+            longest_dim = dim
+            longest_dim_index = i
+
+    # Find the dimension with length 2 and its index
+    dim_2_index = -1
+    for i, dim in enumerate(original_shape):
+        if dim == 2:
+            dim_2_index = i
+            break  # Only need to find the first dimension with length 2
+
+    if dim_2_index == -1:
+        raise ValueError("Input array must have a dimension with length 2.")
+
+    # Calculate the shape of the first dimension of the result
+    other_dims_product = 1
+    for i in range(num_dims):
+        if i != longest_dim_index and i != dim_2_index:
+            other_dims_product *= original_shape[i]
+
+    # Create the new shape tuple
+    new_shape = (other_dims_product, 2, longest_dim)
+
+    # Move the longest axis and axis with length 2 to the last positions using transpose
+    if longest_dim_index != num_dims - 1 or dim_2_index != num_dims - 2:
+        axes = list(range(num_dims))
+        axes.pop(longest_dim_index)
+        axes.pop(axes.index(dim_2_index)) #remove dim_2 after longest_dim is removed.
+        axes.extend([dim_2_index, longest_dim_index])
+        arr = arr.transpose(axes)
+
+    # Reshape the array
+    reshaped_arr = arr.reshape(new_shape)
+
+    return reshaped_arr
+
+def delete_all_files_in_directory(directory, verbose=True, gui_logger=None):
+    """
+    Deletes all files in the given directory and its subdirectories.
+    
+    Args:
+        directory (str): The path to the directory.
+        verbose (bool): If True, prints status messages. If False, suppresses output.
+    """
+    if not os.path.isdir(directory):
+        if verbose:
+            log_string = f"'{directory}' is not a valid directory. Unable to delete"
+            log_with_timestamp(log_string, gui_logger=None)
+        return
+
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            file_path = os.path.join(root, file)
+            try:
+                os.remove(file_path)
+                if verbose:
+                    log_string = f"Deleted file: {file_path}"
+                    log_with_timestamp(log_string, gui_logger=None)
+            except Exception as e:
+                if verbose:
+                    log_string = f"Could not delete file: {file_path} (Reason: {e})"
+                    log_with_timestamp(log_string, gui_logger=None)
+
+def sofa_load_object(sofa_local_fname, gui_logger=None):
+    """
+    Loads a SOFA file and returns a dictionary of variables starting with 'sofa_'.
+    
+    Args:
+        sofa_local_fname (str): Path to the local SOFA file.
+        gui_logger (optional): Logger for GUI messages.
+    
+    Returns:
+        dict: Dictionary of variables starting with 'sofa_'.
+    """
+    # Initialize an empty dictionary to store variables starting with 'sofa_'
+    sofa_vars = {}
+    
+    try:
+        #first try loading with SOFAsonix
+        try:
+            loadsofa = SOFAFile.load(sofa_local_fname, verbose=False)
+            sofa_vars['sofa_data_ir'] = loadsofa.data_ir
+            sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate[0])
+            sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
+            sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
+            sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
+            sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+        except:
+            log_string = 'Unable to load SOFA file with SOFAsonix. Attempting to load with sofar'
+            log_with_timestamp(log_string, gui_logger=None)
+            
+            try:
+                #if fails, try loading with SOFAR
+                loadsofa = sof.read_sofa(sofa_local_fname, verify=False)#verify=False ignores convention violations
+                sofa_vars['sofa_data_ir'] = loadsofa.Data_IR
+                sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate)
+                sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
+                sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
+                sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
+                sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+                
+                log_string = 'Loaded Successfully with sofar'
+                log_with_timestamp(log_string, gui_logger=None)
+            
+            except:
+                log_string = 'Unable to load SOFA file. Likely due to unsupported convention version.'
+                log_with_timestamp(log_string, gui_logger=None)
+        
+                raise ValueError('Unable to load SOFA file')
+        
+    
+    except Exception as ex:
+
+        log_string = 'SOFA load workflow failed'
+        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+        
+    return sofa_vars
+    
+
+def load_convert_npy_to_float64(file_path: str, verbose: bool = False) -> np.ndarray:
+    """
+    Loads a .npy file, converts its data type from float32 to float64, and returns the converted array.
+    
+    Parameters:
+    file_path (str): The path to the .npy file.
+    verbose (bool): If True, prints information about the processing steps; otherwise, remains silent.
+    
+    Returns:
+    np.ndarray: The converted array with dtype float64.
+    """
+    if verbose:
+        log_string_a = f"Loading file: {file_path}"
+        log_with_timestamp(log_string_a)
+
+    # Load the .npy file
+    data = np.load(file_path)
+    
+    if verbose:
+        log_string_a = f"Original data type: {data.dtype}"
+        log_with_timestamp(log_string_a)
+
+    # Convert data to float64 if it is float32
+    if data.dtype == np.float32:
+        data = data.astype(np.float64)
+        if verbose:
+            log_string_a = "Data converted from float32 to float64."
+            log_with_timestamp(log_string_a)
+    else:
+        if verbose:
+            log_string_a = "Data type unchanged."
+            log_with_timestamp(log_string_a)
+
+    if verbose:
+        log_string_a = "File processing complete."
+        log_with_timestamp(log_string_a)
+
+    return data
 
 
 
@@ -66,7 +708,41 @@ def crop_array_last_dimension(array: np.ndarray, num_samples: int) -> np.ndarray
 
     return array[..., :num_samples]
 
-def get_crop_index(input_array, threshold=CN.THRESHOLD_CROP):
+
+def get_crop_index(input_array, threshold=CN.THRESHOLD_CROP, tail_ignore=0):
+    """
+    Returns the index in a 1D NumPy array where the amplitude last exceeds a given threshold,
+    ignoring a specified number of samples at the end (up to half the array length).
+
+    Args:
+        input_array (numpy.ndarray): The 1D NumPy array representing the impulse response.
+        threshold (float): The amplitude threshold to determine the crop point.
+        tail_ignore (int): Number of samples from the end of the array to ignore in the search.
+
+    Returns:
+        int: The crop index (last index before `tail_ignore` where the signal exceeds the threshold).
+             Returns 0 if no value exceeds the threshold in the considered range.
+    """
+    array_len = len(input_array)
+    max_tail_ignore = array_len // 2
+    tail_ignore = min(tail_ignore, max_tail_ignore)
+
+    if tail_ignore >= array_len:
+        return 0  # Redundant check, but safe
+
+    # Work with the valid portion of the array
+    valid_range = input_array[:array_len - tail_ignore]
+    abs_array = np.abs(valid_range)
+    
+    # Find the last index above the threshold
+    indices_above_threshold = np.where(abs_array > threshold)[0]
+
+    if indices_above_threshold.size == 0:
+        return 0
+
+    return indices_above_threshold[-1]
+
+def get_crop_index_old(input_array, threshold=CN.THRESHOLD_CROP):
     """
     Calculates the index at which a 1D NumPy array should be cropped 
     based on a given threshold.  The input array is not modified.
@@ -81,12 +757,14 @@ def get_crop_index(input_array, threshold=CN.THRESHOLD_CROP):
     """
     reversed_array = input_array[::-1]
     try:
-        crop_index = len(reversed_array) - np.argmax(reversed_array > threshold) - 1
+        crop_index = len(reversed_array) - np.argmax(np.abs(reversed_array) > threshold) - 1
     except ValueError:
         # np.argmax returns ValueError if the array is all False
         # In this case, return 0 as no crop index found
         crop_index = 0
     return crop_index
+
+
 
 def crop_array(input_array, threshold):
     """
@@ -101,7 +779,7 @@ def crop_array(input_array, threshold):
     """
     reversed_array = input_array[::-1]
     try:
-        crop_index = len(reversed_array) - np.argmax(reversed_array > threshold) - 1
+        crop_index = len(reversed_array) - np.argmax(np.abs(reversed_array) > threshold) - 1
         cropped_array = input_array[:crop_index]
     except ValueError:
         # np.argmax returns ValueError if the array is all False
@@ -221,7 +899,16 @@ def combine_dims_old(a, i=0, n=1):
 
 def combine_dims(a, start=0, count=2):
     """ Reshapes numpy array a by combining count dimensions, 
-        starting at dimension index start """
+        starting at dimension index start 
+        s[:start]: Keeps the dimensions before start.
+        (-1,): This tells NumPy to infer the new dimension size.
+        s[start+count:]: Keeps the dimensions after the combined ones
+        example:
+            a = np.random.rand(2, 3, 4, 5)  # Shape: (2, 3, 4, 5)
+            b = combine_dims(a, start=1, count=2)  # Merge dimensions 1 and 2
+            print(a.shape)  # (2, 3, 4, 5)
+            print(b.shape)  # (2, 12, 5)  -> 3 * 4 = 12
+        """
     s = a.shape
     return np.reshape(a, s[:start] + (-1,) + s[start+count:])
 
@@ -263,24 +950,25 @@ def round_to_multiple(number, multiple):
 def round_down_even(n):
     return 2 * int(n // 2) 
 
-def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44100, y_lim_adjust = 0, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT, normalise=1, level_ends=0, plot_type=0):
+def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44100, y_lim_adjust = 0, y_lim_a=-25, y_lim_b=15, x_lim_adjust = 0,x_lim_a=20, x_lim_b=20000, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT, normalise=1, level_ends=0, plot_type=0):
     """
     Function takes a magnitude reponse array as an input and plots the reponse
     :param mag_response: numpy array 1d, magnitude reponse array
     :param title_name: string, name of plot
     :param n_fft: int, fft size
     :param samp_freq: int, sample frequency in Hz
-    :param y_lim_adjust: int, 1 = adjust y axis to 30db range, 0 = no adjustment 
+    :param y_lim_adjust: int, 1 = adjust y axis to specified range, 0 = no adjustment 
+    :param x_lim_adjust: int, 1 = adjust x axis to specified range, 0 = no adjustment 
     :param save_plot: int, 1 = save plot to file, 0 = dont save plot
     :param plot_path: string, path to save plot 
     :param normalise: int, 0 = dont normalise, 1 = normalise low frequencies to 0db
-    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 1 = dearpygui (series 2 - quick config)
+    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 2 = dearpygui (series 2 - quick config), 3 = dearpygui (series 3 - lfa)
     :return: None
     """
 
     #level ends of spectrum
     if level_ends == 1:
-        mag_response = level_spectrum_ends(mag_response, 340, 19000, n_fft=n_fft)#320, 19000
+        mag_response = level_spectrum_ends(mag_response, 200, 19000, n_fft=n_fft)#320, 19000 340, 19000
         #octave smoothing
         mag_response = smooth_fft_octaves(data=mag_response, n_fft=n_fft)
         
@@ -306,9 +994,12 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
         plt.ylabel("Magnitude (dB)")
         plt.xscale("log")
         plt.grid()
-        plt.xlim([20, 20000])
+        if x_lim_adjust == 1:
+            plt.xlim([x_lim_a, x_lim_b])
+        else:
+            plt.xlim([20, 20000])
         if y_lim_adjust == 1:
-            plt.ylim([np.ceil(mag_response_log.max())-25, np.ceil(mag_response_log.max())+5])
+            plt.ylim([np.ceil(mag_response_log.max())-y_lim_a, np.ceil(mag_response_log.max())+y_lim_b])
         plt.title(title_name)
         plt.show()
         
@@ -316,12 +1007,163 @@ def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44
             out_file_name = title_name + '.png'
             out_file_path = pjoin(plot_path, out_file_name)
             plt.savefig(out_file_path)
-    elif plot_type == 1:
+    elif plot_type == 1:#filter and dataset tab
         dpg.set_value('series_tag', [freqArray, mag_response_log])
         dpg.set_item_label('series_tag', title_name)
-    elif plot_type == 2:
+        if y_lim_adjust == 1:
+            dpg.set_axis_limits("y_axis", y_lim_a, y_lim_b)
+        else:
+            dpg.set_axis_limits("y_axis", -20, 15)
+        if x_lim_adjust == 1:
+            dpg.set_axis_limits("x_axis", x_lim_a, x_lim_b)
+        else:
+            dpg.set_axis_limits("x_axis", 10, 20000)
+    elif plot_type == 2:#QC tab
         dpg.set_value('qc_series_tag', [freqArray, mag_response_log])
         dpg.set_item_label('qc_series_tag', title_name)
+        if y_lim_adjust == 1:
+            dpg.set_axis_limits("qc_y_axis", y_lim_a, y_lim_b)
+        else:
+            dpg.set_axis_limits("qc_y_axis", -20, 15)
+        if x_lim_adjust == 1:
+            dpg.set_axis_limits("qc_x_axis", x_lim_a, x_lim_b)
+        else:
+            dpg.set_axis_limits("qc_x_axis", 10, 20000)
+    elif plot_type == 3:#LF analysis
+        dpg.set_value('qc_lfa_series_tag', [freqArray, mag_response_log])
+        dpg.set_item_label('qc_lfa_series_tag', title_name)
+        if y_lim_adjust == 1:
+            dpg.set_axis_limits("qc_lfa_y_axis", y_lim_a, y_lim_b)
+        else:
+            dpg.set_axis_limits("qc_lfa_y_axis", -20, 15)
+        if x_lim_adjust == 1:
+            dpg.set_axis_limits("qc_lfa_x_axis", x_lim_a, x_lim_b)
+        else:
+            dpg.set_axis_limits("qc_lfa_x_axis", 10, 20000)
+            
+            
+def plot_data_generic(
+    plot_data_array, 
+    freqs=None,
+    title_name='Output',
+    data_type='magnitude',  # NEW: 'magnitude' or 'group_delay'
+    n_fft=65536,
+    samp_freq=44100,
+    y_lim_adjust=0, y_lim_a=-25, y_lim_b=15,
+    x_lim_adjust=0, x_lim_a=20, x_lim_b=20000,
+    save_plot=0,
+    plot_path=CN.DATA_DIR_OUTPUT,
+    normalise=1,
+    level_ends=0,
+    plot_type=0
+):
+    """
+    Generalised plotting function to support magnitude or group delay plots.
+
+    :param plot_data_array: numpy array (1D), magnitude or group delay data
+    :param data_type: str, 'magnitude' or 'group_delay'
+    """
+    
+
+    if level_ends == 1 and data_type == 'magnitude':
+        plot_data_array = level_spectrum_ends(plot_data_array, 200, 19000, n_fft=n_fft)
+        plot_data_array = smooth_fft_octaves(data=plot_data_array, n_fft=n_fft)
+
+    nUniquePts = int(np.ceil((n_fft + 1) / 2.0))
+    sampling_ratio = samp_freq / n_fft
+    if freqs is None:
+        # Default frequency array from FFT
+        freqArray = np.arange(0, nUniquePts, 1.0) * sampling_ratio
+        plot_data_array = plot_data_array[0:nUniquePts]
+    else:
+        freqArray = freqs[0:nUniquePts-2]
+        plot_data_array = plot_data_array[0:nUniquePts-2]
+
+    if data_type == 'magnitude':
+        plot_vals = 20 * np.log10(np.maximum(plot_data_array, 1e-12))  # avoid log(0)
+        if normalise == 1:
+            plot_vals -= np.mean(plot_vals[0:200])
+        elif normalise == 2:
+            plot_vals -= np.mean(plot_vals[CN.SPECT_SNAP_M_F0:CN.SPECT_SNAP_M_F1])
+        y_label = "Magnitude (dB)"
+    elif data_type == 'group_delay':
+        plot_vals = plot_data_array  # assumed to be in ms already
+        y_label = "Group Delay (ms)"
+    else:
+        raise ValueError("Unsupported data_type: use 'magnitude' or 'group_delay'")
+
+    if plot_type == 0:  # Matplotlib
+        plt.figure()
+        plt.plot(freqArray, plot_vals, color='k', label=title_name)
+        plt.xlabel("Frequency (Hz)")
+        plt.ylabel(y_label)
+        plt.xscale("log")
+        plt.grid()
+        if x_lim_adjust:
+            plt.xlim([x_lim_a, x_lim_b])
+        else:
+            plt.xlim([20, 20000])
+        if y_lim_adjust:
+            plt.ylim([y_lim_a, y_lim_b])
+        plt.title(title_name)
+        plt.show()
+
+        if save_plot:
+            out_file_name = title_name + '.png'
+            out_file_path = pjoin(plot_path, out_file_name)
+            plt.savefig(out_file_path)
+
+    else:
+        tag_map = {
+            1: 'series_tag',
+            2: 'qc_series_tag',
+            3: 'qc_lfa_series_tag'
+        }
+        x_axis_map = {
+            1: 'x_axis',
+            2: 'qc_x_axis',
+            3: 'qc_lfa_x_axis'
+        }
+        y_axis_map = {
+            1: 'y_axis',
+            2: 'qc_y_axis',
+            3: 'qc_lfa_y_axis'
+        }
+
+        series_tag = tag_map.get(plot_type)
+        x_axis_tag = x_axis_map.get(plot_type)
+        y_axis_tag = y_axis_map.get(plot_type)
+
+        if series_tag:
+            
+            dpg.set_value(series_tag, [[], []])
+            dpg.set_value(series_tag, [freqArray, plot_vals])
+            dpg.set_item_label(series_tag, title_name)
+
+            # Set axis limits
+            if x_lim_adjust:
+                dpg.set_axis_limits(x_axis_tag, x_lim_a, x_lim_b)
+            else:
+                dpg.set_axis_limits(x_axis_tag, 10, 20000)
+
+            if y_lim_adjust:
+                dpg.set_axis_limits(y_axis_tag, y_lim_a, y_lim_b)
+            else:
+                dpg.set_axis_limits(y_axis_tag, -20, 15)
+
+            # Set y-axis label
+            dpg.set_item_label(y_axis_tag, y_label)
+            
+    # print("Plot summary:")
+    # print(f"Freq range: {freqArray.min()} Hz – {freqArray.max()} Hz")
+    # print(f"Group delay range: {plot_vals.min()} ms – {plot_vals.max()} ms")
+    # print(f"Data points: {len(freqArray)}")
+            
+    # if np.any(~np.isfinite(plot_vals)):
+    #     print(f"[WARNING] plot_vals contains invalid entries (NaN or inf)")
+
+    # if len(freqArray) != len(plot_vals):
+    #     print(f"[WARNING] Frequency and value arrays are mismatched: {len(freqArray)} vs {len(plot_vals)}")
 
 
 def plot_geq(geq_dict, title_name = 'Output', y_lim_adjust = 0, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT):
@@ -495,7 +1337,7 @@ def read_wav_file(audiofilename):
     return samplerate, samples
     
     
-def resample_signal(signal, original_rate = 44100, new_rate = 48000, axis=0):
+def resample_signal(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis=0, scale=True):
     """
     function to resample a signal. By default will upsample from 44100Hz to 48000Hz
     """  
@@ -507,7 +1349,7 @@ def resample_signal(signal, original_rate = 44100, new_rate = 48000, axis=0):
     # resampled_signal = sps.resample(signal, number_of_samples) 
     
     #new versions use librosa
-    resampled_signal = librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=axis, scale=True )
+    resampled_signal = librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=axis, scale=scale )
     
     
     return resampled_signal
@@ -791,6 +1633,7 @@ def smooth_fft(data, crossover_f=1000, win_size_a = 150, win_size_b = 750, n_fft
     crossover_fb= int(round(crossover_f*(n_fft/fs)))
     win_size_a=int(round(win_size_a*(n_fft/fs)))
     win_size_b=int(round(win_size_b*(n_fft/fs)))
+    win_size_c=min(win_size_a,win_size_b)
     
     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
     nyq_freq = n_unique_pts-1
@@ -800,7 +1643,7 @@ def smooth_fft(data, crossover_f=1000, win_size_a = 150, win_size_b = 750, n_fft
     data_smooth_b[0:crossover_fb] = data_smooth_a[0:crossover_fb]
     #apply win size b to high frequencies
     data_smooth_b[crossover_fb:n_unique_pts] = sp.ndimage.uniform_filter1d(data_smooth_a,size=win_size_b)[crossover_fb:n_unique_pts]
-    data_smooth_c = sp.ndimage.uniform_filter1d(data_smooth_b,size=10)
+    data_smooth_c = sp.ndimage.uniform_filter1d(data_smooth_b,size=win_size_c)#final pass
     
     #make conjugate symmetric
     for freq in range(n_fft):
@@ -892,7 +1735,7 @@ def mag_to_min_fir(data, n_fft=65536, out_win_size=4096, crop=0):
         return data_out
     
 #modify spectrum to have flat mag response at low and high ends
-def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win = 67):
+def level_spectrum_ends_old(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win = 67):
     """
     Function to modify spectrum to have flat mag response at low and high ends
     :param data: numpy array, magnitude response of a signal
@@ -915,7 +1758,10 @@ def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=4410
     data_mod[high_freq_bin:n_fft] = data[high_freq_bin]
     
     #apply slight smoothing
-    data_smooth = sp.ndimage.uniform_filter1d(data_mod,size=smooth_win)
+    if smooth_win > 0:
+        data_smooth = sp.ndimage.uniform_filter1d(data_mod,size=smooth_win)
+    else:
+        data_smooth=data_mod
     
     #make conjugate symmetric
     for freq in range(n_fft):
@@ -923,6 +1769,53 @@ def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=4410
             dist_from_nyq = np.abs(freq-nyq_freq)
             data_smooth[freq]=data_smooth[nyq_freq-dist_from_nyq]
             
+    return data_smooth
+
+def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win=67):
+    """
+    Function to modify spectrum to have flat mag response at low and high ends (efficient version)
+    :param data: numpy array, magnitude response of a signal (length n_fft)
+    :param low_freq: int, frequency in Hz below which will become flat
+    :param high_freq: int, frequency in Hz above which will become flat
+    :param n_fft: int, fft size
+    :param fs: int, sample frequency in Hz
+    :param smooth_win: int, smoothing window size in Hz to be applied after leveling ends
+    :return: numpy array, spectrum with smooth ends (length n_fft)
+    """
+    smooth_win_samples = int(round(smooth_win * (n_fft / fs)))
+
+    data_mod = data.copy()
+    low_freq_bin = int(low_freq * n_fft / fs)
+    high_freq_bin = int(high_freq * n_fft / fs)
+
+    # Level the low and high ends using array slicing
+    if low_freq_bin > 0:
+        data_mod[:low_freq_bin] = data[low_freq_bin]
+    if high_freq_bin < n_fft:
+        data_mod[high_freq_bin:] = data[high_freq_bin -1] # Use the value at the boundary
+
+    # Apply slight smoothing
+    if smooth_win_samples > 0:
+        data_smooth = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
+    else:
+        data_smooth = data_mod
+
+    # Make conjugate symmetric (assuming the input 'data' represents the positive frequency spectrum)
+    n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
+    if len(data_smooth) == n_fft:
+        positive_spectrum = data_smooth[:n_unique_pts].copy()
+        negative_spectrum = positive_spectrum[1:-1][::-1]  # Reverse and exclude DC and Nyquist
+        data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
+    elif len(data_smooth) == n_unique_pts -1: # handle case where input was only positive spectrum
+        positive_spectrum = data_smooth.copy()
+        negative_spectrum = positive_spectrum[1:][::-1]
+        data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
+    elif len(data_smooth) == n_unique_pts:
+        positive_spectrum = data_smooth[:-1].copy()
+        negative_spectrum = positive_spectrum[1:][::-1]
+        data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
+
+
     return data_smooth
 
 
