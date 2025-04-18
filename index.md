@@ -193,24 +193,32 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 
 ### Acoustic Spaces
 
-| Name             | Estimated RT60 (ms) | Name           | Estimated RT60 (ms) |
-| ---------------- | ------------------- | -------------- | ------------------- |
-| Audio Lab A      | 312                 | Large Room B   | 576                 |
-| Audio Lab B      | 400                 | Lecture Room   | 704                 |
-| Audio Lab C      | 567                 | Office         | 408                 |
-| Audio Lab D      | 208                 | Outdoors A     | 2135                |
-| Audio Lab E      | 471                 | Outdoors B     | 1183                |
-| Audio Lab F      | 648                 | Seminar Room A | 839                 |
-| Audio Lab G      | 370                 | Seminar Room B | 710                 |
-| Audio Lab H      | 531                 | Small Room A   | 500                 |
-| Audio Lab I      | 541                 | Small Room B   | 437                 |
-| Auditorium       | 1455                | Small Room C   | 467                 |
-| Broadcast Studio | 1183                | Small Room D   | 463                 |
-| Concert Hall     | 1809                | Small Room E   | 476                 |
-| Conference Room  | 506                 | Small Room F   | 474                 |
-| Control Room     | 291                 | Studio A       | 398                 |
-| Hall             | 1906                | Studio B       | 723                 |
-| Large Room A     | 624                 | Tatami Room    | 518                 |
+| Name               | Estimated RT60 (ms)  | Name             | Estimated RT60 (ms)  |
+|--------------------|----------------------|------------------|----------------------|
+| Atrium             | 2894                 | Listening Room D | 312                  |
+| Audio Lab A        | 305                  | Listening Room E | 824                  |
+| Audio Lab B        | 413                  | Listening Room F | 771                  |
+| Audio Lab C        | 508                  | Listening Room G | 233                  |
+| Audio Lab D        | 193                  | Office A         | 408                  |
+| Audio Lab E        | 442                  | Office B         | 496                  |
+| Audio Lab F        | 631                  | Outdoors A       | 1935                 |
+| Audio Lab G        | 360                  | Outdoors B       | 1183                 |
+| Audio Lab H        | 528                  | Seminar Room A   | 839                  |
+| Audio Lab I        | 539                  | Seminar Room B   | 710                  |
+| Auditorium A       | 1455                 | Seminar Room C   | 705                  |
+| Auditorium B       | 901                  | Seminar Room D   | 685                  |
+| Broadcast Studio A | 1183                 | Small Room A     | 500                  |
+| Broadcast Studio B | 1241                 | Small Room B     | 437                  |
+| Concert Hall       | 1599                 | Small Room C     | 467                  |
+| Conference Room    | 467                  | Small Room D     | 463                  |
+| Control Room       | 260                  | Small Room E     | 476                  |
+| Hall               | 1418                 | Small Room F     | 474                  |
+| Large Room A       | 624                  | Studio A         | 398                  |
+| Large Room B       | 576                  | Studio B         | 351                  |
+| Lecture Room       | 704                  | Studio C         | 723                  |
+| Listening Room A   | 221                  | Studio D         | 739                  |
+| Listening Room B   | 379                  | Tatami Room      | 513                  |
+| Listening Room C   | 562                  |                  |                      |
 
 ### Subwoofer Responses
 
