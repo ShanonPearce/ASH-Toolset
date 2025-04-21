@@ -26,12 +26,12 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 
 ## Background <a name="Background"></a> 
 
-### Binaural Room Impulse Responses
+#### Binaural Room Impulse Responses
 Binaural room impulse responses (BRIRs) are measurements that capture the spectral filtering properties of the head and ears, as well as the loudspeakers and any room reverberation present. Measurements are typically made in reverberant rooms using dummy heads that are rotated above their torso to capture multiple head orientations for a number of source locations within the room. One key application of BRIRs is the synthesis of spatial audio over headphones. Convolution of an audio signal with a BRIR converts the audio to that which would be heard by the listener if it had been played at the source location. This process can be repeated for all channels in the audio signal and their respective source locations in the room to create spatial surround sound on headphones.
 
 The ASH Toolset can be used to generate and apply sets of BRIRs that can be customised to achieve a desired acoustic simulation over headphones. Distance, acoustic environment, listener, headphone type and room target response can be customised to the user's preference.
 
-### Headphone Correction Filters
+#### Headphone Correction Filters
 A significant source of spectral colouration impacting the quality of binaural simulations is the headphones used for binaural reproduction. A common design goal for headphone calibration is the diffuse-field target which minimises spectral colouration of stereo signals on headphones. Binaural measurements that have been diffuse-field calibrated will be compatible with these types of headphones. As the binaural responses produced by the toolset are diffuse-field calibrated (prior to applying room targets), headphones should also be diffuse-field equalised to ensure compatibility in terms of timbral quality. 
 
 Although diffuse-field calibrated headphones are common, differences in frequency responses across headphones are considerably large. Individual headphone equalisation is therefore recommended to compensate for the unique and undesired spectral colouration introduced by the listener's headphones.  
@@ -72,7 +72,7 @@ Python libraries:
   ```
 Data files:
 
-HRIR, BRIR and filter datasets are required in the data folder to run the app. Due to large file sizes the data files are stored using google drive.\
+HRIR, BRIR and filter datasets are required in the data folder for the app to run. Due to large file sizes the data files are stored in google drive.\
 [Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
 
 Optional:
@@ -83,8 +83,8 @@ Optional:
 ### Installation
 
 1. Clone the repo
-2. Download the data folder from google drive
-3. Extract data folder to ASH-Toolset root folder
+2. Download the data folder from google drive [(Link to data folder)](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
+3. Extract data folder to ASH-Toolset root folder. The folder hierarchy will be 'ASH-Toolset/data'.
 4. (optional) If using Equalizer APO for the first time, download [Equalizer APO](http://sourceforge.net/projects/equalizerapo) and follow the Equalizer APO [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial). 
 
 
