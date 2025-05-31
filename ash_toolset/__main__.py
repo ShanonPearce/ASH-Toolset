@@ -9,6 +9,7 @@ Created on Sun Apr 28 11:25:06 2024
 License: (see /LICENSE)
 """
 
+
 import logging.config
 from os.path import join as pjoin
 from pathlib import Path
@@ -46,6 +47,7 @@ def main():
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     )
+    
     logging.info('Started')
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('numba').setLevel(logging.WARNING)
@@ -67,6 +69,7 @@ def main():
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
+    
     
     #
     #program code
