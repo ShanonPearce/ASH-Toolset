@@ -103,16 +103,13 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         else:
             raise ValueError('brir_dict not populated')
     
-        #larger reverb times will need additional samples
-        ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
-        ac_gain = CN.AC_SPACE_GAINS[ac_space_int]
- 
+
         
         
         #reduce gain if direct gain db is less than max value
         reduction_gain_db = (CN.DIRECT_GAIN_MAX-direct_gain_db)*-1/2
         reduction_gain = hf.db2mag(reduction_gain_db)
-        reduction_gain_db_he = (reduction_gain_db+ac_gain)
+        reduction_gain_db_he = (reduction_gain_db)
         reduction_gain_he = hf.db2mag(reduction_gain_db_he)
         
         #output array length = input array length due to being already cropped

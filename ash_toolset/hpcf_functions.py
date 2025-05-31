@@ -39,7 +39,34 @@ logger = logging.getLogger(__name__)
 log_info=1
 
 
+def fetch_hpcf_data(conn):
+    """
+    Fetch brand, headphone, and sample columns from the hpcf_table,
+    sorted by brand, then headphone, then sample in ascending order.
 
+    Args:
+        conn (sqlite3.Connection): Active SQLite connection.
+
+    Returns:
+        List[Dict]: Sorted list of rows as dictionaries.
+    """
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT brand, headphone, sample
+            FROM hpcf_table
+            ORDER BY brand ASC, headphone ASC, sample ASC
+        """)
+
+        # Convert result to list of dictionaries
+        rows = cursor.fetchall()
+        results = [{"brand": r[0], "headphone": r[1], "sample": r[2]} for r in rows]
+
+        return results
+
+    except sqlite3.Error as e:
+        print(f"Error fetching data from hpcf_table: {e}")
+        return []
 
 def create_connection(db_file):
     """ create a database connection to the SQLite database

@@ -766,11 +766,7 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         #create min phase FIR
         hrir_df_inv_fir = hf.mag_to_min_fir(hrir_fft_avg_mag_inv, crop=1, out_win_size=1024, n_fft=CN.N_FFT)
         
-        # #also apply normalisation at 1khz 3.1.1 -> disabled
-        # mag_range_a=CN.SPECT_SNAP_M_F0 #mag_range_a=int(CN.SPECT_SNAP_F0*n_fft/CN.FS)
-        # mag_range_b=CN.SPECT_SNAP_M_F1 #mag_range_b=int(CN.SPECT_SNAP_F1*n_fft/CN.FS)
-        # avg_mag = np.mean(hrir_fft_avg_mag_sm[mag_range_a:mag_range_b])
-        # hrir_df_inv_fir = np.divide(hrir_df_inv_fir,avg_mag)
+
         
         if CN.PLOT_ENABLE == True:
             hf.plot_data(hrir_fft_avg_mag_sm,'hrir_fft_avg_mag_sm', normalise=0)  

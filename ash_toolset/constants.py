@@ -14,26 +14,323 @@ import sys
 from pathlib import Path
 from csv import DictReader
 import csv
+import operator
+import os
+from platformdirs import user_config_dir
+
+#Few helper functions to load constants
+def load_csv_as_dicts(csv_dir, csv_name): 
+    """
+    Generic CSV loader that detects and converts column data types automatically.
+    
+    Parameters:
+        csv_dir (str): Directory containing the CSV file.
+        csv_name (str): Name of the CSV file.
+    
+    Returns:
+        List[dict]: A list of dictionaries representing each row with inferred data types.
+    """
+    data_list = []
+    filepath = pjoin(csv_dir, csv_name)
+
+    try:
+        with open(filepath, encoding='utf-8-sig', newline='') as inputfile:
+            reader = csv.DictReader(inputfile)
+
+            for row in reader:
+                parsed_row = {}
+                for key, value in row.items():
+                    value = value.strip()
+
+                    # Try to convert to int
+                    try:
+                        parsed_row[key] = int(value) if '.' not in value else float(value)
+                    except ValueError:
+                        # Try to convert to float
+                        try:
+                            float_value = float(value)
+                            # Keep as float unless it's effectively an integer
+                            if float_value.is_integer():
+                                parsed_row[key] = int(float_value)  # Store as int if no fractional part
+                            else:
+                                parsed_row[key] = float_value  # Store as float
+                        except ValueError:
+                            # If neither int nor float, store as string
+                            parsed_row[key] = value
+
+                data_list.append(parsed_row)
+
+    except Exception as e:
+        print(f"Failed to load CSV '{csv_name}': {e}")
+
+    return data_list
+
+def load_user_reverb_csvs_recursive(directory, filename_key):
+    """
+    Recursively searches a directory for CSV files with names containing the filename_key,
+    loads them as dicts, and returns a list of parsed rows.
+    
+    Parameters:
+        directory (str): Base directory to search in.
+        filename_key (str): Substring that must appear in CSV file names.
+
+    Returns:
+        List[dict]: Parsed rows from all matching CSVs.
+    """
+    found_rows = []
+
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith(".csv") and filename_key in file:
+                path = os.path.join(root, file)
+                try:
+                    with open(path, encoding='utf-8-sig', newline='') as csvfile:
+                        reader = csv.DictReader(csvfile)
+                        for row in reader:
+                            parsed_row = {}
+                            for key, value in row.items():
+                                value = value.strip()
+                                try:
+                                    parsed_row[key] = int(value) if '.' not in value else float(value)
+                                except ValueError:
+                                    try:
+                                        float_value = float(value)
+                                        parsed_row[key] = int(float_value) if float_value.is_integer() else float_value
+                                    except ValueError:
+                                        parsed_row[key] = value
+                            found_rows.append(parsed_row)
+                except Exception as e:
+                    print(f"Failed to load user CSV {path}: {e}")
+
+    return found_rows
+
+def sort_dict_list(data, sort_key, reverse=False):
+    """
+    Sorts a list of dictionaries by the specified key (case-insensitive).
+
+    Parameters:
+        data (list): List of dictionaries to sort.
+        sort_key (str): Dictionary key to sort by.
+        reverse (bool): Sort descending if True, ascending if False.
+
+    Returns:
+        list: Sorted list of dictionaries.
+    """
+    return sorted(
+        data,
+        key=lambda x: str(x.get(sort_key, "")).strip().lower(),
+        reverse=reverse
+    )
+
+def extract_column(data, column, condition_key=None, condition_value=None, condition_op='==', return_all_matches=False):
+    """
+    Extracts a value or list of values from a list of dictionaries.
+    Can return a single value or multiple values that match a condition.
+
+    Parameters:
+        data (list of dict): The metadata loaded from CSV.
+        column (str): The key (column name) to extract values from.
+        condition_key (str, optional): Key to filter rows.
+        condition_value (any, optional): Value that condition_key must satisfy.
+        condition_op (str, optional): Comparison operator: '==', '!=', '>', '<', '>=', '<=' (default: '==').
+        return_all_matches (bool): If True, return all matching values. If False, return first match only.
+
+    Returns:
+        list or str: If no condition is provided, returns a list of values.
+                     If condition is provided:
+                        - and return_all_matches is True → list of values (or empty list).
+                        - and return_all_matches is False → first value (or empty string).
+    """
+    # Supported operators
+    ops = {
+        '==': operator.eq,
+        '!=': operator.ne,
+        '>': operator.gt,
+        '<': operator.lt,
+        '>=': operator.ge,
+        '<=': operator.le
+    }
+
+    compare = ops.get(condition_op, operator.eq)
+
+    if condition_key and condition_value is not None:
+        matches = [row.get(column, "") for row in data if condition_key in row and compare(row.get(condition_key), condition_value)]
+        if return_all_matches:
+            return matches
+        else:
+            return matches[0] if matches else ""
+    else:
+        result = [row.get(column) for row in data]
+        return result if result else []
+
+def refresh_acoustic_space_metadata():
+    """
+    Reload and merge acoustic space metadata from internal and user sources,
+    eliminate duplicates, sort, and populate global lists.
+    """
+    global reverb_data
+    global AC_SPACE_LIST_GUI, AC_SPACE_LIST_SHORT, AC_SPACE_LIST_SRC
+    global AC_SPACE_EST_R60, AC_SPACE_MEAS_R60, AC_SPACE_FADE_START
+    global AC_SPACE_GAINS, AC_SPACE_DESCR, AC_SPACE_DATASET
+    global AC_SPACE_LIST_NR, AC_SPACE_LIST_LOWRT60, AC_SPACE_LIST_HIRT60
+    global AC_SPACE_LIST_COMP, AC_SPACE_LIST_MAX_SRC, AC_SPACE_LIST_ID_SRC
+
+    # Load internal metadata
+    csv_directory = pjoin(DATA_DIR_INT, 'reverberation')
+    internal_data = load_csv_as_dicts(csv_directory, 'reverberation_metadata.csv')
+
+    # Load user metadata
+    user_csv_dir = DATA_DIR_AS_USER
+    #USER_CSV_KEY = "_metadata"#already global
+    user_data = load_user_reverb_csvs_recursive(user_csv_dir, USER_CSV_KEY)
+
+    # Deduplicate based on 'file_name'
+    existing_keys = set(row.get("file_name") for row in internal_data if "file_name" in row)
+    unique_user_data = [row for row in user_data if row.get("file_name") not in existing_keys]
+
+    # Merge and sort
+    reverb_data = internal_data + unique_user_data
+    reverb_data = sort_dict_list(reverb_data, sort_key='name_src', reverse=False)
+    
+
+    # Extract individual lists
+    AC_SPACE_LIST_GUI = extract_column(reverb_data, 'name_gui')
+    AC_SPACE_LIST_SHORT = extract_column(reverb_data, 'name_short')
+    AC_SPACE_LIST_SRC = extract_column(reverb_data, 'name_src')
+    AC_SPACE_EST_R60 = extract_column(reverb_data, 'est_rt60')
+    AC_SPACE_MEAS_R60 = extract_column(reverb_data, 'meas_rt60')
+    AC_SPACE_FADE_START = extract_column(reverb_data, 'fade_start')
+    AC_SPACE_GAINS = extract_column(reverb_data, 'gain')
+    AC_SPACE_DESCR = extract_column(reverb_data, 'description')
+    AC_SPACE_DATASET = extract_column(reverb_data, 'source_dataset')
+    AC_SPACE_LIST_NR = extract_column(
+        reverb_data, 'name_src', condition_key='noise_reduce', condition_value='Yes', return_all_matches=True)
+    AC_SPACE_LIST_LOWRT60 = extract_column(
+        reverb_data, 'name_src', condition_key='low_rt60', condition_value='Yes', return_all_matches=True)
+    AC_SPACE_LIST_HIRT60 = extract_column(
+        reverb_data, 'name_src', condition_key='low_rt60', condition_value='No', return_all_matches=True)
+    AC_SPACE_LIST_COMP = extract_column(
+        reverb_data, 'name_src', condition_key='folder', condition_value='comp_bin', return_all_matches=True)
+    AC_SPACE_LIST_MAX_SRC = extract_column(
+        reverb_data, 'name_src', condition_key='source_hrtf_dataset', condition_value='max', return_all_matches=True)
+    AC_SPACE_LIST_ID_SRC = extract_column(reverb_data, 'source_hrtf_id')
+
+def get_settings_path():
+    """
+    Get the full path to the application's settings.ini file in the user's configuration directory.
+
+    This function ensures that the user-specific configuration directory exists,
+    then returns the path to the 'settings.ini' file within that directory.
+
+    Returns:
+        str: Full file path to the settings.ini file in the platform-appropriate user config folder.
+
+    Note:
+        The config directory location is platform-dependent:
+        - Windows: %APPDATA%\\YourAppName
+        - macOS: ~/Library/Application Support/YourAppName
+        - Linux: ~/.config/YourAppName
+    """
+    appname = "ASH-Toolset"
+    config_dir = user_config_dir(appname)
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, "settings.ini")
+
+def load_user_room_targets(data_dir_rt_user, room_targets_dict, room_target_list, room_target_list_short):
+    """
+    Load user-defined room target .npy files from a directory and append them to existing room target data.
+
+    Parameters:
+        data_dir_rt_user (str): Directory containing user-defined room target .npy files.
+        room_targets_dict (dict): Existing dictionary mapping names to impulse responses and metadata.
+        room_target_list (list): Existing list of full names to append to.
+        room_target_list_short (list): Existing list of short names to append to.
+
+    Returns:
+        tuple: Updated (room_targets_dict, room_target_list, room_target_list_short)
+    """
+    for fname in os.listdir(data_dir_rt_user):
+        if fname.lower().endswith(".npy"):
+            try:
+                path = os.path.join(data_dir_rt_user, fname)
+                impulse_response = np.load(path)
+
+                # Use filename (without extension) as base name
+                base_name = os.path.splitext(fname)[0]
+                full_name = base_name
+
+                # Resolve name collision by adding suffix
+                suffix = 1
+                while full_name in room_targets_dict:
+                    full_name = f"{base_name} ({suffix})"
+                    suffix += 1
+
+                room_targets_dict[full_name] = {
+                    "short_name": full_name,
+                    "impulse_response": impulse_response
+                }
+                room_target_list.append(full_name)
+                room_target_list_short.append(full_name)
+
+            except Exception as e:
+                print(f"[WARN] Failed to load user room target '{fname}': {e}")
+
+    return room_targets_dict, room_target_list, room_target_list_short
+
+def refresh_room_targets():
+    """
+    Reloads room target arrays from internal and user sources.
+    Rebuilds the global ROOM_TARGETS_* structures.
+    """
+    global ROOM_TARGETS_DICT, ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT, ROOM_TARGET_KEYS, ROOM_TARGET_INDEX_MAP
+
+    # Load the FIR array from .npy file (base targets)
+    npy_fname = pjoin(DATA_DIR_INT, 'room_targets_firs.npy')
+    room_target_arr = np.load(npy_fname)
+
+    # Base lists
+    ROOM_TARGET_LIST = ['Flat','ASH Target','Harman Target','HATS Target','Toole Target','rtings Target',
+                        'ASH Target - Low End','Harman Target - Low End','HATS Target - Low End','Toole Target - Low End','rtings Target - Low End',
+                        'ASH Target - Flat Highs','Harman Target - Flat Highs','HATS Target - Flat Highs','Toole Target - Flat Highs','rtings Target - Flat Highs']
+    ROOM_TARGET_LIST_SHORT = ['Flat','ASH-Target','Harman-Target','HATS-Target','Toole-Target','rtings-Target',
+                              'ASH-Target-Low-End','Harman-Target-Low-End','HATS-Target-Low-End','Toole-Target-Low-End','rtings-Target-Low-End',
+                              'ASH-Target-Flat-Highs','Harman-Target-Flat-Highs','HATS-Target-Flat-Highs','Toole-Target-Flat-Highs','rtings-Target-Flat-Highs']
+
+    # Build dict from base FIRs
+    ROOM_TARGETS_DICT = {
+        name: {
+            "short_name": short,
+            "impulse_response": room_target_arr[i]
+        }
+        for i, (name, short) in enumerate(zip(ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT))
+    }
+
+    # Load and append user targets
+    ROOM_TARGETS_DICT, ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT = load_user_room_targets(
+        DATA_DIR_RT_USER,
+        ROOM_TARGETS_DICT,
+        ROOM_TARGET_LIST,
+        ROOM_TARGET_LIST_SHORT
+    )
+
+    # Rebuild access helpers
+    ROOM_TARGET_KEYS = ROOM_TARGET_LIST
+    ROOM_TARGET_INDEX_MAP = {name: idx for idx, name in enumerate(ROOM_TARGET_LIST)}
+
 
 ################################ 
 #Constants
 
-
+#commonly used
 N_FFT = 65536
 N_FFT_L = int(65536*2)
 N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
 SAMP_FREQ = 44100#sample rate for ash toolset
 FS=SAMP_FREQ
 THRESHOLD_CROP = 0.0000005#0.0000005 -120db with reference level of 0.5
-SPECT_SMOOTH_MODE=1#0=use single pass smoothing, 1 = octave smoothing
-APPLY_SUB_EQ = 0#1
-APPLY_ROOM_TARGET = 1
-APPLY_ADD_HP_EQ = 1
-HRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
-SUBRIR_MODE=1#0= load .mat dataset, 1=load .npy dataset
-ROOM_TARGET_MODE=1#0= load .mat dataset, 1=load .npy dataset
-PINNA_COMP_MODE=1#0= load .mat dataset, 1=load .npy dataset
 
+
+#Developer settings
 PLOT_ENABLE = False#False
 LOG_INFO=True     
 LOG_GUI=True
@@ -41,6 +338,7 @@ HEAD_TRACK_RUNNING = False
 PROCESS_BRIRS_RUNNING = False
 SHOW_DEV_TOOLS=False#False
 STOP_THREAD_FLAG = False
+SHOW_AS_TAB = True
 
 #control level of direct sound
 DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
@@ -48,16 +346,12 @@ DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
 #crossover frequency for low frequency BRIR integration
 ENABLE_SUB_INTEGRATION = True
 ORDER=9#8
-F_CROSSOVER_HI = 140#140
-F_CROSSOVER_MID = 130
 F_CROSSOVER = 120#120, default
-F_CROSSOVER_LOW = 110#110,85
-
 EVAL_POLARITY=True#True
 PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
 
 #size to hop peak to peak window
-DELAY_WIN_HOP_SIZE = 10#5
+DELAY_WIN_HOP_SIZE = 25#10
 DELAY_WIN_MIN_T = 0
 DELAY_WIN_MAX_T = 1200#
 DELAY_WIN_HOPS = int((DELAY_WIN_MAX_T-DELAY_WIN_MIN_T)/DELAY_WIN_HOP_SIZE)
@@ -96,8 +390,9 @@ DELAY_WIN_HOPS_H = int((DELAY_WIN_MAX_H-DELAY_WIN_MIN_H)/DELAY_WIN_HOP_SIZE)
 
 #AIR alignment
 CUTOFF_ALIGNMENT_AIR = 110#110
+CUTOFF_ALIGNMENT_TR_AIR = 110#transformation applied cases, 140, 130, 120
 PEAK_TO_PEAK_WINDOW_AIR = int(np.divide(SAMP_FREQ,CUTOFF_ALIGNMENT_AIR)*0.95) 
-MIN_T_SHIFT_A = -1000#-1000,800
+MIN_T_SHIFT_A = -1000#-1000
 MAX_T_SHIFT_A = 250#250
 DELAY_WIN_MIN_A = 0
 DELAY_WIN_MAX_A = 1000#1000
@@ -159,6 +454,9 @@ DATA_DIR_HRIR_NPY_USER = pjoin(BASE_DIR_OS, 'data','interim','hrir','user')
 DATA_DIR_EXT = pjoin(BASE_DIR_OS, 'data','external')
 DATA_DIR_SOFA = pjoin(BASE_DIR_OS, 'data','external','SOFA')
 DATA_DIR_SOFA_USER = pjoin(BASE_DIR_OS, 'data','user','SOFA')
+DATA_DIR_IRS_USER = pjoin(BASE_DIR_OS, 'data','user','IRs')
+DATA_DIR_AS_USER = pjoin(BASE_DIR_OS, 'data','interim','reverberation','user')
+DATA_DIR_RT_USER = pjoin(BASE_DIR_OS, 'data','interim','room_targets','user')
 DATA_DIR_ASSETS = pjoin(BASE_DIR_OS, 'data','external','assets')
 DATA_DIR_RAW = pjoin(BASE_DIR_OS, 'data','raw')
 DATA_DIR_RAW_HP_MEASRUEMENTS = pjoin(BASE_DIR_OS, 'data','raw','headphone_measurements')
@@ -175,9 +473,13 @@ PROJECT_FOLDER_CONFIGS_HPCF = pjoin(PROJECT_FOLDER, 'E-APO-Configs','HpCF-Convol
 PROJECT_FOLDER_HPCFS = pjoin(PROJECT_FOLDER, 'HpCFs')  
 PROJECT_FOLDER_HPCFS_SSD = pjoin(PROJECT_FOLDER, 'HpCFs')
 ICON_LOCATION= pjoin(DATA_DIR_RAW, 'ash_icon_1.ico')  
-SETTINGS_FILE = pjoin(BASE_DIR_OS, 'settings.ini')
 METADATA_FILE = pjoin(BASE_DIR_OS, 'metadata.json')
 FOLDER_BRIRS_LIVE = 'live_dataset'
+SETTINGS_FILE_OLD = pjoin(BASE_DIR_OS, 'settings.ini')#prior to v3.3.0, was stored in app directory
+SETTINGS_FILE_NEW = get_settings_path()#3.3.0 onwards is stored in user directory
+# Initialize SETTINGS_FILE to None or new by default (you can override it in main)
+SETTINGS_FILE = SETTINGS_FILE_NEW
+
 
 #constants for writing WAVs
 NEAREST_AZ_WAV = 15
@@ -208,13 +510,18 @@ PROCESS_BUTTON_HPCF='Apply Selection'
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
 
-ROOM_TARGET_LIST = ['Flat','ASH Target','Harman Target','HATS Target','Toole Target','rtings Target',
-                    'ASH Target - Low End','Harman Target - Low End','HATS Target - Low End','Toole Target - Low End','rtings Target - Low End',
-                    'ASH Target - Flat Highs','Harman Target - Flat Highs','HATS Target - Flat Highs','Toole Target - Flat Highs','rtings Target - Flat Highs']
-ROOM_TARGET_LIST_SHORT = ['Flat','ASH-Target','Harman-Target','HATS-Target','Toole-Target','rtings-Target',
-                          'ASH-Target-Low-End','Harman-Target-Low-End','HATS-Target-Low-End','Toole-Target-Low-End','rtings-Target-Low-End',
-                          'ASH-Target-Flat-Highs','Harman-Target-Flat-Highs','HATS-Target-Flat-Highs','Toole-Target-Flat-Highs','rtings-Target-Flat-Highs']
-ROOM_TARGET_LIST_FIRS = ['Flat','ash_room_target_fir','harman_b_room_target_fir','hats_room_target_fir','toole_trained_room_target_fir','rtings_target_fir']
+
+
+#Room target related
+ROOM_TARGETS_DICT = {}
+ROOM_TARGET_LIST = []
+ROOM_TARGET_LIST_SHORT = []
+ROOM_TARGET_KEYS = []
+ROOM_TARGET_INDEX_MAP = []
+
+# Automatically refresh on import
+refresh_room_targets()
+
 
 #BRIR writing
 #number of directions to grab to built HESUVI IR
@@ -283,21 +590,7 @@ SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#
 SPATIAL_RES_ELEV_NEAREST_OUT=[15, 15, 5, 2]#
 SPATIAL_RES_AZIM_NEAREST_OUT=[5, 5, 5, 2]#
 
-#Head tracking related
-THREAD_FPS = 10
-THREAD_FPS_MIN=3
-THREAD_FPS_MAX=30
-PROVIDERS_CUDA=['CUDAExecutionProvider', 'CPUExecutionProvider']
-PROVIDERS_DML=['DmlExecutionProvider', 'CPUExecutionProvider']
-TRACK_SENSITIVITY = 4
-BRIR_SEL_WIN_WIDTH_RED=390
-BRIR_SEL_WIN_WIDTH_FULL=520
-BRIR_SEL_LIST_WIDTH_RED=370
-BRIR_SEL_LIST_WIDTH_FULL=500
-HP_SEL_WIN_WIDTH_RED=360
-HP_SEL_WIN_WIDTH_FULL=420
-HP_SEL_LIST_WIDTH_RED=217
-HP_SEL_LIST_WIDTH_FULL=277
+
 
 #hpcf related
 NUM_ITER = 8 #was 4
@@ -343,7 +636,7 @@ ER_RISE_MIN=0#
 SAMPLE_RATE_LIST = ['44.1 kHz', '48 kHz', '96 kHz']
 SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}  
 BIT_DEPTH_LIST = ['24 bit', '32 bit']
-BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  
+BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  #{'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  
 HRTF_SYM_LIST = ['Disabled', 'Mirror Left Side', 'Mirror Right Side']
 
 
@@ -351,6 +644,9 @@ HRTF_SYM_LIST = ['Disabled', 'Mirror Left Side', 'Mirror Right Side']
 LIMIT_REBERB_DIRS=True
 MIN_REVERB_DIRS=1
 MAX_IRS=3500#2520
+MAX_IRS_TRANSFORM=2500#2520,1550,1050,2500 for combined
+IR_MIN_THRESHOLD=500#before this number of IRs, transform will be applied to expand dataset
+IR_MIN_THRESHOLD_FULLSET=1600
 DIRECTION_MODE=3#0=one set of azimuths for each source, 1 = separate set of azimuths for left and right hem,2 = random using triangle distribution, 3 = biased_spherical_coordinate_sampler
 MAG_COMP=True#enables DF compensation in AIR processing   True
 RISE_WINDOW=True#enables windowing of initial rise in AIR processing
@@ -374,7 +670,7 @@ AC_SPACE_LIST_ISO = ['sub_set_a','sub_set_b']
 AC_SPACE_LIST_ANU = ['studio_c','studio_d']#'studio_b'
 AC_SPACE_LIST_44100 = ['outdoors_b']
 AC_SPACE_LIST_SUBRIRDB = ['sub_set_c']
-AC_SPACE_LIST_NR = ['tatami_room_a','listening_room_a','listening_room_b','listening_room_c','listening_room_d','listening_room_g']
+#AC_SPACE_LIST_NR = ['tatami_room_a','listening_room_a','listening_room_b','listening_room_c','listening_room_d','listening_room_g','courtyard_a','church_a']
 AC_SPACE_LIST_CUTOFF = ['concert_hall_a']
 AC_SPACE_LIST_LIM_CHANS = ['concert_hall_a','hall_a']
 AC_SPACE_LIST_LIM_SETS = ['hall_a', 'outdoors_a','broadcast_studio_a','concert_hall_a', 'outdoors_b','seminar_room_a','seminar_room_b','lobby_a','seminar_room_c','broadcast_studio_b','office_b']
@@ -389,94 +685,105 @@ AC_SPACE_LIST_SUB = ['sub_set_a','sub_set_b','sub_set_c','sub_set_d','sub_set_e'
 AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
-#AC_SPACE_LIST_HRTF_1 = ['small_room_b','small_room_d','medium_room_b','large_room_b','small_room_f']#
-#AC_SPACE_LIST_ALL_AZ = ['small_room_a','small_room_b','small_room_c','small_room_d','small_room_e','small_room_f','large_room_a','large_room_b']
 AC_SPACE_LIST_LIM_AZ = [' ']
 # #HRTF_LIST_NUM = ['01: Neumann KU 100 (SADIE)', '02: Neumann KU 100 (TH Köln)', '03: FABIAN HATS', '04: B&K Type 4128', '05: B&K Type 4128C (MMHR-HRIR)', '06: DADEC (MMHR-HRIR)', '07: HEAD acoustics HMSII.2 (MMHR-HRIR)', '08: KEMAR (MMHR-HRIR)', '09: KEMAR-N (MIT)', '10: KEMAR-L (MIT)', '11: KEMAR (SADIE)', '12: KEMAR-N (PKU-IOA)', '13: KEMAR-L (PKU-IOA)']
 AC_SPACE_LIST_SORT_BY = ['Name','Reverberation Time']
-
-#load other lists from csv file
-AC_SPACE_LIST_GUI = []
-AC_SPACE_LIST_SHORT = []
-AC_SPACE_LIST_SRC = []
-#estimated RT60 in ms, rough estimate only
-AC_SPACE_EST_R60 = []
-#estimated RT60 in ms, measured
-AC_SPACE_MEAS_R60 = []
-#estimated time in ms to start fade out
-AC_SPACE_FADE_START = []
-AC_SPACE_LIST_LOWRT60 = []
-AC_SPACE_GAINS = []
 AC_SPACE_LIST_HI_FC = []
 AC_SPACE_LIST_MID_FC = []
 AC_SPACE_LIST_LOW_FC = []
+
+#load other lists from csv file
+AC_SPACE_FIELD_NAMES = [
+    'file_name', 'name_gui', 'name_short', 'name_src', 'est_rt60', 'meas_rt60', 'fade_start',
+    'low_rt60', 'folder', 'version', 'gdrive_link', 'gain', 'f_crossover', 'order_crossover',
+    'noise_reduce', 'source_hrtf_dataset', 'source_hrtf_id', 'description', 'notes',
+    'source_dataset', 'citation', 'citation_link', 'high_fc', 'mid_fc', 'low_fc'
+]
+
+# Global variable declarations for clarity
+reverb_data = []
+AC_SPACE_LIST_GUI = []
+AC_SPACE_LIST_SHORT = []
+AC_SPACE_LIST_SRC = []
+AC_SPACE_EST_R60 = []
+AC_SPACE_MEAS_R60 = []
+AC_SPACE_FADE_START = []
+AC_SPACE_GAINS = []
+AC_SPACE_DESCR = []
+AC_SPACE_DATASET = []
+AC_SPACE_LIST_NR = []
+AC_SPACE_LIST_LOWRT60 = []
+AC_SPACE_LIST_HIRT60 = []
 AC_SPACE_LIST_COMP = []
 AC_SPACE_LIST_MAX_SRC = []
 AC_SPACE_LIST_ID_SRC = []
+USER_CSV_KEY = "_metadata"
 
-try:
-    #directories
-    csv_directory = pjoin(DATA_DIR_INT, 'reverberation')
-    #read metadata from csv. Expects reverberation_metadata.csv 
-    metadata_file_name = 'reverberation_metadata.csv'
-    metadata_file = pjoin(csv_directory, metadata_file_name)
-    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
-        reader = DictReader(inputfile)
-        for row in reader:#rows 2 and onward
-            #store each row as a dictionary
-            #append to list of dictionaries
-            AC_SPACE_LIST_GUI.append(row.get('name_gui'))  
-            AC_SPACE_LIST_SHORT.append(row.get('name_short'))  
-            AC_SPACE_LIST_SRC.append(row.get('name_src'))  
-            AC_SPACE_EST_R60.append(int(row.get('est_rt60')))  
-            AC_SPACE_MEAS_R60.append(int(row.get('meas_rt60')))  
-            AC_SPACE_FADE_START.append(int(row.get('fade_start')))
-            AC_SPACE_GAINS.append(float(row.get('gain'))) 
-            low_rt_flag = row.get('low_rt60')
-            name_src = row.get('name_src')
-            if low_rt_flag == "Yes":
-                AC_SPACE_LIST_LOWRT60.append(name_src)
-            folder = row.get('folder')
-            if folder == "comp_bin":
-                AC_SPACE_LIST_COMP.append(name_src)
-            source_hrtf_dataset = row.get('source_hrtf_dataset')
-            if source_hrtf_dataset == "max":
-                AC_SPACE_LIST_MAX_SRC.append(name_src)
-            AC_SPACE_LIST_ID_SRC.append(int(row.get('source_hrtf_id'))) 
+#section to load dict lists containing acoustic space metadata
+#new: load as dict lists
+refresh_acoustic_space_metadata()
 
-except Exception:
-    pass
+# # Load internal metadata
+# csv_directory = pjoin(DATA_DIR_INT, 'reverberation')
+# reverb_data = load_csv_as_dicts(csv_directory, 'reverberation_metadata.csv')
+# # Load additional user metadata
+# user_csv_dir = DATA_DIR_AS_USER
+# USER_CSV_KEY = "_metadata"
+# user_reverb_data = load_user_reverb_csvs_recursive(user_csv_dir, USER_CSV_KEY)
+# # Build a set of existing file_name values for duplicate detection
+# existing_keys = set(row.get("file_name") for row in reverb_data if "file_name" in row)
+# # Filter out duplicates from user data
+# unique_user_reverb_data = [row for row in user_reverb_data if row.get("file_name") not in existing_keys]
+# # Merge filtered user data into internal data
+# reverb_data.extend(unique_user_reverb_data)
+# #sort by name
+# reverb_data = sort_dict_list(reverb_data, sort_key='name_src', reverse=False)
+# #grab individual lists
+# AC_SPACE_LIST_GUI = extract_column(data=reverb_data, column='name_gui')  
+# AC_SPACE_LIST_SHORT = extract_column(data=reverb_data, column='name_short') 
+# AC_SPACE_LIST_SRC = extract_column(data=reverb_data, column='name_src')                       #
+# AC_SPACE_EST_R60 = extract_column(data=reverb_data, column='est_rt60')                      #
+# AC_SPACE_MEAS_R60 = extract_column(data=reverb_data, column='meas_rt60')                      #
+# AC_SPACE_FADE_START = extract_column(data=reverb_data, column='fade_start')                   #
+# AC_SPACE_GAINS = extract_column(data=reverb_data, column='gain')                              #
+# AC_SPACE_DESCR = extract_column(data=reverb_data, column='description')   
+# AC_SPACE_DATASET = extract_column(data=reverb_data, column='source_dataset')   
+# AC_SPACE_LIST_NR = extract_column(data=reverb_data, column='name_src', condition_key='noise_reduce', condition_value='Yes', return_all_matches=True)
+# AC_SPACE_LIST_LOWRT60 = extract_column(data=reverb_data, column='name_src', condition_key='low_rt60', condition_value='Yes', return_all_matches=True)
+# AC_SPACE_LIST_HIRT60 = extract_column(data=reverb_data, column='name_src', condition_key='low_rt60', condition_value='No', return_all_matches=True)
+# AC_SPACE_LIST_COMP = extract_column(data=reverb_data, column='name_src', condition_key='folder', condition_value='comp_bin', return_all_matches=True)
+# AC_SPACE_LIST_MAX_SRC = extract_column(data=reverb_data, column='name_src', condition_key='source_hrtf_dataset', condition_value='max', return_all_matches=True)
+# AC_SPACE_LIST_ID_SRC = extract_column(data=reverb_data, column='source_hrtf_id')
+
+
+
+# ## Accessing data example
+# for entry in reverb_data:
+#     print(entry['name_gui'], entry['est_rt60'])
+# #
+# AC_SPACE_LIST_GUI = extract_column(reverb_data, 'name_gui')                        # strings
+# AC_SPACE_MEAS_R60 = extract_column(reverb_data, 'meas_rt60')                      # ints
+# AC_SPACE_FADE_START = extract_column(reverb_data, 'fade_start')                   # ints
+# AC_SPACE_GAINS = extract_column(reverb_data, 'gain')                              # floats
+# AC_SPACE_LIST_LOWRT60 = extract_column(reverb_data, 'name_src', 'low_rt60', 'Yes')
+# AC_SPACE_LIST_COMP = extract_column(reverb_data, 'name_src', 'folder', 'comp_bin')
+# # All rows using 'max' HRTF dataset
+# AC_SPACE_LIST_MAX_SRC = [row['name_src'] for row in reverb_data if row.get('source_hrtf_dataset') == 'max']
+
 
 
 #SOFA related
-SOFA_COMPAT_CONV = []
-SOFA_COMPAT_VERS = []
-SOFA_COMPAT_CONVERS = []
-SOFA_OUTPUT_CONV = []
-SOFA_OUTPUT_VERS = []
-SOFA_OUTPUT_CONVERS = []
 
-try:
-    #directories
-    #read metadata from csv. Expects reverberation_metadata.csv 
-    metadata_file_name = 'supported_conventions.csv'
-    metadata_file = pjoin(DATA_DIR_SOFA, metadata_file_name)
-    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
-        reader = DictReader(inputfile)
-        for row in reader:#rows 2 and onward
-            #store each row as a dictionary
-            #append to list of dictionaries
-            SOFA_COMPAT_CONV.append(row.get('Convention'))  
-            SOFA_COMPAT_VERS.append(row.get('Version'))  
-            SOFA_COMPAT_CONVERS.append(row.get('SOFAConventionsVersion'))  
-            out_flag = row.get('OutputFormat')
-            if out_flag == "Yes":
-                SOFA_OUTPUT_CONV.append(row.get('Convention'))  
-                SOFA_OUTPUT_VERS.append(row.get('Version'))  
-                SOFA_OUTPUT_CONVERS.append(row.get('SOFAConventionsVersion'))  
+#new: load as dict lists
+csv_directory = DATA_DIR_SOFA
+sofa_data = load_csv_as_dicts(csv_directory,'supported_conventions.csv')
 
-except Exception:
-    pass
+SOFA_COMPAT_CONV = extract_column(data=sofa_data, column='Convention')  
+SOFA_COMPAT_VERS = extract_column(data=sofa_data, column='Version') 
+SOFA_COMPAT_CONVERS = extract_column(data=sofa_data, column='SOFAConventionsVersion')                       # strings
+SOFA_OUTPUT_CONV = extract_column(data=sofa_data, column='Convention', condition_key='OutputFormat', condition_value='Yes', return_all_matches=True)
+SOFA_OUTPUT_VERS = extract_column(data=sofa_data, column='Version', condition_key='OutputFormat', condition_value='Yes', return_all_matches=True)
+SOFA_OUTPUT_CONVERS = extract_column(data=sofa_data, column='SOFAConventionsVersion', condition_key='OutputFormat', condition_value='Yes', return_all_matches=True)
 
 
 
@@ -485,51 +792,28 @@ HRTF_A_GAIN_ADDIT = 2.5#
 #Strings
 HRTF_TYPE_LIST = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input']
 HRTF_TYPE_LIST_FULL = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input','Dummy Head - Max Resolution']
-HRTF_DATASET_LIST_DUMMY = []
-HRTF_DATASET_LIST_DUMMY_MAX = []
-HRTF_DATASET_LIST_INDV = []
-HRTF_DATASET_LIST_CUSTOM = ['N/A']
-HRTF_TYPE_DEFAULT=''
-HRTF_DATASET_DEFAULT=''
-HRTF_LISTENER_DEFAULT=''
-#load lists from csv file
-try:
 
-    #directories
-    csv_directory = DATA_DIR_HRIR_NPY
-    #read metadata from csv. Expects reverberation_metadata.csv 
-    metadata_file_name = 'hrir_metadata.csv'
-    metadata_file = pjoin(csv_directory, metadata_file_name)
-    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
-        reader = DictReader(inputfile)
-        for row in reader:#rows 2 and onward
-            #store each row as a dictionary
-            #append to list of dictionaries
-            if row.get('hrtf_type') == 'Human Listener':
-                HRTF_DATASET_LIST_INDV.append(row.get('dataset')) 
-            if row.get('hrtf_type') == 'Dummy Head / Head & Torso Simulator':
-                HRTF_DATASET_LIST_DUMMY.append(row.get('dataset')) 
-            if row.get('hrtf_index_max') != '':
-                HRTF_DATASET_LIST_DUMMY_MAX.append(row.get('dataset')) 
-            if row.get('default') == 'Yes':
-                HRTF_TYPE_DEFAULT = row.get('hrtf_type')
-                HRTF_DATASET_DEFAULT = row.get('dataset')
-                HRTF_LISTENER_DEFAULT = row.get('name_gui')
-                
-    # Remove duplicates by converting to a set and back to a list
-    HRTF_DATASET_LIST_INDV = list(set(HRTF_DATASET_LIST_INDV))
-    # Sort the list alphabetically
-    HRTF_DATASET_LIST_INDV.sort()
-    # Remove duplicates by converting to a set and back to a list
-    HRTF_DATASET_LIST_DUMMY = list(set(HRTF_DATASET_LIST_DUMMY))
-    HRTF_DATASET_LIST_DUMMY_MAX = list(set(HRTF_DATASET_LIST_DUMMY_MAX))
-    # Sort the list alphabetically
-    HRTF_DATASET_LIST_DUMMY.sort()
-    HRTF_DATASET_LIST_DUMMY_MAX.sort()
-    
- 
-except Exception:
-    pass
+#new: load as dict lists
+csv_directory = DATA_DIR_HRIR_NPY
+hrtf_data = load_csv_as_dicts(csv_directory,'hrir_metadata.csv')
+HRTF_DATASET_LIST_INDV = extract_column(data=hrtf_data, column= 'dataset', condition_key='hrtf_type', condition_value='Human Listener', return_all_matches=True)
+HRTF_DATASET_LIST_DUMMY = extract_column(data=hrtf_data, column='dataset', condition_key='hrtf_type', condition_value='Dummy Head / Head & Torso Simulator', return_all_matches=True)
+HRTF_DATASET_LIST_DUMMY_MAX = extract_column(data=hrtf_data, column='dataset', condition_key='hrtf_index_max', condition_value=0, condition_op='!=', return_all_matches=True)
+HRTF_TYPE_DEFAULT = extract_column(data=hrtf_data, column='hrtf_type', condition_key='default', condition_value='Yes', return_all_matches=False)
+HRTF_DATASET_DEFAULT = extract_column(data=hrtf_data, column='dataset', condition_key='default', condition_value='Yes', return_all_matches=False)
+HRTF_LISTENER_DEFAULT = extract_column(data=hrtf_data, column='name_gui', condition_key='default', condition_value='Yes', return_all_matches=False)
+HRTF_DATASET_LIST_CUSTOM = ['N/A']
+# Remove duplicates by converting to a set and back to a list
+HRTF_DATASET_LIST_INDV = list(set(HRTF_DATASET_LIST_INDV))
+# Sort the list alphabetically
+HRTF_DATASET_LIST_INDV.sort()
+# Remove duplicates by converting to a set and back to a list
+HRTF_DATASET_LIST_DUMMY = list(set(HRTF_DATASET_LIST_DUMMY))
+HRTF_DATASET_LIST_DUMMY_MAX = list(set(HRTF_DATASET_LIST_DUMMY_MAX))
+# Sort the list alphabetically
+HRTF_DATASET_LIST_DUMMY.sort()
+HRTF_DATASET_LIST_DUMMY_MAX.sort()
+
 #create a dictionary
 HRTF_TYPE_DATASET_DICT = {
     HRTF_TYPE_LIST_FULL[0]: HRTF_DATASET_LIST_DUMMY,
@@ -538,44 +822,32 @@ HRTF_TYPE_DATASET_DICT = {
     HRTF_TYPE_LIST_FULL[3]: HRTF_DATASET_LIST_DUMMY_MAX
 }
 
+
 #SUB Related
 SUB_FC_SETTING_LIST = ['Auto Select', 'Custom Value']
 SUB_FC_MIN=40
 SUB_FC_MAX=150
 SUB_FC_DEFAULT=120
-SUB_RESPONSE_LIST_GUI = []
-SUB_RESPONSE_LIST_SHORT = []
-SUB_RESPONSE_LIST_AS = []
-SUB_RESPONSE_LIST_R60 = []
-SUB_RESPONSE_LIST_COMM = []
-SUB_RESPONSE_LIST_RANGE = []
-SUB_RESPONSE_LIST_TOL = []
+
+#new: load as dict lists
+csv_directory = pjoin(DATA_DIR_INT, 'sub')
+sub_data = load_csv_as_dicts(csv_directory,'sub_brir_metadata.csv')
+SUB_RESPONSE_LIST_GUI = extract_column(data=sub_data, column='name_gui') 
+SUB_RESPONSE_LIST_SHORT = extract_column(data=sub_data, column='name_short') 
+SUB_RESPONSE_LIST_AS = extract_column(data=sub_data, column='acoustic_space') 
+SUB_RESPONSE_LIST_R60 = extract_column(data=sub_data, column='est_rt60') 
+SUB_RESPONSE_LIST_COMM = extract_column(data=sub_data, column='comments') 
+SUB_RESPONSE_LIST_RANGE = extract_column(data=sub_data, column='frequency_range') 
+SUB_RESPONSE_LIST_TOL = extract_column(data=sub_data, column='tolerance') 
 SUB_PLOT_LIST = ['Magnitude', 'Group Delay']
-
-try:
-    #directories
-    csv_directory = pjoin(DATA_DIR_INT, 'sub')
-    #read metadata from csv. Expects reverberation_metadata.csv 
-    metadata_file_name = 'sub_brir_metadata.csv'
-    metadata_file = pjoin(csv_directory, metadata_file_name)
-    with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
-        reader = DictReader(inputfile)
-        for row in reader:#rows 2 and onward
-            #store each row as a dictionary
-            #append to list of dictionaries
-            SUB_RESPONSE_LIST_GUI.append(row.get('name_gui'))  
-            SUB_RESPONSE_LIST_SHORT.append(row.get('name_short'))  
-            SUB_RESPONSE_LIST_AS.append(row.get('acoustic_space'))  
-            SUB_RESPONSE_LIST_R60.append(int(row.get('est_rt60')))  
-            SUB_RESPONSE_LIST_COMM.append(row.get('comments')) 
-            SUB_RESPONSE_LIST_RANGE.append(row.get('frequency_range')) 
-            SUB_RESPONSE_LIST_TOL.append(row.get('tolerance')) 
-     
-
-except Exception:
-    pass
 
 #plotting
 IMPULSE=np.zeros(N_FFT)
 IMPULSE[0]=1
 FR_FLAT_MAG = np.abs(np.fft.fft(IMPULSE))
+
+
+# Define the center frequencies of the 1/3-octave bands
+OCTAVE_BANDS = np.array([50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 
+                         500, 630, 800, 1000, 1250, 1600, 2000, 2500, 
+                         3150, 4000, 5000, 6300, 8000, 10000])

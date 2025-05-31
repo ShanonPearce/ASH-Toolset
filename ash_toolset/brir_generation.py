@@ -64,7 +64,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
                 brir_hrtf = brir_dict.get('qc_brir_hrtf')
                 brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
-                room_target = brir_dict.get("qc_room_target")
+                room_target_name = brir_dict.get("qc_room_target")
                 direct_gain_db = brir_dict.get("qc_direct_gain_db")
                 acoustic_space= brir_dict.get("qc_ac_space_src")
                 pinna_comp = brir_dict.get("qc_pinna_comp")
@@ -77,7 +77,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 brir_hrtf_dataset=brir_dict.get('brir_hrtf_dataset')
                 brir_hrtf = brir_dict.get('brir_hrtf')
                 brir_hrtf_short=brir_dict.get('brir_hrtf_short')
-                room_target = brir_dict.get("room_target")
+                room_target_name = brir_dict.get("room_target")
                 direct_gain_db = brir_dict.get("direct_gain_db")
                 acoustic_space= brir_dict.get("ac_space_src")
                 pinna_comp = brir_dict.get("pinna_comp")
@@ -108,15 +108,21 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
 
         #variable crossover depending on acoustic space
         f_crossover_var=crossover_f
-        _,order_var= get_ac_f_crossover(name_src=acoustic_space, gui_logger=gui_logger)#f_crossover_var,order_var
+       # _,order_var= get_ac_f_crossover(name_src=acoustic_space, gui_logger=gui_logger)#f_crossover_var,order_var
+        
+        reverb_data=CN.reverb_data
+        order_var = CN.extract_column(data=reverb_data, column='order_crossover', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
+        fade_start = CN.extract_column(data=reverb_data, column='fade_start', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
+        est_rt60 = CN.extract_column(data=reverb_data, column='est_rt60', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
+        as_folder = CN.extract_column(data=reverb_data, column='folder', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
         
         #filters
         lp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=fb_filtering, b_type='low')
         hp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=fb_filtering, b_type='high')
 
-        ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
-        fade_start = CN.AC_SPACE_FADE_START[ac_space_int]
-        est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
+        # ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
+        # fade_start = CN.AC_SPACE_FADE_START[ac_space_int]
+        # est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
 
         #impulse
         impulse=np.zeros(CN.N_FFT)
@@ -162,12 +168,14 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
 
         #
         # load room target filter (FIR)
-        if room_target > 0:
-            npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
-            room_target_mat = hf.load_convert_npy_to_float64(npy_fname)
-            room_target_fir = room_target_mat[room_target]
-        else:
-            room_target_fir = np.copy(impulse[0:512])
+        # if room_target > 0:
+        #     npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
+        #     room_target_arr = hf.load_convert_npy_to_float64(npy_fname)
+        #     room_target_fir = room_target_arr[room_target]
+        # else:
+        #     room_target_fir = np.copy(impulse[0:512])
+
+        room_target_fir = CN.ROOM_TARGETS_DICT[room_target_name]["impulse_response"]
             
         #
         # load pinna comp filter (FIR)
@@ -182,19 +190,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #
         # load additional headphone eq
         #
-        # apply_add_hp_eq = 0
-        # data_addit_eq = np.copy(impulse[0:32])
-        # data_lf_comp_eq = np.copy(impulse[0:32])
-        # if CN.APPLY_ADD_HP_EQ > 0:
-        #     if pinna_comp == 2:#high strength, over ear
-        #         filename = 'additional_comp_for_over_&_on_ear_headphones.wav'
-        #         apply_add_hp_eq = 1
-        #     elif pinna_comp == 0:#high strength in ear
-        #         filename = 'additional_comp_for_in_ear_headphones.wav'
-        #         apply_add_hp_eq = 1
-        #     if apply_add_hp_eq > 0:
-        #         wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-        #         samplerate, data_addit_eq = hf.read_wav_file(wav_fname)
+
         
         data_lf_comp_eq = np.copy(impulse[0:32])
         if hp_rolloff_comp == True:
@@ -226,14 +222,12 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #
         # Load BRIR reverberation data
         #
-        if acoustic_space in CN.AC_SPACE_LIST_COMP:
-            brir_est_folder = pjoin(CN.DATA_DIR_INT, 'reverberation', 'comp_bin')
-            npy_file_name =  'reverberation_dataset_' +acoustic_space+'.npy'
-            npy_file_path = pjoin(brir_est_folder,npy_file_name)  
+        if as_folder == 'user':
+            brir_rev_folder = pjoin(CN.DATA_DIR_AS_USER,acoustic_space)
         else:
-            brir_est_folder = pjoin(CN.DATA_DIR_INT, 'reverberation', 'est_bin')
-            npy_file_name =  'reverberation_dataset_' +acoustic_space+'.npy'
-            npy_file_path = pjoin(brir_est_folder,npy_file_name)   
+            brir_rev_folder = pjoin(CN.DATA_DIR_INT, 'reverberation', as_folder)
+        npy_file_name =  'reverberation_dataset_' +acoustic_space+'.npy'
+        npy_file_path = pjoin(brir_rev_folder,npy_file_name) 
         try:
             brir_reverberation = hf.load_convert_npy_to_float64(npy_file_path)
         except Exception as e:
@@ -677,7 +671,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             for future in concurrent.futures.as_completed(futures):
                 future.result()  # Optionally, handle exceptions
 
-           
+       
            
         #results_list will be populated with numpy arrays representing db response for each elevation
         num_results_avg = 0
@@ -1116,6 +1110,49 @@ def calc_eq_for_brirs(brir_out, elev, total_azim_hrir, direction_matrix_process,
     
     results_list[list_indx]=brir_fft_avg_db
     
+    
+# def calc_eq_for_brirs(brir_out, elev, total_azim_hrir, direction_matrix_process, fr_flat, total_chan_brir):
+#     """
+#     Computes the average dB magnitude response for all valid BRIRs at a given elevation.
+
+#     Parameters
+#     ----------
+#     brir_out : np.ndarray
+#         BRIR data, shape: [elev, azim, channel, samples]
+#     elev : int
+#         Elevation index to process
+#     total_azim_hrir : int
+#         Total number of azimuth angles
+#     direction_matrix_process : np.ndarray
+#         Binary matrix indicating valid directions
+#     fr_flat : np.ndarray
+#         Flat frequency reference (in dB) to start averaging from
+#     total_chan_brir : int
+#         Number of BRIR channels (typically 2)
+
+#     Returns
+#     -------
+#     np.ndarray
+#         Averaged BRIR magnitude in dB for the specified elevation
+#     """
+#     brir_fft_avg_db = np.zeros_like(fr_flat)
+#     num_brirs_avg = 0
+
+#     for azim in range(total_azim_hrir):
+#         if direction_matrix_process[elev, azim, 0, 0] != 1:
+#             continue
+#         for chan in range(total_chan_brir):
+#             brir_current = brir_out[elev, azim, chan, :CN.N_FFT]
+#             brir_current_mag = np.abs(np.fft.fft(brir_current))
+#             brir_fft_avg_db += hf.mag2db(brir_current_mag)
+#             num_brirs_avg += 1
+
+#     if num_brirs_avg > 0:
+#         brir_fft_avg_db /= num_brirs_avg
+#     else:
+#         brir_fft_avg_db[:] = fr_flat  # fallback to flat
+
+#     return brir_fft_avg_db    
     
 
 def apply_eq_to_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_post, brir_df_inv_fir, room_target_fir,  pinna_comp_fir, data_lf_comp_eq, crop_samples):
@@ -1889,7 +1926,7 @@ def process_mono_cues_v2(gui_logger=None):
   
     
         #average the estimates with weighting to get good approximate
-        weightings = [0.75,0.25]#[0.80,0.20]
+        weightings = [0.70,0.30]#[0.75,0.25] [0.70,0.30] [0.67,0.33]
         hp_est_a_db_fft = hf.mag2db(pinna_comp_pos)
         hp_est_b_db_fft = hf.mag2db(hp_cue_overear_diff_mean_mag)
         hp_est_avg_db = fr_flat.copy()
@@ -2097,6 +2134,10 @@ def check_download_max_hrtf_datasets(download=False, gui_logger=None, report_pro
     
     
     return status
+
+
+
+
 
 
 

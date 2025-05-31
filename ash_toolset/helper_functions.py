@@ -30,7 +30,17 @@ from SOFASonix import SOFAFile
 import sofar as sof
 import csv
 import random
-
+import math
+from scipy.signal import savgol_filter, medfilt, correlate
+from scipy.ndimage import gaussian_filter1d
+import noisereduce as nr
+import queue
+import threading
+import time
+import scipy.signal as signal
+from scipy.stats import linregress
+from os.path import exists
+import concurrent.futures
 
 def sort_names_by_values(names, values, descending=False):
     """
@@ -549,6 +559,742 @@ def reshape_array_to_three_dims(arr: np.ndarray) -> np.ndarray:
 
     return reshaped_arr
 
+
+
+
+
+
+
+
+
+def create_transform_matrix_series( 
+    ir_array: np.ndarray,
+    print_last_row: bool = False,
+    mode: str = "median",#
+    window_size: int = 25,#55,25,75,85,115,151,115,205,305,75,115 85 (savgol) 55, (median)
+    polyorder: int = 3,#2,3,9,6,8,3   (10-15 results in strong aliasing, 9 as well if window_size is high)
+    crop_samples: int = None,
+    smoothing_method: str = "savgol",#savgol
+    gaussian_sigma: float = 40.0,#28,40
+    ema_alpha: float = 0.01,
+    plot_mean: bool = True,
+    center: bool = True#True
+) -> np.ndarray:
+    """
+    Create a matrix of transform curves by filtering an array of impulse responses with band-pass filters,
+    then normalizing each by the first (reference) measurement. Supports optional smoothing and averaging.
+
+    Parameters:
+        ir_array (np.ndarray): 2D array of impulse responses (measurements x samples).
+        print_last_row (bool): If True, prints the last row of the final matrix.
+        mode (str): Aggregation mode - 'mean', 'median', or 'minimum'.
+        window_size (int): Window size for smoothing (if applicable).
+        polyorder (int): Polynomial order for Savitzky-Golay smoothing.
+        crop_samples (int, optional): Number of samples to crop/limit output to.
+        smoothing_method (str): Type of smoothing - 'savgol', 'moving_average', 'gaussian', 'median', 'ema'.
+        gaussian_sigma (float): Sigma value for Gaussian filter.
+        ema_alpha (float): Alpha value for exponential moving average.
+        plot_mean (bool): Whether to plot the mean row before and after subtraction.
+
+    Returns:
+        np.ndarray: Transform matrix excluding the reference row.
+    """
+
+    ir_array = ir_array.astype(np.float64, copy=False)
+
+    # Move reference row to top if not already
+    if not np.all(ir_array[0] != 0):
+        nonzero_rows = np.where(~np.all(ir_array == 0, axis=1))[0]
+        if 0 not in nonzero_rows:
+            ir_array[[0, nonzero_rows[0]]] = ir_array[[nonzero_rows[0], 0]]
+
+    # Remove all-zero rows except for the reference
+    is_zero_row = np.all(ir_array == 0, axis=1)
+    zero_indices = np.where(is_zero_row)[0]
+    print(f"Number of all-zero measurements (excluding reference): {len(zero_indices) - (0 in zero_indices)}")
+
+    if ir_array.shape[0] > 1:
+        ir_array = np.vstack([ir_array[0], ir_array[1:][~is_zero_row[1:]]])
+
+    fs = CN.FS
+    order_var = 8
+    fb_filtering = True
+    cutoffs = generate_sequence(start=44, multiplier=1.5, limit=14000)#((start=44, multiplier=1.7, limit=10000)
+
+    measurements, samples = ir_array.shape
+    out_samples = crop_samples if crop_samples is not None else samples
+
+    if crop_samples and crop_samples > samples:
+        raise ValueError(f"crop_samples ({crop_samples}) exceeds available samples ({samples}).")
+
+    # Precompute filtered reference row for each band
+    reference = ir_array[0]
+    ref_filtered_per_band = []
+    for cutoff in cutoffs:
+        hp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='high')[0]
+        lp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='low')[0]
+        ref_filt = apply_sos_filter(reference, hp_sos, filtfilt=fb_filtering, axis=0)
+        ref_filt = apply_sos_filter(ref_filt, lp_sos, filtfilt=fb_filtering, axis=0)
+        ref_filtered_per_band.append(ref_filt)
+
+    # Initialize output transform matrix
+    transform_matrix = np.zeros((measurements, out_samples), dtype=np.float64)
+
+    # Process each measurement one at a time
+    for i in range(measurements):
+        band_transforms = []
+
+        for band_idx, cutoff in enumerate(cutoffs):
+            ref_filtered = ref_filtered_per_band[band_idx]
+
+            hp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='high')[0]
+            lp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='low')[0]
+
+            meas_filtered = apply_sos_filter(ir_array[i], hp_sos, filtfilt=fb_filtering, axis=0)
+            meas_filtered = apply_sos_filter(meas_filtered, lp_sos, filtfilt=fb_filtering, axis=0)
+
+            with np.errstate(divide='ignore', invalid='ignore'):
+                transform = meas_filtered / ref_filtered
+                transform[~np.isfinite(transform)] = 0.0
+
+            if i == 0:
+                transform[:] = 1.0  # ensure reference row is normalized
+
+            if crop_samples:
+                transform = transform[:out_samples]
+
+            band_transforms.append(transform)
+
+        # Aggregate across bands
+        band_stack = np.stack(band_transforms, axis=0)
+        if mode == "mean":
+            transform_row = np.mean(band_stack, axis=0)
+        elif mode == "median":
+            transform_row = np.median(band_stack, axis=0)
+        elif mode == "minimum":
+            transform_row = np.min(band_stack, axis=0)
+        else:
+            raise ValueError("Invalid mode. Choose 'mean', 'median', or 'minimum'.")
+
+        # Apply smoothing
+        if smoothing_method == "savgol" and window_size > 1 and window_size % 2 == 1 and polyorder < window_size:
+            transform_row = savgol_filter(transform_row, window_length=window_size, polyorder=polyorder)
+        elif smoothing_method == "moving_average":
+            kernel = np.ones(window_size, dtype=np.float32) / window_size
+            transform_row = np.convolve(transform_row, kernel, mode='same')
+        elif smoothing_method == "gaussian":
+            transform_row = gaussian_filter1d(transform_row, sigma=gaussian_sigma)
+        elif smoothing_method == "median":
+            transform_row = medfilt(transform_row, kernel_size=window_size)
+        elif smoothing_method == "ema":
+            transform_row = exponential_moving_average(transform_row, alpha=ema_alpha)
+
+        transform_matrix[i] = transform_row
+
+        if i%10 == 0:
+            print(f"Processed measurement {i + 1}/{measurements}")
+
+    # Final cleanup of zero rows
+    zero_rows = np.all(transform_matrix == 0, axis=1)
+    print(f"Number of all-zero measurements: {np.sum(zero_rows)}")
+
+    # Subtract mean row from all non-reference rows
+    if measurements > 1 and center == True:
+        mean_row_before = np.mean(transform_matrix[1:], axis=0)
+
+        if plot_mean:
+            plt.figure(figsize=(10, 4))
+            plt.plot(mean_row_before, label="Mean Row Before Subtraction")
+            plt.title("Mean Row Before Subtracting Mean")
+            plt.grid(True)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+        transform_matrix[1:] -= mean_row_before
+        transform_matrix[1:] -= np.mean(transform_matrix[1:], axis=0)
+
+        if plot_mean:
+            mean_row_after = np.mean(transform_matrix[1:], axis=0)
+            plt.figure(figsize=(10, 4))
+            plt.plot(mean_row_after, label="Mean Row After Subtraction")
+            plt.title("Mean Row After Subtracting Mean")
+            plt.grid(True)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+            sum_row_after = np.sum(transform_matrix[1:], axis=0)
+            plt.figure(figsize=(10, 4))
+            plt.plot(sum_row_after, label="Sum Row After Subtraction")
+            plt.title("Sum Row After Subtracting Mean")
+            plt.grid(True)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+        residual_mean = np.mean(transform_matrix[1:], axis=0)
+        max_residual = np.max(np.abs(residual_mean))
+        print(f"Residual mean after subtraction (max abs): {max_residual:.2e}")
+
+        if max_residual > 1e-10:
+            print("Re-centering rows to ensure zero-mean.")
+            transform_matrix[1:] -= residual_mean
+
+    if print_last_row:
+        print("Last row of final transform array:", transform_matrix[-1])
+
+    # Return all rows except the reference
+    return transform_matrix[1:]
+
+
+
+
+
+
+def average_measurement_groups(
+    data: np.ndarray,
+    group_size: int,
+    shuffle: bool = False,
+    seed: int = None,
+    smoothing_method: str = "savgol",
+    window_size: int = 115,#75,205
+    polyorder: int = 3,#3
+    gaussian_sigma: float = 1.0,
+    ema_alpha: float = 0.3
+) -> np.ndarray:
+    """
+    Averages every group of `group_size` rows in a 2D array, with optional shuffling and smoothing.
+
+    Parameters:
+        data (np.ndarray): 2D array of shape (measurements, samples)
+        group_size (int): Number of measurements to average per group
+        shuffle (bool): Whether to shuffle rows before grouping
+        seed (int): Seed for random shuffle reproducibility
+        smoothing_method (str): Smoothing type: 'savgol', 'moving_average', 'gaussian', 'median', 'ema'
+        window_size (int): Window size for moving average, median, or Savitzky-Golay
+        polyorder (int): Polynomial order for Savitzky-Golay filter
+        gaussian_sigma (float): Sigma for Gaussian filter
+        ema_alpha (float): Alpha for exponential moving average
+
+    Returns:
+        np.ndarray: Smoothed and averaged 2D array of shape (measurements // group_size, samples)
+    """
+    if data.ndim != 2:
+        raise ValueError("Input must be a 2D array (measurements x samples).")
+    if group_size < 1:
+        raise ValueError("group_size must be >= 1")
+
+    num_measurements, num_samples = data.shape
+    if num_measurements < group_size:
+        raise ValueError(f"Array must have at least {group_size} measurements.")
+
+    if shuffle:
+        rng = np.random.default_rng(seed)
+        data = rng.permutation(data)
+
+    usable_rows = (num_measurements // group_size) * group_size
+    data_trimmed = data[:usable_rows]
+    reshaped = data_trimmed.reshape(-1, group_size, num_samples)
+    averaged = reshaped.mean(axis=1)
+
+    # Apply smoothing to each row if specified
+    if smoothing_method:
+        for i in range(averaged.shape[0]):
+            row = averaged[i]
+            if smoothing_method == "savgol" and window_size > 1 and window_size % 2 == 1 and polyorder < window_size:
+                row = savgol_filter(row, window_length=window_size, polyorder=polyorder)
+            elif smoothing_method == "moving_average":
+                kernel = np.ones(window_size, dtype=np.float32) / window_size
+                row = np.convolve(row, kernel, mode='same')
+            elif smoothing_method == "gaussian":
+                row = gaussian_filter1d(row, sigma=gaussian_sigma)
+            elif smoothing_method == "median":
+                row = medfilt(row, kernel_size=window_size)
+            elif smoothing_method == "ema":
+                row = exponential_moving_average(row, alpha=ema_alpha)
+            averaged[i] = row
+
+    return averaged
+
+
+def load_average_and_save_npy_directory(
+    directory: str,
+    output_file: str,
+    group_size: int = 7,#13 for combined_b, 20 for combined_c, 7 for d
+    shuffle: bool = True,#True for combined_b
+    seed: int = 120,#8,11,12 for combined_b, 19,29,80 for combined_c
+    smoothing_method: str = "savgol",
+    window_size: int = 2499,#115,135 for combined_b, 199 for combined_c, 39 for d
+    polyorder: int = 3,
+    gaussian_sigma: float = 1.0,
+    ema_alpha: float = 0.3
+) -> np.ndarray:
+    """
+    Loads all .npy files from a directory, crops arrays to same length,
+    averages them in groups (with optional shuffle and smoothing),
+    then saves the final combined array to disk.
+
+    Parameters:
+        directory (str): Folder containing .npy files (each 2D)
+        output_file (str): Where to save the final result
+        group_size (int): How many rows to average per group
+        shuffle (bool): Shuffle rows before averaging
+        seed (int): Random seed for reproducibility
+        smoothing_method (str): 'savgol', 'moving_average', 'gaussian', 'median', 'ema'
+        window_size (int): Smoothing window size
+        polyorder (int): Savitzky-Golay polyorder
+        gaussian_sigma (float): Sigma for Gaussian smoothing
+        ema_alpha (float): Alpha for EMA
+
+    Returns:
+        np.ndarray: Final stacked and smoothed array
+    """
+    arrays = []
+    min_samples = None
+    npy_files = sorted(f for f in os.listdir(directory) if f.endswith('.npy'))
+
+    if not npy_files:
+        raise FileNotFoundError(f"No .npy files found in directory: {directory}")
+
+    print(f"Found {len(npy_files)} files. Loading...")
+
+    for idx, file in enumerate(npy_files, start=1):
+        path = os.path.join(directory, file)
+        data = np.load(path)
+
+        if data.ndim != 2:
+            print(f"Skipping '{file}': not a 2D array.")
+            continue
+
+        if min_samples is None or data.shape[1] < min_samples:
+            min_samples = data.shape[1]
+
+        arrays.append(data)
+        print(f"[{idx}/{len(npy_files)}] Loaded '{file}' with shape {data.shape}")
+
+    processed = []
+    for i, array in enumerate(arrays, start=1):
+        cropped = array[:, :min_samples]
+        grouped = average_measurement_groups(
+            cropped,
+            group_size=group_size,
+            shuffle=shuffle,
+            seed=seed,
+            smoothing_method=smoothing_method,
+            window_size=window_size,
+            polyorder=polyorder,
+            gaussian_sigma=gaussian_sigma,
+            ema_alpha=ema_alpha
+        )
+        processed.append(grouped)
+        print(f"Processed {i}/{len(arrays)} arrays -> shape {grouped.shape}")
+
+    final_array = np.vstack(processed)
+    print(f"\nFinal array shape: {final_array.shape}")  # New line added
+    
+    # Ensure output directory exists
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
+
+    np.save(output_file, final_array)
+    print(f"Saved combined array to '{output_file}'")
+    
+    return final_array
+
+
+def compute_best_shift(reference: np.ndarray, target: np.ndarray, max_shift: int = 1024) -> int:
+    """
+    Compute the lag that maximizes cross-correlation between reference and target.
+    The max_shift parameter limits how far the target is allowed to shift.
+    """
+    corr = correlate(target, reference, mode="full")
+    lags = np.arange(-len(target) + 1, len(reference))
+    center = len(corr) // 2
+    window = slice(center - max_shift, center + max_shift + 1)
+    best_lag = lags[window][np.argmax(corr[window])]
+    return best_lag
+
+
+def plot_summed_measurements(file_path: str):
+    """
+    Loads a 2D NumPy array (measurements x samples) from the given file path,
+    sums all measurements, and plots the resulting 1D array.
+
+    Parameters:
+        file_path (str): Path to the .npy file containing the 2D matrix.
+    """
+    # Load the matrix
+    matrix = np.load(file_path)
+
+    if matrix.ndim != 2:
+        raise ValueError(f"Expected a 2D array, but got shape {matrix.shape}")
+
+    # Sum across measurements (rows)
+    summed = np.sum(matrix, axis=0)
+
+    # Plot the result
+    plt.figure(figsize=(10, 4))
+    plt.plot(summed, label="Summed Measurements")
+    plt.title("Sum of All Measurements")
+    plt.xlabel("Sample Index")
+    plt.ylabel("Amplitude")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def plot_average_measurements(file_path: str):
+    """
+    Loads a 2D NumPy array (measurements x samples) from the given file path,
+    computes the average of all measurements, and plots the resulting 1D array.
+    Also counts how many measurements consist entirely of zeros.
+
+    Parameters:
+        file_path (str): Path to the .npy file containing the 2D matrix.
+    """
+    # Load the matrix
+    matrix = np.load(file_path)
+
+    if matrix.ndim != 2:
+        raise ValueError(f"Expected a 2D array, but got shape {matrix.shape}")
+
+    # Count rows that are all zeros
+    zero_rows = np.all(matrix == 0, axis=1)
+    num_zero_rows = np.sum(zero_rows)
+    print(f"Number of all-zero measurements: {num_zero_rows}")
+
+    # Compute average across measurements (rows)
+    average = np.mean(matrix, axis=0)
+
+    # Plot the result
+    plt.figure(figsize=(10, 4))
+    plt.plot(average, label="Average Measurement")
+    plt.title("Average of All Measurements")
+    plt.xlabel("Sample Index")
+    plt.ylabel("Amplitude")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+
+
+def wrap_and_smooth_transform_array(
+    transform_array: np.ndarray,
+    target_length: int,
+    fade_len: int = 128,
+    reverse_repeat: bool = True
+) -> np.ndarray:
+    """
+    Repeat and smooth transform_array rows to match a target sample length.
+    Optionally alternates repetitions in reverse order. Applies crossfading at
+    each wrap boundary to avoid abrupt transitions.
+
+    Parameters:
+        transform_array (np.ndarray): Input 2D array (M, S)
+        target_length (int): Desired number of samples in output
+        fade_len (int): Number of samples to fade out/in at each boundary
+        reverse_repeat (bool): Whether to alternate repetitions in reverse order
+
+    Returns:
+        np.ndarray: Smoothed array of shape (M, target_length)
+    """
+    M, S = transform_array.shape
+    repeats = (target_length + S - 1) // S
+
+    # Build the extended array with optional reverse pattern
+    segments = []
+    for i in range(repeats):
+        if reverse_repeat and i % 2 == 1:
+            segments.append(transform_array[:, ::-1])
+        else:
+            segments.append(transform_array)
+
+    extended = np.concatenate(segments, axis=1)
+
+    # Apply crossfade smoothing at wrap points
+    for r in range(1, repeats):
+        start = r * S - fade_len
+        end = r * S + fade_len
+
+        if start < 0 or end > extended.shape[1]:
+            continue
+
+        region_len = end - start
+        if region_len <= 0:
+            continue
+
+        fade_out = np.linspace(1, 0, region_len)
+        fade_in = 1 - fade_out
+
+        prev_start = start - S
+        prev_end = end - S
+        if prev_start < 0 or prev_end > extended.shape[1]:
+            continue
+
+        extended[:, start:end] = (
+            extended[:, start:end] * fade_out +
+            extended[:, prev_start:prev_end] * fade_in
+        )
+
+    return extended[:, :target_length]
+
+
+
+
+
+
+def expand_measurements_with_pitch_shift(
+    measurement_array: np.ndarray,
+    desired_measurements: int,
+    fs: int = CN.SAMP_FREQ,
+    pitch_range: tuple = (0, 24),
+    shuffle: bool = False,
+    antialias: bool = True,
+    seed=65529189939976765123732762606216328531,
+    plot_sample: int = 0,
+    num_threads: int = 4,
+    gui_logger=None,
+    cancel_event=None,
+    report_progress=0
+) -> tuple[np.ndarray, int]:
+    """
+    Expand a smaller measurement array to a desired number of measurements
+    using randomized pitch shifting, with optional anti-aliasing, using multithreading.
+
+    Returns:
+        Tuple[np.ndarray, int]: The expanded 2D array and status code:
+            0 = Success, 1 = Failure, 2 = Cancelled
+    """
+    measurement_array = measurement_array.astype(np.float64, copy=False)
+    base_n, sample_len = measurement_array.shape
+    output = np.empty((desired_measurements, sample_len), dtype=np.float64)
+    status = 1  # Default to failure
+
+    # Thread-safe counters and locks for progress reporting
+    count_lock = threading.Lock()
+    count = 0
+    last_print_time = time.time()
+
+    try:
+        # Initialize random number generator with fixed or random seed
+        if seed == "random":
+            seed = np.random.SeedSequence().entropy
+        rng = np.random.default_rng(seed)
+
+        # Generate all pitch shifts ahead of time
+        pitch_shifts = rng.uniform(pitch_range[0], pitch_range[1], desired_measurements)
+
+        def process_one(i):
+            """Process a single measurement with pitch shifting."""
+            nonlocal count, last_print_time
+
+            # Check for cancellation before starting
+            if cancel_event and cancel_event.is_set():
+                return None  # Signal cancellation
+
+            ir = measurement_array[i % base_n]
+            pitch_shift = pitch_shifts[i]
+
+            try:
+                if antialias:
+                    rate = 2 ** (-pitch_shift / 12.0)
+                    new_sr = int(fs * rate)
+                    resampled = librosa.resample(ir, orig_sr=fs, target_sr=new_sr, res_type="kaiser_best")
+                    shifted = librosa.effects.pitch_shift(resampled, sr=new_sr, n_steps=pitch_shift)
+                    shifted = librosa.resample(shifted, orig_sr=new_sr, target_sr=fs, res_type="kaiser_best")
+                else:
+                    shifted = librosa.effects.pitch_shift(ir, sr=fs, n_steps=pitch_shift)
+
+                # Pad or truncate to fixed sample length
+                if len(shifted) < sample_len:
+                    padded = np.zeros(sample_len)
+                    padded[:len(shifted)] = shifted
+                    result = padded
+                else:
+                    result = shifted[:sample_len]
+
+                # Update progress info with thread safety
+                with count_lock:
+                    count += 1
+                    current_time = time.time()
+                    if count % 100 == 0 or count == desired_measurements or current_time - last_print_time >= 5.0:
+                        log_with_timestamp(f"Expansion Progress: {count}/{desired_measurements} measurements processed.", gui_logger)
+                        last_print_time = current_time
+
+                        if report_progress > 0:
+                            # Linear progress between 10% and 30%
+                            a_point = 0.1
+                            b_point = 0.35
+                            progress = a_point + (float(count) / desired_measurements) * (b_point - a_point)
+                            update_gui_progress(report_progress, progress=progress)
+
+                return (i, result)
+
+            except Exception as e:
+                log_with_timestamp(f"Error processing measurement {i}: {e}", gui_logger)
+                return (i, None)
+
+        # Use ThreadPoolExecutor to parallelize processing
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+            # Submit all tasks
+            futures = [executor.submit(process_one, i) for i in range(desired_measurements)]
+
+            for future in concurrent.futures.as_completed(futures):
+                # Check for cancellation at any point
+                if cancel_event and cancel_event.is_set():
+                    status = 2
+                    log_with_timestamp("Expansion was cancelled by user.", gui_logger)
+                    return output, status
+
+                result = future.result()
+                if result is None:
+                    # Cancellation detected inside process_one
+                    status = 2
+                    log_with_timestamp("Expansion was cancelled by user.", gui_logger)
+                    return output, status
+
+                i, shifted_measurement = result
+                if shifted_measurement is not None:
+                    output[i] = shifted_measurement
+                else:
+                    # Error case - fill with zeros or handle as needed
+                    output[i] = np.zeros(sample_len)
+
+        # If we got here without cancellation, mark success
+        status = 0
+
+        log_with_timestamp("Expansion complete.", gui_logger)
+
+        # Shuffle output if requested
+        if shuffle:
+            rng.shuffle(output)
+
+        # Plot sample if requested
+        if plot_sample > 0:
+            plot_indices = rng.choice(desired_measurements, plot_sample, replace=False)
+            plt.figure(figsize=(10, 6))
+            for idx in plot_indices:
+                plt.plot(output[idx], label=f"Measurement {idx + 1}")
+            plt.title(f"Random Sample of {plot_sample} Measurements")
+            plt.xlabel("Sample Index")
+            plt.ylabel("Amplitude")
+            plt.legend()
+            plt.show()
+
+    except Exception as e:
+        log_with_timestamp(f"Exception in expansion: {e}", gui_logger)
+        status = 1  # Failure
+
+    return output, status
+
+
+
+def generate_sequence(start: int, multiplier: float, limit: int) -> list:
+    """
+    Generate a list of unique, rounded integers starting from a given number.
+    Each subsequent number is the previous one multiplied by a float.
+    Stops when the next value exceeds the specified limit.
+
+    Parameters:
+        start (int): The starting integer of the sequence.
+        multiplier (float): The multiplier applied to each step (can be a float).
+        limit (int): The maximum value the sequence can reach (inclusive).
+
+    Returns:
+        list: A list of unique, rounded integers in the generated sequence.
+    """
+    sequence = []
+    seen = set()
+    value = start
+
+    while value <= limit:
+        rounded = round(value)
+        if rounded not in seen:
+            sequence.append(rounded)
+            seen.add(rounded)
+        value *= multiplier
+
+    return sequence
+
+
+
+def reshape_to_4d(measurement_array: np.ndarray, first_dim: int) -> np.ndarray:
+    """
+    Reshape a 2D array (measurements x samples) into a 4D array with shape (first_dim x N x 1 x samples),
+    redistributing measurements across the first three dimensions. If needed, fills remaining
+    positions with zeros.
+
+    Parameters:
+        measurement_array (np.ndarray): A 2D NumPy array of shape (measurements x samples)
+        first_dim (int): The desired size of the first dimension (e.g., 7)
+
+    Returns:
+        np.ndarray: A 4D array of shape (first_dim x N x 1 x samples)
+    """
+    measurements, samples = measurement_array.shape
+
+    # Compute the number of slots needed per group
+    N = math.ceil(measurements / first_dim)
+
+    # Initialize the output array with zeros
+    output = np.zeros((first_dim, N, 1, samples), dtype=measurement_array.dtype)
+
+    # Fill the array by distributing measurements across first_dim and N
+    for idx in range(measurements):
+        group = idx % first_dim  # Group index along the first dimension
+        slot = idx // first_dim  # Slot index along the second dimension
+        output[group, slot, 0, :] = measurement_array[idx]
+
+    return output
+
+def reshape_to_4d_and_center_slots(measurement_array: np.ndarray, first_dim: int) -> np.ndarray:
+    """
+    Reshape a 2D array (measurements x samples) into a 4D array with shape (first_dim x N x 1 x samples),
+    redistributing measurements across the first three dimensions. Zero-pads as needed.
+    Then, for each group (axis 0), subtracts the per-sample mean across slots (axis 1),
+    and prints the residual mean magnitude for verification.
+
+    Parameters:
+        measurement_array (np.ndarray): 2D array of shape (measurements x samples).
+        first_dim (int): Desired size of the first dimension (e.g., 7).
+
+    Returns:
+        np.ndarray: A 4D array of shape (first_dim x N x 1 x samples), centered per group.
+    """
+    measurements, samples = measurement_array.shape
+    N = math.ceil(measurements / first_dim)
+
+    # Initialize output array
+    output = np.zeros((first_dim, N, 1, samples), dtype=measurement_array.dtype)
+
+    # Fill output array
+    for idx in range(measurements):
+        group = idx % first_dim
+        slot = idx // first_dim
+        output[group, slot, 0, :] = measurement_array[idx]
+
+    # Subtract mean per sample across slots and compute residuals
+    for g in range(first_dim):
+        group_data = output[g, :, 0, :]                     # Shape: (N, samples)
+        mean_per_sample = np.mean(group_data, axis=0)       # Shape: (samples,)
+        output[g, :, 0, :] -= mean_per_sample               # Subtract across slots
+
+        # Residual check
+        residual_mean = np.mean(output[g, :, 0, :], axis=0)
+        max_residual = np.max(np.abs(residual_mean))
+        print(f"Group {g} residual mean after subtraction (max abs): {max_residual:.2e}")
+
+    return output
+
 def delete_all_files_in_directory(directory, verbose=True, gui_logger=None):
     """
     Deletes all files in the given directory and its subdirectories.
@@ -606,7 +1352,7 @@ def sofa_load_object(sofa_local_fname, gui_logger=None):
             
             try:
                 #if fails, try loading with SOFAR
-                loadsofa = sof.read_sofa(sofa_local_fname, verify=False)#verify=False ignores convention violations
+                loadsofa = sof.read_sofa(sofa_local_fname)#
                 sofa_vars['sofa_data_ir'] = loadsofa.Data_IR
                 sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate)
                 sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
@@ -616,12 +1362,25 @@ def sofa_load_object(sofa_local_fname, gui_logger=None):
                 
                 log_string = 'Loaded Successfully with sofar'
                 log_with_timestamp(log_string, gui_logger=None)
-            
             except:
-                log_string = 'Unable to load SOFA file. Likely due to unsupported convention version.'
-                log_with_timestamp(log_string, gui_logger=None)
-        
-                raise ValueError('Unable to load SOFA file')
+                try:
+                    #if fails, try loading with SOFAR, with verify set to false
+                    loadsofa = sof.read_sofa(sofa_local_fname, verify=False)#(sofa_local_fname, verify=False) verify=False ignores convention violations
+                    sofa_vars['sofa_data_ir'] = loadsofa.Data_IR
+                    sofa_vars['sofa_samplerate'] = int(loadsofa.Data_SamplingRate)
+                    sofa_vars['sofa_source_positions'] = loadsofa.SourcePosition
+                    sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
+                    sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
+                    sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+                    
+                    log_string = 'Loaded Successfully with sofar'
+                    log_with_timestamp(log_string, gui_logger=None)
+                
+                except:
+                    log_string = 'Unable to load SOFA file. Likely due to unsupported convention version.'
+                    log_with_timestamp(log_string, gui_logger=None)
+            
+                    raise ValueError('Unable to load SOFA file')
         
     
     except Exception as ex:
@@ -1318,26 +2077,43 @@ def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_dep
     sf.write(file_name, data, samplerate, bit_depth)
     
     
+# def read_wav_file(audiofilename):
+#     """
+#     function to open a wav file
+#     """
+    
+#     samplerate, x = wavfile.read(audiofilename)  # x is a numpy array of integers, representing the samples 
+#     # scale to -1.0 -- 1.0
+#     if x.dtype == 'int16':
+#         nb_bits = 16  # -> 16-bit wav files
+#     elif x.dtype == 'int32':
+#         nb_bits = 32  # -> 32-bit wav files
+#     max_nb_bit = float(2 ** (nb_bits - 1))
+#     samples = x / (max_nb_bit + 1)  # samples is a numpy array of floats representing the samples 
+    
+#     #print(x.dtype)
+    
+#     return samplerate, samples
+    
 def read_wav_file(audiofilename):
     """
-    function to open a wav file
+    Opens a WAV file and returns the sample rate and normalized audio samples.
+
+    Uses `soundfile` for better support of various bit depths and formats.
+    Always returns float32 or float64 in the range [-1.0, 1.0].
+
+    Parameters:
+        audiofilename (str): Path to the WAV file.
+
+    Returns:
+        samplerate (int): Sampling rate of the audio file.
+        samples (np.ndarray): Normalized audio data (float32/float64).
     """
-    
-    samplerate, x = wavfile.read(audiofilename)  # x is a numpy array of integers, representing the samples 
-    # scale to -1.0 -- 1.0
-    if x.dtype == 'int16':
-        nb_bits = 16  # -> 16-bit wav files
-    elif x.dtype == 'int32':
-        nb_bits = 32  # -> 32-bit wav files
-    max_nb_bit = float(2 ** (nb_bits - 1))
-    samples = x / (max_nb_bit + 1)  # samples is a numpy array of floats representing the samples 
-    
-    #print(x.dtype)
-    
+    samples, samplerate = sf.read(audiofilename, always_2d=False)
     return samplerate, samples
+
     
-    
-def resample_signal(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis=0, scale=True):
+def resample_signal(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis=0, scale=False):
     """
     function to resample a signal. By default will upsample from 44100Hz to 48000Hz
     """  
@@ -1355,7 +2131,20 @@ def resample_signal(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis
     return resampled_signal
 
     
-       
+def normalize_array(ir):
+    """
+    Normalizes an impulse response array to the range [-1, 1] based on its maximum absolute value.
+    
+    Parameters:
+        ir (np.ndarray): Input impulse response array to normalize.
+        
+    Returns:
+        np.ndarray: Normalized impulse response array.
+    """
+    max_val = np.max(np.abs(ir))
+    if max_val > 0:
+        ir = ir / max_val
+    return ir       
 
 
 def resample_by_interpolation(signal, input_fs = 44100, output_fs = 48000):
@@ -1475,6 +2264,183 @@ def measure_rt60(h, fs=1, decay_db=60, plot=False, rt60_tgt=None):
     return est_rt60
 
 
+def calculate_rt60(ir: np.ndarray, fs=CN.FS, bands=CN.OCTAVE_BANDS):
+    """
+    Calculate the average RT60 for given impulse response in 1/3 octave bands.
+    
+    Parameters:
+        ir (np.ndarray): The impulse response (1D array)
+        fs (int): The sampling frequency in Hz
+        bands (np.ndarray): Array of center frequencies for the octave bands
+    
+    Returns:
+        float: The average RT60 across the octave bands
+    """
+    rt60_values = []
+
+    # For each octave band, calculate the RT60
+    for band in bands:
+        # Design the bandpass filter for the current band
+        low_cut = band / (2**(1/6))  # Lower bound for 1/3 octave
+        high_cut = band * (2**(1/6))  # Upper bound for 1/3 octave
+
+        # Bandpass filter the impulse response
+        nyquist = fs / 2
+        low = low_cut / nyquist
+        high = high_cut / nyquist
+        b, a = signal.butter(4, [low, high], btype='band')
+        filtered_ir = signal.filtfilt(b, a, ir)
+
+        # Calculate the energy decay curve (EDC) for the filtered signal
+        squared_ir = filtered_ir ** 2
+        edc = np.cumsum(squared_ir[::-1])[::-1]  # Integrate from the end
+
+        # Find the decay time (RT60)
+        initial_level = np.max(edc)
+        final_level = initial_level / 1000  # 60 dB down
+        crossing_index = np.where(edc <= final_level)[0][0]
+        
+        # Estimate RT60 by linear regression on the decay portion of the EDC
+        time = np.arange(len(edc)) / fs
+        rt60 = time[crossing_index]  # This is a simplified estimate
+        
+        rt60_values.append(rt60)
+
+    # Return the average RT60 over all bands
+    return np.mean(rt60_values)
+
+# Example usage:
+# ir = np.array([...])  # Your impulse response
+# fs = 44100  # Sample rate of your IR
+# average_rt60 = calculate_rt60(ir, fs)
+# print("Average RT60 across 1/3-octave bands:", average_rt60)
+
+
+def bandpass_filter(ir, fs, center_freq, fraction=3, order=4):
+    """
+    Band-pass filters the input IR to isolate a specific 1/3-octave band.
+    
+    Parameters:
+        ir (np.array): Input impulse response.
+        fs (int): Sample rate in Hz.
+        center_freq (float): Center frequency of the band.
+        fraction (int): Defines the fraction of the octave (default is 3 for 1/3-octave).
+        order (int): Order of the Butterworth filter.
+    
+    Returns:
+        np.array: Filtered impulse response.
+    """
+    factor = 2 ** (1 / (2 * fraction))  # Band edges scale factor
+    low = center_freq / factor
+    high = center_freq * factor
+    sos = signal.butter(order, [low, high], btype='bandpass', fs=fs, output='sos')
+    return signal.sosfilt(sos, ir)
+
+def calculate_schroeder_curve(ir):
+    """
+    Calculates the Schroeder integration curve in dB.
+    
+    Parameters:
+        ir (np.array): Filtered impulse response.
+    
+    Returns:
+        np.array: Decay curve in dB (Schroeder curve).
+    """
+    energy = np.cumsum(ir[::-1] ** 2)[::-1]  # Reverse cumulative sum of energy
+    energy /= np.max(energy)  # Normalize to peak = 1
+    return 10 * np.log10(np.maximum(energy, 1e-12))  # Convert to dB (avoid log(0))
+
+def linear_fit_decay(sch_db, fs, start_db, end_db):
+    """
+    Performs a linear regression on the Schroeder curve between two dB values
+    to estimate RT60 via extrapolation.
+    
+    Parameters:
+        sch_db (np.array): Schroeder curve in dB.
+        fs (int): Sample rate in Hz.
+        start_db (float): Start level in dB (e.g., -5).
+        end_db (float): End level in dB (e.g., -25 or -35).
+    
+    Returns:
+        float or None: Estimated RT60 (T20, T30) in seconds, or None if invalid.
+    """
+    start_idx = np.argmax(sch_db <= start_db)
+    end_idx = np.argmax(sch_db <= end_db)
+    if end_idx <= start_idx:
+        return None  # Invalid range
+    t = np.arange(end_idx - start_idx) / fs
+    y = sch_db[start_idx:end_idx]
+    slope, intercept, *_ = linregress(t, y)
+    return -60 / slope if slope != 0 else None
+
+def calculate_topt_from_schroeder(sch_db, fs):
+    """
+    Calculates Topt: the best linear fit over a variable decay range.
+    Starts at -5 dB and searches for the best end point up to -45 dB.
+    
+    Parameters:
+        sch_db (np.array): Schroeder curve in dB.
+        fs (int): Sample rate in Hz.
+    
+    Returns:
+        float or None: Estimated Topt in seconds.
+    """
+    best_fit_error = float("inf")
+    best_rt = None
+    start_idx = np.argmax(sch_db <= -5)
+    
+    for end_db in range(-10, -45, -1):
+        end_idx = np.argmax(sch_db <= end_db)
+        if end_idx <= start_idx:
+            continue
+        t = np.arange(end_idx - start_idx) / fs
+        y = sch_db[start_idx:end_idx]
+        slope, intercept, r_value, _, _ = linregress(t, y)
+        residuals = np.sum((y - (slope * t + intercept)) ** 2)
+        if residuals < best_fit_error and slope < 0:
+            best_fit_error = residuals
+            best_rt = -60 / slope  # RT60 from slope
+    
+    return best_rt
+
+def compute_band_rt60s(ir, fs=CN.FS, bands=CN.OCTAVE_BANDS):
+    """
+    Calculates Topt-based RT60 estimates across all specified 1/3-octave bands.
+    
+    Parameters:
+        ir (np.array): Raw impulse response.
+        fs (int): Sample rate in Hz.
+        bands (list): Center frequencies of bands.
+    
+    Returns:
+        dict: Mapping of band center frequency to estimated RT60 (Topt).
+    """
+    results = {}
+    for center_freq in bands:
+        # Band-pass filter the IR at this frequency band
+        filtered_ir = bandpass_filter(ir, fs, center_freq)
+        
+        # Compute Schroeder decay curve
+        sch_db = calculate_schroeder_curve(filtered_ir)
+        
+        # Compute Topt
+        rt = calculate_topt_from_schroeder(sch_db, fs)
+        results[center_freq] = rt
+    
+    return results
+
+
+#Example Usage
+# # Load your impulse response as `ir` (e.g., from WAV) and define the sample rate `fs`
+# band_rt60s = compute_band_rt60s(ir, fs)
+# # Print estimated RT60s for each frequency band
+# for band, rt in band_rt60s.items():
+#     print(f"{band} Hz: Topt ≈ {rt:.2f} s" if rt is not None else f"{band} Hz: N/A")
+# Calculate average Topt across all bands
+# topt_values = band_rt60s["Topt"]
+# topt_mean = np.nanmean(topt_values)
+# print(f"Average Topt across bands: {topt_mean:.3f} seconds")
+
 
 def signal_lowpass_filter(data, cutoff, fs, order=5, method=1, filtfilt=False):
     """
@@ -1589,21 +2555,61 @@ def get_filter_sos( cutoff, fs, order=5, method=1, filtfilt=False, b_type='high'
 
     return sos
 
-
-def apply_sos_filter(data, sos, filtfilt=False):
+def get_multiple_filter_sos(
+    cutoffs: list,
+    fs: float,
+    order: int,
+    filtfilt: bool = False,
+    b_type: str = 'low'
+) -> list:
     """
-    Function takes a time domain signal as an input and applies high or low pass filter
-    :param data: numpy array, time domain signal
-    :param sos:  sos filter object
-    :param filtfilt: bool, flag to use filtfilt
-    :return: numpy array, x pass filtered signal
-    """  
+    Create a list of second-order section (SOS) filter objects based on multiple cutoff frequencies.
 
-    #A forward-backward digital filter using cascaded second-order sections.
-    if filtfilt == True:
-        y = sps.sosfiltfilt(sos, data, padtype='even', padlen=30000) #Uses sosfiltfilt instead of sosfilt → Ensures zero-phase distortion and more stable filtering.
+    Parameters:
+        cutoffs (list): List of cutoff frequencies.
+        fs (float): Sampling frequency.
+        order (int): Filter order.
+        filtfilt (bool): Whether zero-phase filtering is used (optional).
+        b_type (str): Filter type ('low', 'high', 'bandpass', etc.).
+
+    Returns:
+        list: List of SOS filter objects (one per cutoff).
+    """
+    return [
+        get_filter_sos(
+            cutoff=cutoff,
+            fs=fs,
+            order=order,
+            filtfilt=filtfilt,
+            b_type=b_type
+        )
+        for cutoff in cutoffs
+    ]
+
+
+def apply_sos_filter(data, sos, filtfilt=False, axis=-1):
+    """
+    Applies a high or low pass filter to a time-domain signal using second-order sections (SOS).
+    
+    Parameters:
+        data (np.ndarray): Input signal.
+        sos (np.ndarray): Second-order sections filter coefficients.
+        filtfilt (bool): If True, applies zero-phase filtering with filtfilt.
+        axis (int): Axis along which to apply the filter.
+
+    Returns:
+        np.ndarray: Filtered signal.
+    """
+    data = np.asarray(data)
+    
+    if filtfilt:
+        # Ensure padlen does not exceed the length of the signal along the axis
+        signal_length = data.shape[axis]
+        padlen = min(30000, signal_length - 1) if signal_length > 1 else 0
+
+        y = sps.sosfiltfilt(sos, data, padtype='even', padlen=padlen, axis=axis)
     else:
-        y = sps.sosfilt(sos, data)
+        y = sps.sosfilt(sos, data, axis=axis)
     
     return y
 
@@ -2210,7 +3216,12 @@ def update_gui_progress(report_progress, progress=None, message=''):
     """ 
     overlay_text=''
     if report_progress > 0:
-        if report_progress == 2:
+        if report_progress == 3:#AS tab
+            prev_progress = dpg.get_value('progress_bar_as')
+            if progress == None:
+                progress=prev_progress#use previous progress if not specified
+            dpg.set_value("progress_bar_as", progress)
+        elif report_progress == 2:
             prev_progress = dpg.get_value('progress_bar_brir')
             if progress == None:
                 progress=prev_progress#use previous progress if not specified
@@ -2255,7 +3266,37 @@ def check_stop_thread(gui_logger=None):
    
                  
               
-   
+def check_and_download_file(file_path, gdrive_link, download=False, gui_logger=None):
+    """
+    Checks if the specified file exists, and if not, downloads it from the provided Google Drive link.
+    
+    Args:
+        file_path (str): Full path to the file to check.
+        gdrive_link (str): Direct Google Drive download link.
+        download (bool): Whether to attempt downloading the file if missing.
+        gui_logger (callable, optional): Logger for GUI output.
+
+    Returns:
+        int: 0 = Success, 1 = Failure
+    """
+    status = 1
+
+    try:
+        log_with_timestamp(f"Checking for file: {file_path}", gui_logger)
+
+        if exists(file_path):
+            log_with_timestamp("File already exists.", gui_logger)
+        elif download:
+            log_with_timestamp("File not found. Starting download...", gui_logger)
+            download_file(gdrive_link, file_path, gui_logger=gui_logger)
+            log_with_timestamp(f"File downloaded to: {file_path}", gui_logger)
+
+        status = 0  # success
+
+    except Exception as ex:
+        log_with_timestamp("Failed to check or download file.", gui_logger, log_type=2, exception=ex)
+
+    return status 
 
 def download_file(url, save_location, gui_logger=None):
     """
@@ -2341,3 +3382,342 @@ def get_files_with_extension(directory, extension):
         return file_list # Or you might want to raise an exception here
 
     return file_list   
+
+
+def load_csv_as_dicts(csv_dir, csv_name): 
+    """
+    Generic CSV loader that detects and converts column data types automatically.
+    
+    Parameters:
+        csv_dir (str): Directory containing the CSV file.
+        csv_name (str): Name of the CSV file.
+    
+    Returns:
+        List[dict]: A list of dictionaries representing each row with inferred data types.
+    """
+    data_list = []
+    filepath = pjoin(csv_dir, csv_name)
+
+    try:
+        with open(filepath, encoding='utf-8-sig', newline='') as inputfile:
+            reader = csv.DictReader(inputfile)
+
+            for row in reader:
+                parsed_row = {}
+                for key, value in row.items():
+                    value = value.strip()
+
+                    # Try to convert to int
+                    try:
+                        parsed_row[key] = int(value) if '.' not in value else float(value)
+                    except ValueError:
+                        # Try to convert to float
+                        try:
+                            float_value = float(value)
+                            # Keep as float unless it's effectively an integer
+                            if float_value.is_integer():
+                                parsed_row[key] = int(float_value)  # Store as int if no fractional part
+                            else:
+                                parsed_row[key] = float_value  # Store as float
+                        except ValueError:
+                            # If neither int nor float, store as string
+                            parsed_row[key] = value
+
+                data_list.append(parsed_row)
+
+    except Exception as e:
+        print(f"Failed to load CSV '{csv_name}': {e}")
+
+    return data_list
+
+def extract_column(data, column, condition_key=None, condition_value=None):
+    """
+    Extracts a column from a list of dictionaries without auto-conversion.
+    Optionally filters rows based on a condition.
+
+    Parameters:
+        data (list of dict): The metadata loaded from CSV.
+        column (str): The key (column name) to extract values from.
+        condition_key (str, optional): Key to filter rows.
+        condition_value (any, optional): Value that condition_key must match.
+
+    Returns:
+        list: Values from the specified column.
+    """
+    if condition_key and condition_value is not None:
+        return [row.get(column) for row in data if row.get(condition_key) == condition_value]
+    
+    return [row.get(column) for row in data]
+
+def find_dict_by_value(data_list, key, value):
+    """
+    Search a list of dictionaries and return the first dictionary
+    where the specified key matches the given value.
+
+    Parameters:
+        data_list (list): A list of dictionaries to search through.
+        key (str): The key to look for in each dictionary.
+        value (any): The value to match against.
+
+    Returns:
+        dict or None: The first matching dictionary, or None if not found.
+    """
+    for item in data_list:
+        # Get the value associated with the key and compare it to the target value
+        if item.get(key) == value:
+            return item
+
+    # Return None if no match was found
+    return None
+
+def get_value_from_matching_dict(data_list, match_key, match_value, return_key):
+    """
+    Search a list of dictionaries for the first dictionary where `match_key` equals `match_value`,
+    and return the value associated with `return_key` in that dictionary.
+
+    Parameters:
+        data_list (list): A list of dictionaries to search through.
+        match_key (str): The key to match on.
+        match_value (any): The value to search for in `match_key`.
+        return_key (str): The key whose value should be returned from the matched dictionary.
+
+    Returns:
+        any or None: The value corresponding to `return_key`, or None if not found or key missing.
+    """
+    for item in data_list:
+        # Check if the current dictionary matches the given key-value pair
+        if item.get(match_key) == match_value:
+            # Return the value for the specified return_key (or None if it's missing)
+            return item.get(return_key)
+
+    # If no match is found, return None
+    return None
+
+def load_append_and_save_npy_matrices_recursive(
+    directory: str,
+    output_folder: str,
+    output_filename: str = "combined_transform_matrix.npy",
+    ignore_keyword: str = "combined"
+) -> np.ndarray:
+    """
+    Recursively loads all .npy files from a directory and its subdirectories,
+    assuming each file contains a 2D array of shape (measurements, samples),
+    then appends them along the measurement axis and saves the result to a specified folder.
+
+    Files whose names contain the 'ignore_keyword' are skipped during the search.
+
+    Parameters:
+        directory (str): Root directory to search for .npy files.
+        output_folder (str): Directory where the combined output file should be saved.
+        output_filename (str): Name of the output .npy file.
+        ignore_keyword (str): Substring that, if found in a filename, will cause the file to be ignored.
+
+    Returns:
+        np.ndarray: A 2D array of stacked matrices.
+
+    Raises:
+        ValueError: If arrays are not 2D or their sample dimensions don't match.
+    """
+    appended = []
+    sample_shape = None
+    file_count = 0
+
+    for root, _, files in os.walk(directory):
+        for fname in sorted(files):
+            if fname.endswith(".npy") and ignore_keyword not in fname:
+                path = os.path.join(root, fname)
+                arr = np.load(path)
+
+                if arr.ndim != 2:
+                    raise ValueError(f"{path} is not a 2D array.")
+
+                if sample_shape is None:
+                    sample_shape = arr.shape[1]
+                elif arr.shape[1] != sample_shape:
+                    raise ValueError(
+                        f"{path} has a different number of columns ({arr.shape[1]}) than expected ({sample_shape})."
+                    )
+
+                print(f"Loaded: {path} | shape: {arr.shape}")
+                appended.append(arr)
+                file_count += 1
+
+    if not appended:
+        raise ValueError("No valid .npy files were found or loaded.")
+
+    combined = np.vstack(appended)
+    
+    #apply fading too
+    #combined_faded = apply_fade_to_matrix(combined,fade_in_samples=150,fade_out_samples=150)
+
+    # Ensure the output folder exists
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Save the combined matrix
+    output_path = os.path.join(output_folder, output_filename)
+    np.save(output_path, combined)
+
+    print(f"\nTotal files loaded: {file_count}")
+    print(f"Combined matrix shape: {combined.shape}")
+    print(f"Saved combined matrix to: {output_path}")
+
+    return combined
+
+def apply_fade_to_matrix(
+    matrix: np.ndarray,
+    fade_in_samples: int = 100,
+    fade_out_samples: int = 100
+) -> np.ndarray:
+    """
+    Applies a linear fade-in and fade-out window to the second dimension (samples)
+    of a 2D matrix with shape (measurements, samples).
+
+    Parameters:
+        matrix (np.ndarray): Input 2D matrix of shape (measurements, samples).
+        fade_in_samples (int): Number of samples over which to apply the fade-in.
+        fade_out_samples (int): Number of samples over which to apply the fade-out.
+
+    Returns:
+        np.ndarray: Matrix with fade-in and fade-out applied.
+    
+    Raises:
+        ValueError: If the matrix is not 2D or fades exceed matrix length.
+    """
+    if matrix.ndim != 2:
+        raise ValueError("Input matrix must be 2D.")
+    
+    num_samples = matrix.shape[1]
+    if fade_in_samples + fade_out_samples > num_samples:
+        raise ValueError("Fade durations exceed the number of samples.")
+
+    fade_in = np.linspace(0, 1, fade_in_samples)
+    fade_out = np.linspace(1, 0, fade_out_samples)
+    sustain = np.ones(num_samples - fade_in_samples - fade_out_samples)
+
+    window = np.concatenate([fade_in, sustain, fade_out])
+    faded_matrix = matrix * window  # Broadcasting applies fade to each measurement row
+
+    return faded_matrix
+
+def compute_rms(x: np.ndarray) -> float:
+    """Compute the RMS of a 1D NumPy array using float64 precision."""
+    x = np.asarray(x, dtype=np.float64)
+    return np.sqrt(np.mean(np.square(x, dtype=np.float64), dtype=np.float64))
+
+def balance_rms_fade(array: np.ndarray, region_size: int = 3000) -> np.ndarray:
+    """
+    Scales each measurement (row) so that the RMS of the last region matches the RMS of the first,
+    using a linear gain ramp across the samples. All calculations are done in float64 to avoid
+    precision loss.
+    
+    Parameters:
+        array (np.ndarray): 2D array of shape (M, N) to apply RMS balancing to.
+        region_size (int): Number of samples to use for start/end RMS regions.
+    
+    Returns:
+        np.ndarray: RMS-balanced array of the same shape and dtype as input.
+    """
+    # Ensure working in float64 precision
+    array = np.asarray(array, dtype=np.float64)
+    M, N = array.shape
+    x = np.linspace(0, 1, N, dtype=np.float64)
+
+    balanced = np.empty_like(array)
+
+    for i in range(M):
+        row = array[i]
+        start_rms = compute_rms(row[:region_size])
+        end_rms = compute_rms(row[-region_size:])
+        
+        gain_ratio = start_rms / end_rms if end_rms != 0 else 1.0
+
+        # Gain ramp: linear interpolation from 1 to gain_ratio
+        gain = 1.0 + (gain_ratio - 1.0) * x
+        balanced[i] = row * gain
+
+    # Cast back to original dtype if needed
+    if array.dtype != balanced.dtype:
+        balanced = balanced.astype(array.dtype)
+
+    return balanced
+
+def crop_samples(arr: np.ndarray, crop_length: int) -> np.ndarray:
+    """
+    Returns a cropped version of the input 2D array with specified sample length.
+
+    Parameters:
+        arr (np.ndarray): 2D array of shape (measurements x samples).
+        crop_length (int): Number of samples to retain per row.
+
+    Returns:
+        np.ndarray: Cropped 2D array.
+    """
+    if arr.ndim != 2:
+        raise ValueError("Input array must be 2D.")
+    if crop_length > arr.shape[1]:
+        raise ValueError("crop_length exceeds available samples.")
+    return arr[:, :crop_length]
+
+def crop_measurements(arr: np.ndarray, max_measurements: int) -> np.ndarray:
+    """
+    Returns a cropped version of the input 2D array with a limited number of measurements (rows).
+
+    Parameters:
+        arr (np.ndarray): 2D array of shape (measurements x samples).
+        max_measurements (int): Maximum number of rows to keep.
+
+    Returns:
+        np.ndarray: Cropped 2D array with at most `max_measurements` rows.
+    """
+    if arr.ndim != 2:
+        raise ValueError("Input array must be 2D.")
+    if max_measurements > arr.shape[0]:
+        raise ValueError("max_measurements exceeds number of available measurements.")
+    return arr[:max_measurements, :]
+
+def exponential_moving_average(x, alpha):
+    """Applies exponential moving average smoothing to a 1D array."""
+    ema = np.zeros_like(x)
+    ema[0] = x[0]
+    for i in range(1, len(x)):
+        ema[i] = alpha * x[i] + (1 - alpha) * ema[i - 1]
+    return ema
+
+def plot_sample_value_distribution(data: np.ndarray, bins: int = 100):
+    """
+    Plot the distribution of sample values across all measurements in a 2D array.
+    Highlights the mean and ±1 standard deviation.
+
+    Parameters:
+        data (np.ndarray): 2D array with shape (measurements, samples)
+        bins (int): Number of histogram bins
+
+    Returns:
+        None (displays the plot)
+    """
+    if data.ndim != 2:
+        raise ValueError("Input must be a 2D NumPy array (measurements x samples)")
+
+    # Flatten the data to a 1D array
+    flattened = data.flatten()
+    mean = np.mean(flattened)
+    std = np.std(flattened)
+
+    # Plot histogram
+    plt.figure(figsize=(10, 4))
+    counts, bin_edges, _ = plt.hist(flattened, bins=bins, density=True, color='skyblue',
+                                    edgecolor='black', alpha=0.9, label='Histogram')
+
+    # Overlay mean and standard deviation lines
+    plt.axvline(mean, color='red', linestyle='--', linewidth=2, label=f'Mean = {mean:.3f}')
+    plt.axvline(mean - std, color='orange', linestyle='--', linewidth=1.5, label=f'±1 Std = {std:.3f}')
+    plt.axvline(mean + std, color='orange', linestyle='--', linewidth=1.5)
+
+    # Formatting
+    plt.title("Distribution of Sample Values")
+    plt.xlabel("Sample Value")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
