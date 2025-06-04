@@ -24,6 +24,7 @@ import os
 from pathlib import Path
 import concurrent.futures
 from csv import DictReader
+from ash_toolset import pyquadfilter
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #impulse
         impulse=np.zeros(CN.N_FFT)
         impulse[0]=1
-        fr_flat_mag = np.abs(np.fft.fft(impulse))
+        fr_flat_mag = np.abs(np.fft.rfft(impulse))
         fr_flat = hf.mag2db(fr_flat_mag)
 
         #windows
@@ -578,7 +579,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         brir_sample = np.copy(brir_out[elev_ind][azim_ind][0][:])
         
         #set level of HF BRIR to 0 at low freqs
-        data_fft_b = np.fft.fft(brir_sample)
+        data_fft_b = np.fft.rfft(brir_sample)
         mag_fft_b=np.abs(data_fft_b)
         average_mag_b = np.mean(mag_fft_b[mag_range_a2:mag_range_b])
         if average_mag_b == 0:
@@ -691,7 +692,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         
  
         #octave smoothing
-        brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag_sm, n_fft=CN.N_FFT, win_size_base = 6, fund_freq=170)#win_size_base = 10, fund_freq=140 win_size_base = 7, fund_freq=160
+        brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag_sm, n_fft=CN.N_FFT, win_size_base = 5, fund_freq=170)#win_size_base = 10, fund_freq=140 win_size_base = 7, fund_freq=160
         
         
         
@@ -699,7 +700,8 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #invert response
         brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
         #create min phase FIR
-        brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1, out_win_size=2048, n_fft=CN.N_FFT)
+        #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1, out_win_size=2048, n_fft=CN.N_FFT)
+        brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=2048, n_fft=CN.N_FFT)#new method
         
         if report_progress > 0:
             progress = 80/100
@@ -829,7 +831,7 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
     
 
     #set level of sub BRIR to 0 at low freqs
-    data_fft = np.fft.fft(sub_brir_ir[0][:])
+    data_fft = np.fft.rfft(sub_brir_ir[0][:])
     mag_fft=np.abs(data_fft)
     average_mag = np.mean(mag_fft[mag_range_a:mag_range_b])
     if average_mag == 0:
@@ -1096,7 +1098,7 @@ def calc_eq_for_brirs(brir_out, elev, total_azim_hrir, direction_matrix_process,
             #only apply if direction is in direction matrix
             if direction_matrix_process[elev][azim][0][0] == 1: 
                 brir_current = brir_out[elev, azim, chan, 0:CN.N_FFT]
-                brir_current_fft = np.fft.fft(brir_current)
+                brir_current_fft = np.fft.rfft(brir_current)
                 brir_current_mag_fft=np.abs(brir_current_fft)
                 brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
                 
@@ -1109,50 +1111,6 @@ def calc_eq_for_brirs(brir_out, elev, total_azim_hrir, direction_matrix_process,
         brir_fft_avg_db = brir_fft_avg_db/num_brirs_avg
     
     results_list[list_indx]=brir_fft_avg_db
-    
-    
-# def calc_eq_for_brirs(brir_out, elev, total_azim_hrir, direction_matrix_process, fr_flat, total_chan_brir):
-#     """
-#     Computes the average dB magnitude response for all valid BRIRs at a given elevation.
-
-#     Parameters
-#     ----------
-#     brir_out : np.ndarray
-#         BRIR data, shape: [elev, azim, channel, samples]
-#     elev : int
-#         Elevation index to process
-#     total_azim_hrir : int
-#         Total number of azimuth angles
-#     direction_matrix_process : np.ndarray
-#         Binary matrix indicating valid directions
-#     fr_flat : np.ndarray
-#         Flat frequency reference (in dB) to start averaging from
-#     total_chan_brir : int
-#         Number of BRIR channels (typically 2)
-
-#     Returns
-#     -------
-#     np.ndarray
-#         Averaged BRIR magnitude in dB for the specified elevation
-#     """
-#     brir_fft_avg_db = np.zeros_like(fr_flat)
-#     num_brirs_avg = 0
-
-#     for azim in range(total_azim_hrir):
-#         if direction_matrix_process[elev, azim, 0, 0] != 1:
-#             continue
-#         for chan in range(total_chan_brir):
-#             brir_current = brir_out[elev, azim, chan, :CN.N_FFT]
-#             brir_current_mag = np.abs(np.fft.fft(brir_current))
-#             brir_fft_avg_db += hf.mag2db(brir_current_mag)
-#             num_brirs_avg += 1
-
-#     if num_brirs_avg > 0:
-#         brir_fft_avg_db /= num_brirs_avg
-#     else:
-#         brir_fft_avg_db[:] = fr_flat  # fallback to flat
-
-#     return brir_fft_avg_db    
     
 
 def apply_eq_to_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix_post, brir_df_inv_fir, room_target_fir,  pinna_comp_fir, data_lf_comp_eq, crop_samples):
@@ -1711,7 +1669,8 @@ def process_mono_cues(gui_logger=None):
         pinna_comp_db_inv = np.multiply(pinna_comp_db_o,-1)
         #convert to mag
         pinna_comp_inv = hf.db2mag(pinna_comp_db_inv)
-        pinna_comp_inv_min_fir = hf.mag_to_min_fir(pinna_comp_inv, crop=1)
+        #pinna_comp_inv_min_fir = hf.mag_to_min_fir(pinna_comp_inv, crop=1)
+        pinna_comp_inv_min_fir = hf.build_min_phase_filter(smoothed_mag=pinna_comp_inv,  n_fft=CN.N_FFT)#new method
     
         #save numpy array for later use in BRIR generation functions
         
@@ -2015,12 +1974,20 @@ def process_mono_cues_v2(gui_logger=None):
         on_ear_high_inv = hf.db2mag(on_ear_high_db_inv)
         on_ear_low_inv = hf.db2mag(on_ear_low_db_inv)
         #min phase FIRs
-        in_ear_high_inv_min_fir = hf.mag_to_min_fir(in_ear_high_inv, crop=1, out_win_size=fir_length)
-        in_ear_low_inv_min_fir = hf.mag_to_min_fir(in_ear_low_inv, crop=1, out_win_size=fir_length)
-        over_ear_high_inv_min_fir = hf.mag_to_min_fir(over_ear_high_inv, crop=1, out_win_size=fir_length)
-        over_ear_low_inv_min_fir = hf.mag_to_min_fir(over_ear_low_inv, crop=1, out_win_size=fir_length)
-        on_ear_high_inv_min_fir = hf.mag_to_min_fir(on_ear_high_inv, crop=1, out_win_size=fir_length)
-        on_ear_low_inv_min_fir = hf.mag_to_min_fir(on_ear_low_inv, crop=1, out_win_size=fir_length)
+        # in_ear_high_inv_min_fir = hf.mag_to_min_fir(in_ear_high_inv, crop=1, out_win_size=fir_length)
+        # in_ear_low_inv_min_fir = hf.mag_to_min_fir(in_ear_low_inv, crop=1, out_win_size=fir_length)
+        # over_ear_high_inv_min_fir = hf.mag_to_min_fir(over_ear_high_inv, crop=1, out_win_size=fir_length)
+        # over_ear_low_inv_min_fir = hf.mag_to_min_fir(over_ear_low_inv, crop=1, out_win_size=fir_length)
+        # on_ear_high_inv_min_fir = hf.mag_to_min_fir(on_ear_high_inv, crop=1, out_win_size=fir_length)
+        # on_ear_low_inv_min_fir = hf.mag_to_min_fir(on_ear_low_inv, crop=1, out_win_size=fir_length)
+        #new method
+        in_ear_high_inv_min_fir = hf.build_min_phase_filter(in_ear_high_inv,  truncate_len=fir_length)
+        in_ear_low_inv_min_fir = hf.build_min_phase_filter(in_ear_low_inv,  truncate_len=fir_length)
+        over_ear_high_inv_min_fir = hf.build_min_phase_filter(over_ear_high_inv,  truncate_len=fir_length)
+        over_ear_low_inv_min_fir = hf.build_min_phase_filter(over_ear_low_inv,  truncate_len=fir_length)
+        on_ear_high_inv_min_fir = hf.build_min_phase_filter(on_ear_high_inv,  truncate_len=fir_length)
+        on_ear_low_inv_min_fir = hf.build_min_phase_filter(on_ear_low_inv,  truncate_len=fir_length)
+        
     
         #HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over-Ear-High','Over-Ear-Low','On-Ear-High','On-Ear-Low']
     
@@ -2055,6 +2022,500 @@ def process_mono_cues_v2(gui_logger=None):
         log_string = 'Failed to complete BRIR processing'
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
+def process_mono_cues_v3(gui_logger=None):
+    """
+    Function performs statistical analysis on monoaural cues
+    """    
+
+    ir_set='mono_cues_set_a'
+    brir_ref_folder = pjoin(CN.DATA_DIR_INT, 'mono_cues', ir_set)
+    
+    n_fft=CN.N_FFT
+    
+    ash_samp_freq=44100
+    output_wavs=1
+
+    total_chan_brir=2
+    
+    #level ends
+    level_f_a=450
+    level_f_b=17000
+  
+    #impulse
+    impulse=np.zeros(n_fft)
+    impulse[0]=1
+    fr_flat_mag = np.abs(np.fft.fft(impulse))
+    fr_flat_db = hf.mag2db(fr_flat_mag)
+    
+    
+    try:
+   
+        #read in-ear headphone equalisation from WAV file
+        filename = 'diffuse_field_eq_for_in_ear_headphones.wav'
+        wav_fname = pjoin(CN.DATA_DIR_INT, filename)
+        samplerate, data_addit_eq = wavfile.read(wav_fname)
+        data_addit_eq = data_addit_eq / (2.**31)
+        #convert to mag response
+        in_ear_eq_fir=np.zeros(CN.N_FFT)
+        in_ear_eq_fir[0:1024] = data_addit_eq[0:1024]
+        data_fft = np.fft.fft(in_ear_eq_fir)#
+        in_ear_eq_mag=np.abs(data_fft)
+        in_ear_eq_db=hf.mag2db(in_ear_eq_mag)
+   
+    
+        #
+        # section for HP cues
+        #
+        ir_set='hp_cues'
+        hp_folder = 'on_ear'
+        hp_mag_in_folder = pjoin(CN.DATA_DIR_INT, 'mono_cues', ir_set,hp_folder)
+        
+        num_sets_avg = 0
+        hp_fft_avg_db = fr_flat_db.copy()
+        #loop through folders
+        for root, dirs, files in os.walk(hp_mag_in_folder):
+            for filename in files:
+                if '.npy' in filename:
+                    #read npy files
+                    npy_file_path = pjoin(root, filename)
+                    hp_current_mag_fft = np.load(npy_file_path)
+                    hp_current_db_fft = hf.mag2db(hp_current_mag_fft)
+                    hp_fft_avg_db = np.add(hp_fft_avg_db,hp_current_db_fft)
+                    num_sets_avg = num_sets_avg+1
+
+        #divide by total number of brirs
+        hp_fft_avg_db = hp_fft_avg_db/num_sets_avg
+        #convert to mag
+        hptf_fft_avg_mag = hf.db2mag(hp_fft_avg_db)
+        #level ends of spectrum
+        hptf_fft_avg_mag_le = hf.level_spectrum_ends(hptf_fft_avg_mag, level_f_a, level_f_b, smooth_win = 20)#150
+        #smoothing
+        #octave smoothing
+        hptf_fft_avg_mag_sm = hf.smooth_fft_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
+        hp_cue_onear_mean_mag = np.copy(hptf_fft_avg_mag_sm)
+ 
+        if CN.PLOT_ENABLE == True:
+            print(str(num_sets_avg))
+            hf.plot_data(hptf_fft_avg_mag,'hptf_fft_avg_mag', normalise=1) 
+            hf.plot_data(hptf_fft_avg_mag_sm,'hptf_fft_avg_mag_sm', normalise=1) 
+        
+        
+        ir_set='hp_cues'
+        hp_folder = 'over_ear'
+        hp_mag_in_folder = pjoin(CN.DATA_DIR_INT, 'mono_cues', ir_set,hp_folder)
+        
+        num_sets_avg = 0
+        hp_fft_avg_db = fr_flat_db.copy()
+        #loop through folders
+        for root, dirs, files in os.walk(hp_mag_in_folder):
+            for filename in files:
+                if '.npy' in filename:
+                    #read npy files
+                    npy_file_path = pjoin(root, filename)
+                    hp_current_mag_fft = np.load(npy_file_path)
+                    hp_current_db_fft = hf.mag2db(hp_current_mag_fft)
+                    hp_fft_avg_db = np.add(hp_fft_avg_db,hp_current_db_fft)
+                    num_sets_avg = num_sets_avg+1
+
+        #divide by total number of brirs
+        hp_fft_avg_db = hp_fft_avg_db/num_sets_avg
+        #convert to mag
+        hptf_fft_avg_mag = hf.db2mag(hp_fft_avg_db)
+        #level ends of spectrum
+        hptf_fft_avg_mag_le = hf.level_spectrum_ends(hptf_fft_avg_mag, level_f_a, level_f_b, smooth_win = 20)#150
+        #smoothing
+        #octave smoothing
+        hptf_fft_avg_mag_sm = hf.smooth_fft_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
+        hp_cue_overear_mean_mag = np.copy(hptf_fft_avg_mag_sm)
+ 
+        if CN.PLOT_ENABLE == True:
+            print(str(num_sets_avg))
+            hf.plot_data(hptf_fft_avg_mag,'hptf_fft_avg_mag', normalise=1) 
+            hf.plot_data(hptf_fft_avg_mag_sm,'hptf_fft_avg_mag_sm', normalise=1) 
+        
+        ir_set='hp_cues'
+        hp_folder = 'in_ear'
+        hp_mag_in_folder = pjoin(CN.DATA_DIR_INT, 'mono_cues', ir_set,hp_folder)
+        
+        num_sets_avg = 0
+        hp_fft_avg_db = fr_flat_db.copy()
+        #loop through folders
+        for root, dirs, files in os.walk(hp_mag_in_folder):
+            for filename in files:
+                if '.npy' in filename:
+                    #read npy files
+                    npy_file_path = pjoin(root, filename)
+                    hp_current_mag_fft = np.load(npy_file_path)
+                    hp_current_db_fft = hf.mag2db(hp_current_mag_fft)
+                    hp_fft_avg_db = np.add(hp_fft_avg_db,hp_current_db_fft)
+                    num_sets_avg = num_sets_avg+1
+
+        #divide by total number of brirs
+        hp_fft_avg_db = hp_fft_avg_db/num_sets_avg
+        #convert to mag
+        hptf_fft_avg_mag = hf.db2mag(hp_fft_avg_db)
+        #level ends of spectrum
+        hptf_fft_avg_mag_le = hf.level_spectrum_ends(hptf_fft_avg_mag, level_f_a, level_f_b, smooth_win = 20)#150
+        #smoothing
+        #octave smoothing
+        hptf_fft_avg_mag_sm = hf.smooth_fft_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
+        hp_cue_inear_mean_mag = np.copy(hptf_fft_avg_mag_sm)
+        if CN.PLOT_ENABLE == True:
+            print(str(num_sets_avg))
+            hf.plot_data(hptf_fft_avg_mag,'hptf_fft_avg_mag', normalise=1) 
+            hf.plot_data(hptf_fft_avg_mag_sm,'hptf_fft_avg_mag_sm', normalise=1) 
+        
+        #compare difference between over ear and in ear
+        hp_overear_db_fft = hf.mag2db(hp_cue_overear_mean_mag)
+        hp_inear_db_fft = hf.mag2db(hp_cue_inear_mean_mag)
+        hp_fft_diff_db = np.subtract(hp_overear_db_fft,hp_inear_db_fft)
+        #convert to mag
+        hp_cue_overear_diff_mean_mag = hf.db2mag(hp_fft_diff_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(hp_cue_overear_diff_mean_mag,'hp_cue_overear_diff_mean_mag', normalise=1)
+            
+        #compare difference between on ear and in ear
+        hp_onear_db_fft = hf.mag2db(hp_cue_onear_mean_mag)
+        hp_inear_db_fft = hf.mag2db(hp_cue_inear_mean_mag)
+        hp_fft_diff_db = np.subtract(hp_onear_db_fft,hp_inear_db_fft)
+        #convert to mag
+        hp_cue_onear_diff_mean_mag = hf.db2mag(hp_fft_diff_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(hp_cue_onear_diff_mean_mag,'hp_cue_onear_diff_mean_mag', normalise=1)
+            
+        #compare difference between over ear and on ear
+        hp_onear_db_fft = hf.mag2db(hp_cue_onear_mean_mag)
+        hp_overear_db_fft = hf.mag2db(hp_cue_overear_mean_mag)
+        hp_fft_diff_db = np.subtract(hp_onear_db_fft,hp_overear_db_fft)
+        #apply additional EQ for DF headphones
+        hp_fft_diff_db = np.subtract(hp_fft_diff_db,in_ear_eq_db*0.2)
+        #convert to mag
+        hp_cue_onear_overear_diff_mean_db = hp_fft_diff_db
+        hp_cue_onear_overear_diff_mean_mag = hf.db2mag(hp_fft_diff_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(hp_cue_onear_overear_diff_mean_mag,'hp_cue_onear_overear_diff_mean_mag', normalise=1)
+  
+        #
+        # load pinna comp filter (FIR)
+        #
+        npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_pinna_comp_fir.npy')
+        pinna_comp_fir_short = np.load(npy_fname)
+        pinna_comp_fir=np.zeros(CN.N_FFT)
+        pinna_comp_fir[0:4096] = pinna_comp_fir_short[0:4096]
+        data_fft = np.fft.fft(pinna_comp_fir)
+        mag_response=np.abs(data_fft)
+        pinna_comp_db_fft = hf.mag2db(mag_response)
+        #invert so that no longer inverse
+        pinna_comp_db_pos = np.multiply(pinna_comp_db_fft,-1)
+        #convert to mag
+        pinna_comp_pos = hf.db2mag(pinna_comp_db_pos)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(pinna_comp_pos,'pinna_comp_pos', normalise=1)
+  
+    
+        #average the estimates with weighting to get good approximate
+        weightings = [0.70,0.30]#[0.75,0.25] [0.70,0.30] [0.67,0.33]
+        hp_est_a_db_fft = hf.mag2db(pinna_comp_pos)
+        hp_est_b_db_fft = hf.mag2db(hp_cue_overear_diff_mean_mag)
+        hp_est_avg_db = fr_flat_db.copy()
+        hp_est_avg_db = np.add(np.multiply(hp_est_a_db_fft,weightings[0]),hp_est_avg_db)
+        hp_est_avg_db = np.add(np.multiply(hp_est_b_db_fft,weightings[1]),hp_est_avg_db)
+        #convert to mag
+        hp_est_avg_mag = hf.db2mag(hp_est_avg_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(hp_est_avg_mag,'hp_est_avg_mag', normalise=1)
+        
+        
+        
+  
+        # load additional headphone eq
+        filename = 'additional_comp_for_over_&_on_ear_headphones.wav'
+        wav_fname = pjoin(CN.DATA_DIR_INT, filename)
+        samplerate, data_addit_eq = wavfile.read(wav_fname)
+        data_addit_eq = data_addit_eq / (2.**31)
+        hp_comp_fir=np.zeros(CN.N_FFT)
+        hp_comp_fir[0:1024] = data_addit_eq[0:1024]
+        data_fft = np.fft.fft(hp_comp_fir)
+        mag_response=np.abs(data_fft)
+        db_response = hf.mag2db(mag_response)
+        #invert so that no longer inverse
+        db_response = np.multiply(db_response,-1)
+        over_ear_add_eq_db = db_response
+        over_ear_add_eq_mag = hf.db2mag(db_response)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(over_ear_add_eq_mag,'over_ear_add_eq_mag', normalise=1)
+
+        
+        #on ear eq
+        on_ear_low_db = np.add(hp_est_avg_db,hp_cue_onear_overear_diff_mean_db)
+        on_ear_high_db = np.add(on_ear_low_db,db_response)
+        
+        # load additional headphone eq
+        filename = 'additional_comp_for_in_ear_headphones.wav'
+        wav_fname = pjoin(CN.DATA_DIR_INT, filename)
+        samplerate, data_addit_eq = wavfile.read(wav_fname)
+        data_addit_eq = data_addit_eq / (2.**31)
+        hp_comp_fir=np.zeros(CN.N_FFT)
+        hp_comp_fir[0:1024] = data_addit_eq[0:1024]
+        data_fft = np.fft.fft(hp_comp_fir)
+        mag_response=np.abs(data_fft)
+        db_response = hf.mag2db(mag_response)
+        #invert so that no longer inverse
+        db_response = np.multiply(db_response,-1)
+        in_ear_high_db = np.add(fr_flat_db,db_response)
+        
+        
+        #20250602: new high strength EQ for over ear
+        samp_freq_ash=CN.FS
+        #a
+        #sequence of peaking filters
+        filter_type="peaking"
+        fc=2100
+        sr=samp_freq_ash
+        q=2.0
+        gain_db=-4.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_a_fir = np.copy(impulse)
+        oe_hs_comp_a_fir = pyquad.filter(oe_hs_comp_a_fir)
+        #
+        filter_type="peaking"
+        fc=4000
+        sr=samp_freq_ash
+        q=2.0
+        gain_db=2.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_a_fir = pyquad.filter(oe_hs_comp_a_fir)
+        #
+        #grab frequency response
+        data_fft = np.fft.fft(oe_hs_comp_a_fir[0][0:n_fft])
+        oe_hs_comp_a_mag=np.abs(data_fft)
+        oe_hs_comp_a_db = hf.mag2db(oe_hs_comp_a_mag)
+        
+        #b
+        #sequence of peaking filters
+        filter_type="peaking"
+        fc=2200
+        sr=samp_freq_ash
+        q=3.0
+        gain_db=-4.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_b_fir = np.copy(impulse)
+        oe_hs_comp_b_fir = pyquad.filter(oe_hs_comp_b_fir)
+        #
+        filter_type="peaking"
+        fc=5500
+        sr=samp_freq_ash
+        q=2.5
+        gain_db=1.5
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_b_fir = pyquad.filter(oe_hs_comp_b_fir)
+        #
+        filter_type="peaking"
+        fc=6500
+        sr=samp_freq_ash
+        q=3.0
+        gain_db=3.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_b_fir = pyquad.filter(oe_hs_comp_b_fir)
+        #
+        filter_type="peaking"
+        fc=10200
+        sr=samp_freq_ash
+        q=6.0
+        gain_db=-4.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_b_fir = pyquad.filter(oe_hs_comp_b_fir)
+        #
+        filter_type="peaking"
+        fc=7500
+        sr=samp_freq_ash
+        q=5.0
+        gain_db=2.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_b_fir = pyquad.filter(oe_hs_comp_b_fir)
+        #grab frequency response
+        data_fft = np.fft.fft(oe_hs_comp_b_fir[0][0:n_fft])
+        oe_hs_comp_b_mag=np.abs(data_fft)
+        oe_hs_comp_b_db = hf.mag2db(oe_hs_comp_b_mag)
+        
+        #c
+        #sequence of peaking filters
+        filter_type="peaking"
+        fc=2900
+        sr=samp_freq_ash
+        q=2.5
+        gain_db=-5.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_c_fir = np.copy(impulse)
+        oe_hs_comp_c_fir = pyquad.filter(oe_hs_comp_c_fir)
+        #
+        filter_type="peaking"
+        fc=5500
+        sr=samp_freq_ash
+        q=2.0
+        gain_db=2.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_c_fir = pyquad.filter(oe_hs_comp_c_fir)
+        #
+        filter_type="peaking"
+        fc=5000
+        sr=samp_freq_ash
+        q=3.0
+        gain_db=1.5
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_c_fir = pyquad.filter(oe_hs_comp_c_fir)
+        #
+        filter_type="peaking"
+        fc=3400
+        sr=samp_freq_ash
+        q=5.0
+        gain_db=2.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_c_fir = pyquad.filter(oe_hs_comp_c_fir)
+        #
+        filter_type="peaking"
+        fc=10500
+        sr=samp_freq_ash
+        q=5.0
+        gain_db=-3.0
+        pyquad = pyquadfilter.PyQuadFilter(sr)
+        pyquad.set_params(filter_type, fc, q, gain_db)
+        oe_hs_comp_c_fir = pyquad.filter(oe_hs_comp_c_fir)
+        #grab frequency response
+        data_fft = np.fft.fft(oe_hs_comp_c_fir[0][0:n_fft])
+        oe_hs_comp_c_mag=np.abs(data_fft)
+        oe_hs_comp_c_db = hf.mag2db(oe_hs_comp_c_mag)
+        
+        if CN.PLOT_ENABLE == True:
+            #print(impulse.shape)
+            #print(oe_hs_comp_a_fir.shape)
+            #print(oe_hs_comp_a_mag.shape)
+            hf.plot_data(oe_hs_comp_a_mag,'oe_hs_comp_a_mag', normalise=1)
+            hf.plot_data(oe_hs_comp_b_mag,'oe_hs_comp_b_mag', normalise=1)
+            hf.plot_data(oe_hs_comp_c_mag,'oe_hs_comp_c_mag', normalise=1)
+            
+        #average the 3 new estimates with weighting to get good approximate
+        weightings = [0.40,0.30,0.30]#
+        oe_hs_comp_avg_db = fr_flat_db.copy()
+        oe_hs_comp_avg_db = np.add(np.multiply(oe_hs_comp_a_db,weightings[0]),oe_hs_comp_avg_db)
+        oe_hs_comp_avg_db = np.add(np.multiply(oe_hs_comp_b_db,weightings[1]),oe_hs_comp_avg_db)
+        oe_hs_comp_avg_db = np.add(np.multiply(oe_hs_comp_c_db,weightings[2]),oe_hs_comp_avg_db)
+        #invert so that no longer inverse
+        oe_hs_comp_avg_db = np.multiply(oe_hs_comp_avg_db,-1)
+        #convert to mag
+        oe_hs_comp_avg_mag = hf.db2mag(oe_hs_comp_avg_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(oe_hs_comp_avg_mag,'oe_hs_comp_avg_mag', normalise=1)
+        
+        #average the new and old estimates with weighting to get good approximate
+        weightings = [0.50,0.50]#
+        oe_hs_new_avg_db = fr_flat_db.copy()
+        oe_hs_new_avg_db = np.add(np.multiply(oe_hs_comp_avg_db,weightings[0]),oe_hs_new_avg_db)
+        oe_hs_new_avg_db = np.add(np.multiply(over_ear_add_eq_db,weightings[1]),oe_hs_new_avg_db)
+        #convert to mag
+        oe_hs_new_avg_mag = hf.db2mag(oe_hs_new_avg_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(oe_hs_new_avg_mag,'oe_hs_new_avg_mag', normalise=1)
+            
+        over_ear_high_db = np.add(hp_est_avg_db,oe_hs_new_avg_db)
+        over_ear_high_mag = hf.db2mag(over_ear_high_db)
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(over_ear_high_mag,'over_ear_high_mag', normalise=1)
+     
+        #final curves
+        in_ear_low_mag = fr_flat_mag.copy()
+        in_ear_high_mag = hf.db2mag(in_ear_high_db)
+        over_ear_low_mag = hp_est_avg_mag.copy()
+        over_ear_high_mag = hf.db2mag(over_ear_high_db)
+        on_ear_low_mag = hf.db2mag(on_ear_low_db)
+        on_ear_high_mag = hf.db2mag(on_ear_high_db)
+        
+        if CN.PLOT_ENABLE == True:
+            hf.plot_data(in_ear_low_mag,'in_ear_low_mag', normalise=1)
+            hf.plot_data(in_ear_high_mag,'in_ear_high_mag', normalise=1)
+            hf.plot_data(over_ear_low_mag,'over_ear_low_mag', normalise=1)
+            hf.plot_data(over_ear_high_mag,'over_ear_high_mag', normalise=1)
+            hf.plot_data(on_ear_low_mag,'on_ear_low_mag', normalise=1)
+            hf.plot_data(on_ear_high_mag,'on_ear_high_mag', normalise=1)
+    
+        fir_length=1024
+        num_filters=6
+        npy_out=np.zeros((num_filters,fir_length))      
+  
+        #create min phase inverse FIR
+        in_ear_high_db = hf.mag2db(in_ear_high_mag)
+        in_ear_low_db = hf.mag2db(in_ear_low_mag)
+        over_ear_high_db = hf.mag2db(over_ear_high_mag)
+        over_ear_low_db = hf.mag2db(over_ear_low_mag)
+        on_ear_high_db = hf.mag2db(on_ear_high_mag)
+        on_ear_low_db = hf.mag2db(on_ear_low_mag)
+        #invert so that inverse
+        in_ear_high_db_inv = np.multiply(in_ear_high_db,-1)
+        in_ear_low_db_inv = in_ear_low_db
+        over_ear_high_db_inv = np.multiply(over_ear_high_db,-1)
+        over_ear_low_db_inv = np.multiply(over_ear_low_db,-1)
+        on_ear_high_db_inv = np.multiply(on_ear_high_db,-1)
+        on_ear_low_db_inv = np.multiply(on_ear_low_db,-1)
+        #convert to mag
+        in_ear_high_inv = hf.db2mag(in_ear_high_db_inv)
+        in_ear_low_inv = hf.db2mag(in_ear_low_db_inv)
+        over_ear_high_inv = hf.db2mag(over_ear_high_db_inv)
+        over_ear_low_inv = hf.db2mag(over_ear_low_db_inv)
+        on_ear_high_inv = hf.db2mag(on_ear_high_db_inv)
+        on_ear_low_inv = hf.db2mag(on_ear_low_db_inv)
+        #min phase FIRs
+        #new method
+        in_ear_high_inv_min_fir = hf.build_min_phase_filter(in_ear_high_inv,  truncate_len=fir_length)
+        in_ear_low_inv_min_fir = hf.build_min_phase_filter(in_ear_low_inv,  truncate_len=fir_length)
+        over_ear_high_inv_min_fir = hf.build_min_phase_filter(over_ear_high_inv,  truncate_len=fir_length)
+        over_ear_low_inv_min_fir = hf.build_min_phase_filter(over_ear_low_inv,  truncate_len=fir_length)
+        on_ear_high_inv_min_fir = hf.build_min_phase_filter(on_ear_high_inv,  truncate_len=fir_length)
+        on_ear_low_inv_min_fir = hf.build_min_phase_filter(on_ear_low_inv,  truncate_len=fir_length)
+        
+    
+        #HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over-Ear-High','Over-Ear-Low','On-Ear-High','On-Ear-Low']
+    
+        #store in a npy array
+        npy_out[0,:]=in_ear_high_inv_min_fir
+        npy_out[1,:]=in_ear_low_inv_min_fir
+        npy_out[2,:]=over_ear_high_inv_min_fir
+        npy_out[3,:]=over_ear_low_inv_min_fir
+        npy_out[4,:]=on_ear_high_inv_min_fir
+        npy_out[5,:]=on_ear_low_inv_min_fir
+    
+    
+    
+    
+        # #save numpy array for later use in BRIR generation functions
+        
+        npy_file_name =  'headphone_ear_comp_dataset.npy'
+        brir_out_folder = CN.DATA_DIR_INT
+        out_file_path = pjoin(brir_out_folder,npy_file_name)      
+          
+        output_file = Path(out_file_path)
+        output_file.parent.mkdir(exist_ok=True, parents=True)
+        
+        np.save(out_file_path,npy_out)    
+        
+        log_string_a = 'Exported numpy file to: ' + out_file_path 
+        hf.log_with_timestamp(log_string_a, gui_logger)
+       
+
+    
+    except Exception as ex:
+        log_string = 'Failed to complete BRIR processing'
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
 
 def check_download_max_hrtf_datasets(download=False, gui_logger=None, report_progress=0):

@@ -1698,7 +1698,8 @@ def hpcf_generate_averages(conn, gui_logger=None):
                 #convert to mag
                 hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
                 #create min phase FIR
-                hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
+                #hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
+                hpcf_avg_fir_full = hf.build_min_phase_filter(hpcf_fft_avg_mag, truncate_len=CN.HPCF_FIR_LENGTH)
                 #store in cropped array
                 hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
                 hpcf_avg_fir_array[:] = np.copy(hpcf_avg_fir_full[0:CN.HPCF_FIR_LENGTH])
@@ -2275,7 +2276,8 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                 hpcf_fft_out_mag = hpcf_fft_out_mag*0.5
                 
                 #create min phase FIR
-                hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=CN.HPCF_FIR_LENGTH)
+                #hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=CN.HPCF_FIR_LENGTH)
+                hpcf_out_fir_full = hf.build_min_phase_filter(hpcf_fft_out_mag, truncate_len=CN.HPCF_FIR_LENGTH)
                 
                 #store in cropped array
                 hpcf_out_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
@@ -2577,7 +2579,8 @@ def hpcf_generate_variants(conn, gui_logger=None):
                             #convert to mag
                             hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
                             #create min phase FIR
-                            hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
+                            #hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
+                            hpcf_avg_fir_full = hf.build_min_phase_filter(hpcf_fft_avg_mag, truncate_len=CN.HPCF_FIR_LENGTH)
                             #store in cropped array
                             hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
                             hpcf_avg_fir_array[:] = np.copy(hpcf_avg_fir_full[0:CN.HPCF_FIR_LENGTH])

@@ -290,26 +290,27 @@ def qc_show_hpcf_history(sender=None, app_data=None):
     hp_list_out_latest = e_apo_config_creation.get_exported_hp_list(output_path)
     search_str = hp_list_out_latest
     #update brand list with filtered set
-    headphone_list_specific = hpcf_functions.search_headphones_in_list(conn, search_str)
+    headphone_list_saved = hpcf_functions.search_headphones_in_list(conn, search_str)
     
     #set list values to previous values if toggle disabled
     #brand=dpg.get_value('qc_brand_list')
-    headphone = dpg.get_value('qc_headphone_list')
-    sample = dpg.get_value('qc_sample_list')
-    brand=hpcf_functions.get_brand(conn, headphone)
+    headphone_selected = dpg.get_value('qc_headphone_list')
+    sample_selected = dpg.get_value('qc_sample_list')
+    brand_selected=hpcf_functions.get_brand(conn, headphone_selected)
+    hp_list_selected = hpcf_functions.get_headphone_list(conn, brand_selected)
     
-    #if selected headphone is in history, set to selected, otherwise pick first value
-    default_headphone = headphone if headphone in headphone_list_specific else headphone_list_specific[0]
-    default_sample = sample if headphone in headphone_list_specific else 'Sample A'
+    
  
-    if headphone_list_specific and headphone_list_specific != None and app_data == True:
-        
+    if headphone_list_saved and headphone_list_saved != None and app_data == True:
+        #if selected headphone is in history, set default to selected, otherwise pick first value
+        default_headphone = headphone_selected if headphone_selected in headphone_list_saved else headphone_list_saved[0]
+        default_sample = sample_selected if headphone_selected in headphone_list_saved else 'Sample A'
         
         #clear out brand list
         dpg.configure_item('qc_brand_list',items=[])
         
         #update headphone list
-        dpg.configure_item('qc_headphone_list',items=headphone_list_specific)
+        dpg.configure_item('qc_headphone_list',items=headphone_list_saved)
         
         #reset headphone value to first headphone
         dpg.configure_item('qc_headphone_list',show=False)
@@ -336,24 +337,24 @@ def qc_show_hpcf_history(sender=None, app_data=None):
         dpg.configure_item('qc_brand_list',items=brands_list)
         #reset brand value to first brand
         dpg.configure_item('qc_brand_list',show=False)
-        dpg.configure_item('qc_brand_list',default_value=brand)
+        dpg.configure_item('qc_brand_list',default_value=brand_selected)
         dpg.configure_item('qc_brand_list',show=True)
         #update headphone list
-        hp_list_specific = hpcf_functions.get_headphone_list(conn, brand)
-        dpg.configure_item('qc_headphone_list',items=hp_list_specific)
+        
+        dpg.configure_item('qc_headphone_list',items=hp_list_selected)
         #also update sample list
-        sample_list_specific = hpcf_functions.get_samples_list(conn, headphone)
+        sample_list_specific = hpcf_functions.get_samples_list(conn, headphone_selected)
         sample_list_sorted = (sorted(sample_list_specific))
         dpg.configure_item('qc_sample_list',items=sample_list_sorted)
         #also update plot
-        hpcf_functions.hpcf_to_plot(conn, headphone, sample, plot_type=2)
+        hpcf_functions.hpcf_to_plot(conn, headphone_selected, sample_selected, plot_type=2)
         #reset sample list
         dpg.configure_item('qc_sample_list',show=False)
-        dpg.configure_item('qc_sample_list',default_value=sample)
+        dpg.configure_item('qc_sample_list',default_value=sample_selected)
         dpg.configure_item('qc_sample_list',show=True)
         
     
-    
+    dpg.configure_item("qc_clear_history_popup", show=False)
     #reset progress
     qc_reset_progress()
     save_settings()
@@ -3471,6 +3472,8 @@ def start_processing_callback():
         pitch_low = dpg.get_value("pitch_range_low")
         pitch_high = dpg.get_value("pitch_range_high")
         long_reverb_mode = dpg.get_value("long_tail_mode")
+        pitch_shift_comp = dpg.get_value("pitch_shift_comp")
+        alignment_freq = dpg.get_value("alignment_freq")
         __version__ = dpg.get_item_user_data("log_text")  # contains version
 
         # Input validation
@@ -3522,7 +3525,7 @@ def start_processing_callback():
             wav_export=False, use_user_folder=True, save_npy=False,
             desired_measurements=desired_measurements,
             pitch_range=pitch_range, long_mode=long_reverb_mode,
-            cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode
+            cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, pitch_shift_comp=pitch_shift_comp
         )
         #print(str(status_code))
         if status_code != 0:
@@ -3784,7 +3787,7 @@ def update_as_table_from_csvs():
     filename_key = CN.USER_CSV_KEY
     matching_rows = []
 
-    hf.log_with_timestamp("Starting search for acoustic space metadata...", logger_obj)
+    hf.log_with_timestamp("Starting search for saved acoustic spaces...", logger_obj)
 
     # Walk through directory
     for root, _, files in os.walk(directory):
@@ -3894,7 +3897,8 @@ def generate_room_target_callback(sender, app_data, user_data):
         combined_mag = np.abs(h_ls * h_hs)
 
         # --- Convert to minimum-phase FIR ---
-        fir = hf.mag_to_min_fir(combined_mag, n_fft=n_fft, out_win_size=4096, crop=1)
+        #fir = hf.mag_to_min_fir(combined_mag, n_fft=n_fft, out_win_size=4096, crop=1)
+        fir = hf.build_min_phase_filter(combined_mag, n_fft=n_fft, truncate_len=4096)
 
         # --- Save only if explicitly requested ---
         if user_data.get("save_to_file", False):

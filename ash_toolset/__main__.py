@@ -1025,7 +1025,25 @@ def main():
                                 with dpg.tooltip("qc_toggle_hpcf_history"):
                                     dpg.add_text("Shows previously applied headphones")
                                 dpg.add_text("     ")
-                                dpg.add_button(label="Clear History",user_data="",tag="qc_clear_history", callback=cb.remove_hpcfs)
+                                
+                                #dpg.add_button(label="Clear History",user_data="",tag="qc_clear_history", callback=cb.remove_hpcfs)
+                                # Button to trigger the popup
+                                dpg.add_button(label="Clear History", user_data="", tag="qc_clear_history_button",
+                                               callback=lambda: dpg.configure_item("qc_clear_history_popup", show=True))
+                                
+                                # Optional tooltip
+                                with dpg.tooltip("qc_clear_history_button"):
+                                    dpg.add_text("Clear headphone correction history")
+                                
+                                # Confirmation popup
+                                with dpg.popup("qc_clear_history_button", modal=True, mousebutton=dpg.mvMouseButton_Left, tag="qc_clear_history_popup"):
+                                    dpg.add_text("This will clear headphone correction history")
+                                    dpg.add_separator()
+                                    with dpg.group(horizontal=True):
+                                        dpg.add_button(label="OK", width=75, callback=cb.remove_hpcfs)
+                                        dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("qc_clear_history_popup", show=False))
+                                
+                                
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
                                 dpg.add_text("Search Brand:")
@@ -2005,28 +2023,6 @@ def main():
                                 with dpg.tooltip("space_description"):
                                     dpg.add_text("Enter a brief description of the acoustic space (optional)")
                                 
-                                dpg.add_text("Total Directions")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_int(label="", tag="unique_directions", width=270, default_value=1750, min_value=1000, max_value=3500)
-                                with dpg.tooltip("unique_directions"):
-                                    dpg.add_text("Specify the total number of directions for spatial sampling")
-                                    dpg.add_text("Min: 1000, Max: 3000. Decrease to reduce processing time")
-                    
-                                dpg.add_text("Pitch Shift Range")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
-                                
-                                dpg.add_input_float(label="Pitch Range Low", tag="pitch_range_low", width=270,default_value=0.0, min_value=-48.0, max_value=0, format="%.2f",min_clamped=True, max_clamped=True)
-                                with dpg.tooltip("pitch_range_low"):
-                                    dpg.add_text("Set the minimum pitch shift in semitones (can be fractional)")
-                                    dpg.add_text("Used to expand dataset in cases where few IRs are supplied")
-                                    dpg.add_text("Min: -48, Max: 0")
-                                
-                                dpg.add_input_float(label="Pitch Range High", tag="pitch_range_high", width=270,default_value=24.0, min_value=1.0, max_value=48.0, format="%.2f",min_clamped=True, max_clamped=True)
-                                with dpg.tooltip("pitch_range_high"):
-                                    dpg.add_text("Set the maximum pitch shift in semitones (can be fractional).")
-                                    dpg.add_text("Used to expand dataset in cases where few IRs are supplied")
-                                    dpg.add_text("Min: 1, Max: 48")
-                    
                                 with dpg.group(horizontal=True):
                                     with dpg.group():
                                         dpg.add_text("Long Reverb Tail Mode")
@@ -2035,13 +2031,58 @@ def main():
                                         with dpg.tooltip("long_tail_mode"):
                                             dpg.add_text("Only enable if the IRs have long decay tails (> 1.5 seconds).")
                                             dpg.add_text("This will increase processing time")
-                                    dpg.add_text("           ")
+                                    
+                                    
+                                    dpg.add_text("                    ")
                                     with dpg.group():
                                         dpg.add_text("Noise Reduction")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
                                         dpg.add_checkbox(label="Enable", tag="noise_reduction_mode")
                                         with dpg.tooltip("noise_reduction_mode"):
                                             dpg.add_text("Enable if the IRs have high noise floor")
+                                with dpg.group(horizontal=True):
+                                    with dpg.group():
+                                        dpg.add_text("Desired Directions")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_input_int(label="", tag="unique_directions", width=120, default_value=1750, min_value=1000, max_value=3500)
+                                        with dpg.tooltip("unique_directions"):
+                                            dpg.add_text("Specify the desired number of source directions for spatial sampling")
+                                            dpg.add_text("Min: 1000, Max: 3000. Decrease to reduce processing time")
+                                    dpg.add_text("                     ")
+                                    with dpg.group():
+                                        dpg.add_text("Alignment Frequency (Hz)")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_input_int(label="", tag="alignment_freq", width=120, default_value=110, min_value=50, max_value=150)
+                                        with dpg.tooltip("alignment_freq"):
+                                            dpg.add_text("Specify the cutoff frequency used for time domain alignment")
+                                            dpg.add_text("Min: 50, Max: 150.")
+                                    
+                                with dpg.group(horizontal=True):
+                                    with dpg.group():
+                                        dpg.add_text("Pitch Shift Range")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_input_float(label="Low", tag="pitch_range_low", width=120,default_value=0.0, min_value=-48.0, max_value=0.0, format="%.2f",min_clamped=True, max_clamped=True)
+                                        with dpg.tooltip("pitch_range_low"):
+                                            dpg.add_text("Set the minimum pitch shift in semitones (can be fractional)")
+                                            dpg.add_text("Used to expand dataset with new simulated source directions")
+                                            dpg.add_text("Only used in cases where few IRs are supplied")
+                                            dpg.add_text("Min: -48, Max: 0")
+                                        dpg.add_input_float(label="High", tag="pitch_range_high", width=120,default_value=24.0, min_value=0.0, max_value=48.0, format="%.2f",min_clamped=True, max_clamped=True)
+                                        with dpg.tooltip("pitch_range_high"):
+                                            dpg.add_text("Set the maximum pitch shift in semitones (can be fractional).")
+                                            dpg.add_text("Used to expand dataset with new simulated source directions")
+                                            dpg.add_text("Only used in cases where few IRs are supplied")
+                                            dpg.add_text("Min: 0, Max: 48")
+                                    dpg.add_text("           ")
+                                    with dpg.group():
+                                        dpg.add_text("Pitch Shift Compensation")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_checkbox(label="Enable", tag="pitch_shift_comp")
+                                        with dpg.tooltip("pitch_shift_comp"):
+                                            dpg.add_text("Enable to correct pitch of new directions after expanding dataset")
+                                            dpg.add_text("This may introduce artefacts")
+                    
+                                
                     
                             with dpg.child_window(width=385, height=120):
                                 dpg.add_text("Process IRs")

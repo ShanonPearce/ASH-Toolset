@@ -764,7 +764,8 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         #invert response
         hrir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(hrir_fft_avg_mag_sm)*-1)
         #create min phase FIR
-        hrir_df_inv_fir = hf.mag_to_min_fir(hrir_fft_avg_mag_inv, crop=1, out_win_size=1024, n_fft=CN.N_FFT)
+        #hrir_df_inv_fir = hf.mag_to_min_fir(hrir_fft_avg_mag_inv, crop=1, out_win_size=1024, n_fft=CN.N_FFT)
+        hrir_df_inv_fir = hf.build_min_phase_filter(hrir_fft_avg_mag_inv, truncate_len=1024, n_fft=CN.N_FFT)
         
 
         

@@ -567,186 +567,6 @@ def reshape_array_to_three_dims(arr: np.ndarray) -> np.ndarray:
 
 
 
-def create_transform_matrix_series( 
-    ir_array: np.ndarray,
-    print_last_row: bool = False,
-    mode: str = "median",#
-    window_size: int = 25,#55,25,75,85,115,151,115,205,305,75,115 85 (savgol) 55, (median)
-    polyorder: int = 3,#2,3,9,6,8,3   (10-15 results in strong aliasing, 9 as well if window_size is high)
-    crop_samples: int = None,
-    smoothing_method: str = "savgol",#savgol
-    gaussian_sigma: float = 40.0,#28,40
-    ema_alpha: float = 0.01,
-    plot_mean: bool = True,
-    center: bool = True#True
-) -> np.ndarray:
-    """
-    Create a matrix of transform curves by filtering an array of impulse responses with band-pass filters,
-    then normalizing each by the first (reference) measurement. Supports optional smoothing and averaging.
-
-    Parameters:
-        ir_array (np.ndarray): 2D array of impulse responses (measurements x samples).
-        print_last_row (bool): If True, prints the last row of the final matrix.
-        mode (str): Aggregation mode - 'mean', 'median', or 'minimum'.
-        window_size (int): Window size for smoothing (if applicable).
-        polyorder (int): Polynomial order for Savitzky-Golay smoothing.
-        crop_samples (int, optional): Number of samples to crop/limit output to.
-        smoothing_method (str): Type of smoothing - 'savgol', 'moving_average', 'gaussian', 'median', 'ema'.
-        gaussian_sigma (float): Sigma value for Gaussian filter.
-        ema_alpha (float): Alpha value for exponential moving average.
-        plot_mean (bool): Whether to plot the mean row before and after subtraction.
-
-    Returns:
-        np.ndarray: Transform matrix excluding the reference row.
-    """
-
-    ir_array = ir_array.astype(np.float64, copy=False)
-
-    # Move reference row to top if not already
-    if not np.all(ir_array[0] != 0):
-        nonzero_rows = np.where(~np.all(ir_array == 0, axis=1))[0]
-        if 0 not in nonzero_rows:
-            ir_array[[0, nonzero_rows[0]]] = ir_array[[nonzero_rows[0], 0]]
-
-    # Remove all-zero rows except for the reference
-    is_zero_row = np.all(ir_array == 0, axis=1)
-    zero_indices = np.where(is_zero_row)[0]
-    print(f"Number of all-zero measurements (excluding reference): {len(zero_indices) - (0 in zero_indices)}")
-
-    if ir_array.shape[0] > 1:
-        ir_array = np.vstack([ir_array[0], ir_array[1:][~is_zero_row[1:]]])
-
-    fs = CN.FS
-    order_var = 8
-    fb_filtering = True
-    cutoffs = generate_sequence(start=44, multiplier=1.5, limit=14000)#((start=44, multiplier=1.7, limit=10000)
-
-    measurements, samples = ir_array.shape
-    out_samples = crop_samples if crop_samples is not None else samples
-
-    if crop_samples and crop_samples > samples:
-        raise ValueError(f"crop_samples ({crop_samples}) exceeds available samples ({samples}).")
-
-    # Precompute filtered reference row for each band
-    reference = ir_array[0]
-    ref_filtered_per_band = []
-    for cutoff in cutoffs:
-        hp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='high')[0]
-        lp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='low')[0]
-        ref_filt = apply_sos_filter(reference, hp_sos, filtfilt=fb_filtering, axis=0)
-        ref_filt = apply_sos_filter(ref_filt, lp_sos, filtfilt=fb_filtering, axis=0)
-        ref_filtered_per_band.append(ref_filt)
-
-    # Initialize output transform matrix
-    transform_matrix = np.zeros((measurements, out_samples), dtype=np.float64)
-
-    # Process each measurement one at a time
-    for i in range(measurements):
-        band_transforms = []
-
-        for band_idx, cutoff in enumerate(cutoffs):
-            ref_filtered = ref_filtered_per_band[band_idx]
-
-            hp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='high')[0]
-            lp_sos = get_multiple_filter_sos([cutoff], fs=fs, order=order_var, filtfilt=fb_filtering, b_type='low')[0]
-
-            meas_filtered = apply_sos_filter(ir_array[i], hp_sos, filtfilt=fb_filtering, axis=0)
-            meas_filtered = apply_sos_filter(meas_filtered, lp_sos, filtfilt=fb_filtering, axis=0)
-
-            with np.errstate(divide='ignore', invalid='ignore'):
-                transform = meas_filtered / ref_filtered
-                transform[~np.isfinite(transform)] = 0.0
-
-            if i == 0:
-                transform[:] = 1.0  # ensure reference row is normalized
-
-            if crop_samples:
-                transform = transform[:out_samples]
-
-            band_transforms.append(transform)
-
-        # Aggregate across bands
-        band_stack = np.stack(band_transforms, axis=0)
-        if mode == "mean":
-            transform_row = np.mean(band_stack, axis=0)
-        elif mode == "median":
-            transform_row = np.median(band_stack, axis=0)
-        elif mode == "minimum":
-            transform_row = np.min(band_stack, axis=0)
-        else:
-            raise ValueError("Invalid mode. Choose 'mean', 'median', or 'minimum'.")
-
-        # Apply smoothing
-        if smoothing_method == "savgol" and window_size > 1 and window_size % 2 == 1 and polyorder < window_size:
-            transform_row = savgol_filter(transform_row, window_length=window_size, polyorder=polyorder)
-        elif smoothing_method == "moving_average":
-            kernel = np.ones(window_size, dtype=np.float32) / window_size
-            transform_row = np.convolve(transform_row, kernel, mode='same')
-        elif smoothing_method == "gaussian":
-            transform_row = gaussian_filter1d(transform_row, sigma=gaussian_sigma)
-        elif smoothing_method == "median":
-            transform_row = medfilt(transform_row, kernel_size=window_size)
-        elif smoothing_method == "ema":
-            transform_row = exponential_moving_average(transform_row, alpha=ema_alpha)
-
-        transform_matrix[i] = transform_row
-
-        if i%10 == 0:
-            print(f"Processed measurement {i + 1}/{measurements}")
-
-    # Final cleanup of zero rows
-    zero_rows = np.all(transform_matrix == 0, axis=1)
-    print(f"Number of all-zero measurements: {np.sum(zero_rows)}")
-
-    # Subtract mean row from all non-reference rows
-    if measurements > 1 and center == True:
-        mean_row_before = np.mean(transform_matrix[1:], axis=0)
-
-        if plot_mean:
-            plt.figure(figsize=(10, 4))
-            plt.plot(mean_row_before, label="Mean Row Before Subtraction")
-            plt.title("Mean Row Before Subtracting Mean")
-            plt.grid(True)
-            plt.legend()
-            plt.tight_layout()
-            plt.show()
-
-        transform_matrix[1:] -= mean_row_before
-        transform_matrix[1:] -= np.mean(transform_matrix[1:], axis=0)
-
-        if plot_mean:
-            mean_row_after = np.mean(transform_matrix[1:], axis=0)
-            plt.figure(figsize=(10, 4))
-            plt.plot(mean_row_after, label="Mean Row After Subtraction")
-            plt.title("Mean Row After Subtracting Mean")
-            plt.grid(True)
-            plt.legend()
-            plt.tight_layout()
-            plt.show()
-
-            sum_row_after = np.sum(transform_matrix[1:], axis=0)
-            plt.figure(figsize=(10, 4))
-            plt.plot(sum_row_after, label="Sum Row After Subtraction")
-            plt.title("Sum Row After Subtracting Mean")
-            plt.grid(True)
-            plt.legend()
-            plt.tight_layout()
-            plt.show()
-
-        residual_mean = np.mean(transform_matrix[1:], axis=0)
-        max_residual = np.max(np.abs(residual_mean))
-        print(f"Residual mean after subtraction (max abs): {max_residual:.2e}")
-
-        if max_residual > 1e-10:
-            print("Re-centering rows to ensure zero-mean.")
-            transform_matrix[1:] -= residual_mean
-
-    if print_last_row:
-        print("Last row of final transform array:", transform_matrix[-1])
-
-    # Return all rows except the reference
-    return transform_matrix[1:]
-
 
 
 
@@ -987,65 +807,7 @@ def plot_average_measurements(file_path: str):
 
 
 
-def wrap_and_smooth_transform_array(
-    transform_array: np.ndarray,
-    target_length: int,
-    fade_len: int = 128,
-    reverse_repeat: bool = True
-) -> np.ndarray:
-    """
-    Repeat and smooth transform_array rows to match a target sample length.
-    Optionally alternates repetitions in reverse order. Applies crossfading at
-    each wrap boundary to avoid abrupt transitions.
 
-    Parameters:
-        transform_array (np.ndarray): Input 2D array (M, S)
-        target_length (int): Desired number of samples in output
-        fade_len (int): Number of samples to fade out/in at each boundary
-        reverse_repeat (bool): Whether to alternate repetitions in reverse order
-
-    Returns:
-        np.ndarray: Smoothed array of shape (M, target_length)
-    """
-    M, S = transform_array.shape
-    repeats = (target_length + S - 1) // S
-
-    # Build the extended array with optional reverse pattern
-    segments = []
-    for i in range(repeats):
-        if reverse_repeat and i % 2 == 1:
-            segments.append(transform_array[:, ::-1])
-        else:
-            segments.append(transform_array)
-
-    extended = np.concatenate(segments, axis=1)
-
-    # Apply crossfade smoothing at wrap points
-    for r in range(1, repeats):
-        start = r * S - fade_len
-        end = r * S + fade_len
-
-        if start < 0 or end > extended.shape[1]:
-            continue
-
-        region_len = end - start
-        if region_len <= 0:
-            continue
-
-        fade_out = np.linspace(1, 0, region_len)
-        fade_in = 1 - fade_out
-
-        prev_start = start - S
-        prev_end = end - S
-        if prev_start < 0 or prev_end > extended.shape[1]:
-            continue
-
-        extended[:, start:end] = (
-            extended[:, start:end] * fade_out +
-            extended[:, prev_start:prev_end] * fade_in
-        )
-
-    return extended[:, :target_length]
 
 
 
@@ -1064,74 +826,134 @@ def expand_measurements_with_pitch_shift(
     num_threads: int = 4,
     gui_logger=None,
     cancel_event=None,
+    pitch_shift_comp=True,
     report_progress=0
 ) -> tuple[np.ndarray, int]:
     """
     Expand a smaller measurement array to a desired number of measurements
     using randomized pitch shifting, with optional anti-aliasing, using multithreading.
-
+    
     Returns:
         Tuple[np.ndarray, int]: The expanded 2D array and status code:
             0 = Success, 1 = Failure, 2 = Cancelled
     """
+
+    def apply_pitch_shift(ir, fs, n_steps, antialias):
+        if antialias:
+            rate = 2 ** (-n_steps / 12.0)
+            new_sr = int(fs * rate)
+            resampled = librosa.resample(ir, orig_sr=fs, target_sr=new_sr, res_type="kaiser_best")
+            shifted = librosa.effects.pitch_shift(resampled, sr=new_sr, n_steps=n_steps)
+            shifted = librosa.resample(shifted, orig_sr=new_sr, target_sr=fs, res_type="kaiser_best")
+        else:
+            shifted = librosa.effects.pitch_shift(ir, sr=fs, n_steps=n_steps)
+        return shifted
+
     measurement_array = measurement_array.astype(np.float64, copy=False)
     base_n, sample_len = measurement_array.shape
     output = np.empty((desired_measurements, sample_len), dtype=np.float64)
-    status = 1  # Default to failure
+    status = 1
 
-    # Thread-safe counters and locks for progress reporting
     count_lock = threading.Lock()
     count = 0
     last_print_time = time.time()
+    
+    #set appropriate range
+    # If both elements are numerically zero (e.g., 0 or 0.0)
+    if abs(pitch_range[0]) < 1e-6 and abs(pitch_range[1]) < 1e-6:
+        pitch_range = (0, 24)  # replace with default
+        log_with_timestamp("Invalid pitch range provided, resetting to default (0,24)", gui_logger)
 
     try:
-        # Initialize random number generator with fixed or random seed
         if seed == "random":
             seed = np.random.SeedSequence().entropy
         rng = np.random.default_rng(seed)
 
-        # Generate all pitch shifts ahead of time
+        # Pre-generate pitch shift values
         pitch_shifts = rng.uniform(pitch_range[0], pitch_range[1], desired_measurements)
 
-        def process_one(i):
-            """Process a single measurement with pitch shifting."""
-            nonlocal count, last_print_time
+        if pitch_shift_comp:
+            # --- Compensation Filter Setup ---
+            n_fft = 2048
+            truncate_len = 512
+            f_min = 20
+            f_max = 20000
+            # Precompute FFT magnitudes of base measurements once
+            base_mags = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
+            avg_mag = np.mean(base_mags, axis=0)
+            # Sample compensation points across pitch range
+            pitch_probe_points = np.linspace(pitch_range[0], pitch_range[1], 20)#increase to improve quality
+            compensation_filters = {}
+            log_with_timestamp("Building compensation curves...", gui_logger)
+            max_base = 20  # Limit number of base measurements used
+            for p in pitch_probe_points:
+                # Pitch shift all base measurements for this probe once
+                shifted_irs = [apply_pitch_shift(measurement_array[i], fs, p, antialias) for i in range(min(base_n, max_base))]
+    
+                # Compute FFT magnitudes once per shifted IR
+                shifted_mags = np.abs(np.fft.rfft(np.stack(shifted_irs), n=n_fft, axis=1))
+                shifted_mag_mean = np.mean(shifted_mags, axis=0)
+    
+                comp_mag = avg_mag / np.maximum(shifted_mag_mean, 1e-6)
+                log_mag_db = savgol_filter(20 * np.log10(comp_mag), window_length=31, polyorder=3)
+                smoothed_mag = 10 ** (log_mag_db / 20)
+                impulse = build_min_phase_filter(
+                    smoothed_mag, fs, n_fft=n_fft, truncate_len=truncate_len, f_min=f_min, f_max=f_max, band_limit=True
+                )
+                compensation_filters[p] = impulse
 
-            # Check for cancellation before starting
+        if plot_sample > 0 and pitch_shift_comp:
+            log_with_timestamp("Plotting compensation curves...", gui_logger)
+            import matplotlib.pyplot as plt
+            freqs = np.fft.rfftfreq(n_fft, 1 / fs)
+            plt.figure(figsize=(10, 6))
+            for p in sorted(pitch_probe_points):
+                mag = np.abs(np.fft.rfft(compensation_filters[p], n=n_fft))
+                mag_db = 20 * np.log10(np.maximum(mag, 1e-8))
+                plt.plot(freqs, mag_db, label=f"{p:+.1f} semitones")
+            plt.title("Band-limited, Min-Phase Compensation Curves")
+            plt.xlabel("Frequency (Hz)")
+            plt.ylabel("Gain (dB)")
+            plt.xscale("log")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.show()
+
+        def process_one(i):
+            nonlocal count, last_print_time
             if cancel_event and cancel_event.is_set():
-                return None  # Signal cancellation
+                return None
 
             ir = measurement_array[i % base_n]
             pitch_shift = pitch_shifts[i]
-
             try:
-                if antialias:
-                    rate = 2 ** (-pitch_shift / 12.0)
-                    new_sr = int(fs * rate)
-                    resampled = librosa.resample(ir, orig_sr=fs, target_sr=new_sr, res_type="kaiser_best")
-                    shifted = librosa.effects.pitch_shift(resampled, sr=new_sr, n_steps=pitch_shift)
-                    shifted = librosa.resample(shifted, orig_sr=new_sr, target_sr=fs, res_type="kaiser_best")
-                else:
-                    shifted = librosa.effects.pitch_shift(ir, sr=fs, n_steps=pitch_shift)
+                result = apply_pitch_shift(ir, fs, pitch_shift, antialias)
 
-                # Pad or truncate to fixed sample length
-                if len(shifted) < sample_len:
+                if len(result) < sample_len:
                     padded = np.zeros(sample_len)
-                    padded[:len(shifted)] = shifted
+                    padded[:len(result)] = result
                     result = padded
                 else:
-                    result = shifted[:sample_len]
+                    result = result[:sample_len]
 
-                # Update progress info with thread safety
+                if pitch_shift_comp:
+                    # Find closest compensation filter for pitch shift
+                    closest_pitch = min(compensation_filters.keys(), key=lambda x: abs(x - pitch_shift))
+                    comp_filter = compensation_filters[closest_pitch]
+    
+                    # Use fftconvolve for faster convolution
+                    result = sp.signal.fftconvolve(result, comp_filter, mode='same')
+
                 with count_lock:
                     count += 1
                     current_time = time.time()
                     if count % 100 == 0 or count == desired_measurements or current_time - last_print_time >= 5.0:
-                        log_with_timestamp(f"Expansion Progress: {count}/{desired_measurements} measurements processed.", gui_logger)
+                        log_with_timestamp(
+                            f"Expansion Progress: {count}/{desired_measurements} measurements processed.", gui_logger
+                        )
                         last_print_time = current_time
-
                         if report_progress > 0:
-                            # Linear progress between 10% and 30%
                             a_point = 0.1
                             b_point = 0.35
                             progress = a_point + (float(count) / desired_measurements) * (b_point - a_point)
@@ -1143,13 +965,10 @@ def expand_measurements_with_pitch_shift(
                 log_with_timestamp(f"Error processing measurement {i}: {e}", gui_logger)
                 return (i, None)
 
-        # Use ThreadPoolExecutor to parallelize processing
+        # Keep your threading code unchanged:
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-            # Submit all tasks
             futures = [executor.submit(process_one, i) for i in range(desired_measurements)]
-
             for future in concurrent.futures.as_completed(futures):
-                # Check for cancellation at any point
                 if cancel_event and cancel_event.is_set():
                     status = 2
                     log_with_timestamp("Expansion was cancelled by user.", gui_logger)
@@ -1157,7 +976,6 @@ def expand_measurements_with_pitch_shift(
 
                 result = future.result()
                 if result is None:
-                    # Cancellation detected inside process_one
                     status = 2
                     log_with_timestamp("Expansion was cancelled by user.", gui_logger)
                     return output, status
@@ -1166,35 +984,22 @@ def expand_measurements_with_pitch_shift(
                 if shifted_measurement is not None:
                     output[i] = shifted_measurement
                 else:
-                    # Error case - fill with zeros or handle as needed
                     output[i] = np.zeros(sample_len)
 
-        # If we got here without cancellation, mark success
         status = 0
-
         log_with_timestamp("Expansion complete.", gui_logger)
 
-        # Shuffle output if requested
         if shuffle:
             rng.shuffle(output)
 
-        # Plot sample if requested
-        if plot_sample > 0:
-            plot_indices = rng.choice(desired_measurements, plot_sample, replace=False)
-            plt.figure(figsize=(10, 6))
-            for idx in plot_indices:
-                plt.plot(output[idx], label=f"Measurement {idx + 1}")
-            plt.title(f"Random Sample of {plot_sample} Measurements")
-            plt.xlabel("Sample Index")
-            plt.ylabel("Amplitude")
-            plt.legend()
-            plt.show()
-
     except Exception as e:
         log_with_timestamp(f"Exception in expansion: {e}", gui_logger)
-        status = 1  # Failure
+        status = 1
 
     return output, status
+
+
+
 
 
 
@@ -1806,7 +1611,7 @@ def plot_data_generic(
     freqs=None,
     title_name='Output',
     data_type='magnitude',  # NEW: 'magnitude' or 'group_delay'
-    n_fft=65536,
+    n_fft=CN.N_FFT,
     samp_freq=44100,
     y_lim_adjust=0, y_lim_a=-25, y_lim_b=15,
     x_lim_adjust=0, x_lim_a=20, x_lim_b=20000,
@@ -2625,79 +2430,202 @@ def group_delay(sig):
     return np.divide(br, b + 0.01).real
 
 
-def smooth_fft(data, crossover_f=1000, win_size_a = 150, win_size_b = 750, n_fft=65536, fs=44100):
-    """
-    Function to perform smoothing of fft mag response
-    :param data: numpy array, magnitude response of a signal
-    :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
-    :param win_size_a: int, smoothing window size in Hz for lower frequencies
-    :param win_size_b: int, smoothing window size in Hz for higher frequencies
-    :param n_fft: int, fft size
-    :return: numpy array, smoothed signal
-    """  
+# def smooth_fft(data, crossover_f=1000, win_size_a = 150, win_size_b = 750, n_fft=CN.N_FFT, fs=CN.FS):
+#     """
+#     Function to perform smoothing of fft mag response
+#     :param data: numpy array, magnitude response of a signal
+#     :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
+#     :param win_size_a: int, smoothing window size in Hz for lower frequencies
+#     :param win_size_b: int, smoothing window size in Hz for higher frequencies
+#     :param n_fft: int, fft size
+#     :return: numpy array, smoothed signal
+#     """  
     
-    crossover_fb= int(round(crossover_f*(n_fft/fs)))
-    win_size_a=int(round(win_size_a*(n_fft/fs)))
-    win_size_b=int(round(win_size_b*(n_fft/fs)))
-    win_size_c=min(win_size_a,win_size_b)
+#     crossover_fb= int(round(crossover_f*(n_fft/fs)))
+#     win_size_a=int(round(win_size_a*(n_fft/fs)))
+#     win_size_b=int(round(win_size_b*(n_fft/fs)))
+#     win_size_c=min(win_size_a,win_size_b)
     
-    n_unique_pts = int(np.ceil((n_fft+1)/2.0))
-    nyq_freq = n_unique_pts-1
-    #apply win size a to low frequencies
-    data_smooth_a = sp.ndimage.uniform_filter1d(data,size=win_size_a)
-    data_smooth_b =np.zeros(n_fft)
-    data_smooth_b[0:crossover_fb] = data_smooth_a[0:crossover_fb]
-    #apply win size b to high frequencies
-    data_smooth_b[crossover_fb:n_unique_pts] = sp.ndimage.uniform_filter1d(data_smooth_a,size=win_size_b)[crossover_fb:n_unique_pts]
-    data_smooth_c = sp.ndimage.uniform_filter1d(data_smooth_b,size=win_size_c)#final pass
+#     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
+#     nyq_freq = n_unique_pts-1
+#     #apply win size a to low frequencies
+#     data_smooth_a = sp.ndimage.uniform_filter1d(data,size=win_size_a)
+#     data_smooth_b =np.zeros(n_fft)
+#     data_smooth_b[0:crossover_fb] = data_smooth_a[0:crossover_fb]
+#     #apply win size b to high frequencies
+#     data_smooth_b[crossover_fb:n_unique_pts] = sp.ndimage.uniform_filter1d(data_smooth_a,size=win_size_b)[crossover_fb:n_unique_pts]
+#     data_smooth_c = sp.ndimage.uniform_filter1d(data_smooth_b,size=win_size_c)#final pass
     
-    #make conjugate symmetric
-    for freq in range(n_fft):
-        if freq>nyq_freq:
-            dist_from_nyq = np.abs(freq-nyq_freq)
-            data_smooth_c[freq]=data_smooth_c[nyq_freq-dist_from_nyq]
-    
-    return data_smooth_c
+#     # Make symmetric (mirror below Nyquist into upper half)
+#     data_smooth_c[nyq_freq+1:] = data_smooth_c[1:nyq_freq][::-1]
+#     return data_smooth_c
 
-def smooth_fft_octaves(data, fund_freq=120, win_size_base = 15, n_fft=65536, fs=44100):
-    """
-    Function to perform smoothing of fft mag response
-    :param data: numpy array, magnitude response of a signal
-    :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
-    :param win_size_a: int, smoothing window size in Hz for lower frequencies
-    :param win_size_b: int, smoothing window size in Hz for higher frequencies
-    :param n_fft: int, fft size
-    :return: numpy array, smoothed signal
-    """ 
+# def smooth_fft_octaves(data, fund_freq=120, win_size_base = 15, n_fft=CN.N_FFT, fs=CN.FS):
+#     """
+#     Function to perform smoothing of fft mag response
+#     :param data: numpy array, magnitude response of a signal
+#     :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
+#     :param win_size_a: int, smoothing window size in Hz for lower frequencies
+#     :param win_size_b: int, smoothing window size in Hz for higher frequencies
+#     :param n_fft: int, fft size
+#     :return: numpy array, smoothed signal
+#     """ 
     
-    n_unique_pts = int(np.ceil((n_fft+1)/2.0))
-    nyq_freq = n_unique_pts-1
+#     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
+#     nyq_freq = n_unique_pts-1
     
-    max_freq = int(fs/2)
-    num_octaves = int(np.log2(max_freq/fund_freq))
+#     max_freq = int(fs/2)
+#     num_octaves = int(np.log2(max_freq/fund_freq))
     
-    for idx in range(num_octaves):
-        power = np.power(2,idx)
-        curr_cutoff_f = fund_freq*power
-        curr_win_s_a = win_size_base#win_size_base*power
-        curr_win_s_b = win_size_base*power#curr_win_s_a*2
+#     for idx in range(num_octaves):
+#         power = np.power(2,idx)
+#         curr_cutoff_f = fund_freq*power
+#         curr_win_s_a = win_size_base#win_size_base*power
+#         curr_win_s_b = win_size_base*power#curr_win_s_a*2
         
-        data = smooth_fft(data, crossover_f=curr_cutoff_f, win_size_a = curr_win_s_a, win_size_b = curr_win_s_b, n_fft=n_fft, fs=fs)
+#         data = smooth_fft(data, crossover_f=curr_cutoff_f, win_size_a = curr_win_s_a, win_size_b = curr_win_s_b, n_fft=n_fft, fs=fs)
     
-    data_smooth_c = data
+#     data_smooth_c = data
     
-    #make conjugate symmetric
-    for freq in range(n_fft):
-        if freq>nyq_freq:
-            dist_from_nyq = np.abs(freq-nyq_freq)
-            data_smooth_c[freq]=data_smooth_c[nyq_freq-dist_from_nyq]
-    
-    return data_smooth_c
+#     # Make symmetric (mirror below Nyquist into upper half)
+#     data_smooth_c[nyq_freq+1:] = data_smooth_c[1:nyq_freq][::-1]
+#     return data_smooth_c
 
 
-def mag_to_min_fir(data, n_fft=65536, out_win_size=4096, crop=0):
+
+def smooth_fft(
+    data,
+    crossover_f=1000,
+    win_size_a=150,
+    win_size_b=750,
+    n_fft=CN.N_FFT,
+    fs=CN.FS,
+    to_full=False
+):
     """
-    Function to create min phase FIR from a fft mag response
+    Applies two-stage smoothing to a magnitude FFT spectrum with different smoothing window
+    sizes below and above a crossover frequency.
+
+    Parameters:
+        data (np.ndarray): Input magnitude spectrum (half or full).
+        crossover_f (float): Frequency in Hz at which smoothing window changes.
+        win_size_a (float): Smoothing window size in Hz for frequencies < crossover_f.
+        win_size_b (float): Smoothing window size in Hz for frequencies >= crossover_f.
+        n_fft (int): FFT size used to compute the original spectrum.
+        fs (int): Sampling rate in Hz.
+        to_full (bool): If True and input is half-spectrum, output a mirrored full-spectrum.
+
+    Returns:
+        np.ndarray: Smoothed spectrum (same type as input unless to_full=True).
+    """
+    is_half = len(data) == n_fft // 2 + 1
+    nyq_bin = n_fft // 2
+
+    # Ensure we are smoothing the positive frequency part only
+    spectrum = data[:nyq_bin + 1] if not is_half else data.copy()
+
+    # Convert smoothing windows and crossover to bins
+    crossover_bin = int(round(crossover_f * n_fft / fs))
+    win_a_bins = max(1, int(round(win_size_a * n_fft / fs)))
+    win_b_bins = max(1, int(round(win_size_b * n_fft / fs)))
+    win_c_bins = min(win_a_bins, win_b_bins)
+
+    # Apply smoothing with different window sizes
+    smooth_a = sp.ndimage.uniform_filter1d(spectrum, size=win_a_bins)
+    smooth_b = sp.ndimage.uniform_filter1d(spectrum, size=win_b_bins)
+
+    # Combine both smoothed results at the crossover point
+    combined = np.empty_like(spectrum)
+    combined[:crossover_bin] = smooth_a[:crossover_bin]
+    combined[crossover_bin:] = smooth_b[crossover_bin:]
+
+    # Final pass of light smoothing
+    smoothed = sp.ndimage.uniform_filter1d(combined, size=win_c_bins)
+
+    if not is_half:
+        # Full input: re-insert the mirrored upper half
+        result = np.empty_like(data)
+        result[:nyq_bin + 1] = smoothed
+        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+        return result
+
+    if to_full:
+        # Generate full spectrum from half
+        result = np.empty(n_fft, dtype=smoothed.dtype)
+        result[:nyq_bin + 1] = smoothed
+        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+        return result
+
+    return smoothed
+
+def smooth_fft_octaves(
+    data,
+    fund_freq=120,
+    win_size_base=15,
+    n_fft=CN.N_FFT,
+    fs=CN.FS,
+    to_full=False
+):
+    """
+    Applies multi-band smoothing based on octave scaling of smoothing windows.
+    This function performs a sequence of smoothing operations, increasing the smoothing
+    window size with frequency (per-octave) to simulate logarithmic perceptual resolution.
+
+    Parameters:
+        data (np.ndarray): Magnitude spectrum (either full or half spectrum).
+        fund_freq (float): Base frequency in Hz that defines the start of octave scaling.
+        win_size_base (float): Base smoothing window size in Hz at the lowest octave.
+        n_fft (int): FFT size used to calculate the spectrum.
+        fs (int): Sampling rate in Hz.
+        to_full (bool): If True and input is half-spectrum, mirror to full spectrum on return.
+
+    Returns:
+        np.ndarray: Octave-smoothed spectrum (same type as input unless to_full=True).
+    """
+    # Determine input format
+    is_half = len(data) == n_fft // 2 + 1
+    nyq_bin = n_fft // 2
+    max_freq = fs / 2
+    num_octaves = int(np.log2(max_freq / fund_freq))
+
+    # Work on a copy of the input
+    smoothed = data.copy()
+
+    # Apply octave-band smoothing iteratively
+    for i in range(num_octaves):
+        factor = 2 ** i
+        cutoff = fund_freq * factor
+        win_a = win_size_base
+        win_b = win_size_base * factor
+
+        smoothed = smooth_fft(
+            smoothed,
+            crossover_f=cutoff,
+            win_size_a=win_a,
+            win_size_b=win_b,
+            n_fft=n_fft,
+            fs=fs,
+            to_full=False  # Always keep it half during iteration
+        )
+
+    # Return in desired format
+    if not is_half:
+        return smoothed  # Already full-spectrum, nothing more to do
+
+    if to_full:
+        # Mirror to create full-spectrum
+        full_spec = np.empty(n_fft, dtype=smoothed.dtype)
+        full_spec[:nyq_bin + 1] = smoothed
+        full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+        return full_spec
+    else:
+        return smoothed
+
+
+
+def mag_to_min_fir(data, n_fft=CN.N_FFT, out_win_size=4096, crop=1):
+    """
+    Function to create min phase FIR from a fft magnitude response
     :param data: numpy array, magnitude response of a signal
     :param out_win_size: int, number of samples desired in output signal. Will crop signal
     :param n_fft: int, fft size
@@ -2740,89 +2668,230 @@ def mag_to_min_fir(data, n_fft=65536, out_win_size=4096, crop=0):
     else:
         return data_out
     
+# def build_min_phase_filter(smoothed_mag, fs=CN.FS, n_fft=CN.N_FFT, truncate_len=4096, f_min=20, f_max=20000, band_limit=False):
+#     """
+#     Build a minimum-phase FIR filter from a smoothed magnitude response,
+#     band-limited between f_min and f_max, truncated to truncate_len samples,
+#     and applying a fade-out window on the tail.
+
+#     Parameters:
+#     - smoothed_mag: array, magnitude response to convert
+#     - fs: int, sampling frequency (Hz)
+#     - n_fft: int, FFT size used for frequency domain
+#     - truncate_len: int, length of time domain impulse response after truncation
+#     - f_min: float, minimum frequency (Hz) for band-limiting compensation
+#     - f_max: float, maximum frequency (Hz) for band-limiting compensation
+#     - band_limit: bool, if True apply band-limiting to the magnitude response.
+
+#     Returns:
+#     - impulse: truncated minimum-phase impulse response with fade-out applied
+#     """
+#     freqs = np.fft.rfftfreq(n_fft, 1/fs)
+
+#     # Create mask to band-limit the magnitude response within [f_min, f_max]
+#     if band_limit:
+#         # Apply band-limiting to magnitude response
+#         band_mask = (freqs >= f_min) & (freqs <= f_max)
+#         band_mag = np.zeros_like(smoothed_mag)
+#         band_mag[band_mask] = smoothed_mag[band_mask]
+#     else:
+#         # Use full magnitude response
+#         band_mag = smoothed_mag.copy()
+
+#     # Log magnitude (avoid log(0))
+#     log_mag = np.log(np.maximum(band_mag, 1e-8))
+
+#     # Compute real cepstrum by inverse FFT of log magnitude
+#     cepstrum = np.fft.irfft(log_mag, n=n_fft)
+
+#     # Enforce minimum phase symmetry by doubling cepstral coefficients (except 0th)
+#     cepstrum[1:n_fft//2] *= 2
+#     cepstrum[n_fft//2+1:] = 0  # zero out upper half for causality
+
+#     # Reconstruct minimum phase spectrum by FFT of cepstrum, then exponentiate
+#     min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
+
+#     # Transform back to time domain: impulse response of minimum phase filter
+#     impulse = np.fft.irfft(min_phase_spec, n=n_fft)
+
+#     # Truncate impulse response to desired length
+#     impulse = impulse[:truncate_len]
+
+#     # Apply fade-out window to tail: smoothly taper from 1 to 0
+#     fade_out = np.hanning(2 * truncate_len)[truncate_len:]
+#     impulse *= fade_out
+
+#     return impulse    
+    
+def build_min_phase_filter(
+    smoothed_mag,
+    fs=CN.FS,
+    n_fft=CN.N_FFT,
+    truncate_len=4096,
+    f_min=20,
+    f_max=20000,
+    band_limit=False
+):
+    """
+    Build a minimum-phase FIR filter from a magnitude spectrum (half or full).
+    
+    Parameters:
+        smoothed_mag (np.ndarray): Magnitude spectrum (half-spectrum or full-spectrum).
+        fs (int): Sampling frequency in Hz.
+        n_fft (int): FFT size.
+        truncate_len (int): Length to truncate time-domain IR.
+        f_min (float): Minimum band-limit frequency.
+        f_max (float): Maximum band-limit frequency.
+        band_limit (bool): Whether to band-limit the magnitude before conversion.
+
+    Returns:
+        np.ndarray: Minimum-phase FIR filter (real impulse response).
+    """
+    # Ensure half-spectrum
+    is_half = len(smoothed_mag) == n_fft // 2 + 1
+    if not is_half:
+        smoothed_mag = np.abs(smoothed_mag[:n_fft // 2 + 1])
+
+    freqs = np.fft.rfftfreq(n_fft, 1 / fs)
+
+    # Band-limit magnitude if requested
+    if band_limit:
+        band_mask = (freqs >= f_min) & (freqs <= f_max)
+        mag = np.zeros_like(smoothed_mag)
+        mag[band_mask] = smoothed_mag[band_mask]
+    else:
+        mag = smoothed_mag.copy()
+
+    # Avoid log(0)
+    log_mag = np.log(np.maximum(mag, 1e-8))
+
+    # Real cepstrum
+    cepstrum = np.fft.irfft(log_mag, n=n_fft)
+
+    # Enforce minimum-phase symmetry (real cepstrum trick)
+    cepstrum[1:n_fft // 2] *= 2
+    cepstrum[n_fft // 2 + 1:] = 0
+
+    # Rebuild min-phase spectrum
+    min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
+
+    # Time-domain impulse response
+    impulse = np.fft.irfft(min_phase_spec, n=n_fft)
+
+    # Truncate and apply fade-out window
+    impulse = impulse[:truncate_len]
+    fade_out = np.hanning(2 * truncate_len)[truncate_len:]
+    impulse *= fade_out
+
+    return impulse
+
+
+    
 #modify spectrum to have flat mag response at low and high ends
-def level_spectrum_ends_old(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win = 67):
+# def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=CN.N_FFT, fs=CN.FS, smooth_win=67):
+#     """
+#     Function to modify spectrum to have flat mag response at low and high ends (efficient version)
+#     :param data: numpy array, magnitude response of a signal (length n_fft)
+#     :param low_freq: int, frequency in Hz below which will become flat
+#     :param high_freq: int, frequency in Hz above which will become flat
+#     :param n_fft: int, fft size
+#     :param fs: int, sample frequency in Hz
+#     :param smooth_win: int, smoothing window size in Hz to be applied after leveling ends
+#     :return: numpy array, spectrum with smooth ends (length n_fft)
+#     """
+#     smooth_win_samples = int(round(smooth_win * (n_fft / fs)))
+
+#     data_mod = data.copy()
+#     low_freq_bin = int(low_freq * n_fft / fs)
+#     high_freq_bin = int(high_freq * n_fft / fs)
+
+#     # Level the low and high ends using array slicing
+#     if low_freq_bin > 0:
+#         data_mod[:low_freq_bin] = data[low_freq_bin]
+#     if high_freq_bin < n_fft:
+#         data_mod[high_freq_bin:] = data[high_freq_bin -1] # Use the value at the boundary
+
+#     # Apply slight smoothing
+#     if smooth_win_samples > 0:
+#         data_smooth = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
+#     else:
+#         data_smooth = data_mod
+
+#     # Make conjugate symmetric (assuming the input 'data' represents the positive frequency spectrum)
+#     n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
+#     if len(data_smooth) == n_fft:
+#         positive_spectrum = data_smooth[:n_unique_pts].copy()
+#         negative_spectrum = positive_spectrum[1:-1][::-1]  # Reverse and exclude DC and Nyquist
+#         data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
+#     elif len(data_smooth) == n_unique_pts -1: # handle case where input was only positive spectrum
+#         positive_spectrum = data_smooth.copy()
+#         negative_spectrum = positive_spectrum[1:][::-1]
+#         data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
+#     elif len(data_smooth) == n_unique_pts:
+#         positive_spectrum = data_smooth[:-1].copy()
+#         negative_spectrum = positive_spectrum[1:][::-1]
+#         data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
+
+
+#     return data_smooth
+
+def level_spectrum_ends(
+    data,
+    low_freq=20,
+    high_freq=20000,
+    n_fft=CN.N_FFT,
+    fs=CN.FS,
+    smooth_win=67,
+    to_full=False
+):
     """
-    Function to modify spectrum to have flat mag response at low and high ends
-    :param data: numpy array, magnitude response of a signal
-    :param low_freq: int, frequency in Hz below which will become flat
-    :param high_freq: int, frequency in Hz above which will become flat
-    :param n_fft: int, fft size
-    :param fs: int, sample frequency in Hz
-    :param smooth_win: int, smoothing window size in Hz to be applied after leveling ends
-    :return: numpy array, spectrum with smooth ends
-    """     
-    smooth_win=int(round(smooth_win*(n_fft/fs)))
+    Modify a magnitude spectrum to flatten low and high frequency ends with smoothing.
     
-    n_unique_pts = int(np.ceil((n_fft+1)/2.0))
-    nyq_freq = n_unique_pts-1
+    Supports both rfft (half) and fft (full) spectra.
     
+    Parameters:
+        data (np.ndarray): Magnitude spectrum (length n_fft or n_fft//2 + 1)
+        low_freq (float): Frequency below which to flatten (Hz)
+        high_freq (float): Frequency above which to flatten (Hz)
+        n_fft (int): FFT size that produced the spectrum
+        fs (int): Sampling frequency (Hz)
+        smooth_win (float): Smoothing window size (Hz)
+        to_full (bool): If True and input is half spectrum, output will be full spectrum
+
+    Returns:
+        np.ndarray: Modified spectrum, same format as input unless to_full=True
+    """
+    is_half_spectrum = len(data) == n_fft // 2 + 1
+    freq_res = fs / n_fft
+    smooth_win_samples = max(1, int(round(smooth_win / freq_res)))
+
+    # Define frequency bin bounds
+    low_bin = int(low_freq / freq_res)
+    high_bin = int(high_freq / freq_res)
+    high_bin = min(high_bin, len(data) - 1)
+    low_bin = min(low_bin, high_bin)
+
+    # Leveling
     data_mod = data.copy()
-    low_freq_bin = int(low_freq*n_fft/fs)
-    high_freq_bin = int(high_freq*n_fft/fs)
-    data_mod[0:low_freq_bin] = data[low_freq_bin]
-    data_mod[high_freq_bin:n_fft] = data[high_freq_bin]
-    
-    #apply slight smoothing
-    if smooth_win > 0:
-        data_smooth = sp.ndimage.uniform_filter1d(data_mod,size=smooth_win)
-    else:
-        data_smooth=data_mod
-    
-    #make conjugate symmetric
-    for freq in range(n_fft):
-        if freq>nyq_freq:
-            dist_from_nyq = np.abs(freq-nyq_freq)
-            data_smooth[freq]=data_smooth[nyq_freq-dist_from_nyq]
-            
-    return data_smooth
+    if low_bin > 0:
+        data_mod[:low_bin] = data[low_bin]
+    if high_bin < len(data_mod):
+        data_mod[high_bin:] = data[high_bin - 1]
 
-def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=65536, fs=44100, smooth_win=67):
-    """
-    Function to modify spectrum to have flat mag response at low and high ends (efficient version)
-    :param data: numpy array, magnitude response of a signal (length n_fft)
-    :param low_freq: int, frequency in Hz below which will become flat
-    :param high_freq: int, frequency in Hz above which will become flat
-    :param n_fft: int, fft size
-    :param fs: int, sample frequency in Hz
-    :param smooth_win: int, smoothing window size in Hz to be applied after leveling ends
-    :return: numpy array, spectrum with smooth ends (length n_fft)
-    """
-    smooth_win_samples = int(round(smooth_win * (n_fft / fs)))
+    # Smoothing
+    if smooth_win_samples > 1:
+        data_mod = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
 
-    data_mod = data.copy()
-    low_freq_bin = int(low_freq * n_fft / fs)
-    high_freq_bin = int(high_freq * n_fft / fs)
+    if is_half_spectrum and to_full:
+        # Convert to full (conjugate symmetric) real-valued spectrum
+        full_spectrum = np.empty(n_fft, dtype=data_mod.dtype)
+        full_spectrum[:n_fft // 2 + 1] = data_mod
+        # Mirror the spectrum (exclude DC and Nyquist)
+        full_spectrum[n_fft // 2 + 1:] = data_mod[1:n_fft // 2][::-1]
+        return full_spectrum
 
-    # Level the low and high ends using array slicing
-    if low_freq_bin > 0:
-        data_mod[:low_freq_bin] = data[low_freq_bin]
-    if high_freq_bin < n_fft:
-        data_mod[high_freq_bin:] = data[high_freq_bin -1] # Use the value at the boundary
+    return data_mod
 
-    # Apply slight smoothing
-    if smooth_win_samples > 0:
-        data_smooth = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
-    else:
-        data_smooth = data_mod
-
-    # Make conjugate symmetric (assuming the input 'data' represents the positive frequency spectrum)
-    n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
-    if len(data_smooth) == n_fft:
-        positive_spectrum = data_smooth[:n_unique_pts].copy()
-        negative_spectrum = positive_spectrum[1:-1][::-1]  # Reverse and exclude DC and Nyquist
-        data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
-    elif len(data_smooth) == n_unique_pts -1: # handle case where input was only positive spectrum
-        positive_spectrum = data_smooth.copy()
-        negative_spectrum = positive_spectrum[1:][::-1]
-        data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
-    elif len(data_smooth) == n_unique_pts:
-        positive_spectrum = data_smooth[:-1].copy()
-        negative_spectrum = positive_spectrum[1:][::-1]
-        data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
-
-
-    return data_smooth
 
 
 def padarray(A, size):

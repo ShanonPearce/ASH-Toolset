@@ -647,7 +647,7 @@ def prepare_air_dataset(
     save_npy=False,
     desired_measurements=3000, noise_reduction_mode=False,
     pitch_range=(0, 12),
-    long_mode=False, report_progress=0, cancel_event=None
+    long_mode=False, report_progress=0, cancel_event=None, f_alignment = 0, pitch_shift_comp=True
 ):
     """
     Loads and processes individual IR files from a dataset folder, extracting the impulse responses
@@ -778,15 +778,20 @@ def prepare_air_dataset(
         apply_transform=0
         if total_measurements < ir_min_threshold:
             log_string_a = 'Expanding dataset'
+            align_start_time = time.time()
             hf.log_with_timestamp(log_string_a, gui_logger)
             apply_transform=1
             #expand dataset by creating new IRs using pitch shifting
             air_data, status_code = hf.expand_measurements_with_pitch_shift(
                 measurement_array=air_data,
-                desired_measurements=desired_measurements,pitch_range=pitch_range,gui_logger=gui_logger,cancel_event=cancel_event,report_progress=report_progress
+                desired_measurements=desired_measurements,pitch_range=pitch_range,gui_logger=gui_logger,
+                cancel_event=cancel_event,report_progress=report_progress, pitch_shift_comp=pitch_shift_comp
             ) 
             if status_code > 0:#failure or cancelled
                 return air_data, status_code
+            align_end_time = time.time()
+            log_string_a = f"Dataset expansion completed in {align_end_time - align_start_time:.2f} seconds."
+            hf.log_with_timestamp(log_string_a)
         
         total_measurements = air_data.shape[0]
         log_string_a = 'Total measurements after expansion: '+str(total_measurements)
@@ -796,7 +801,7 @@ def prepare_air_dataset(
         fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
         fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
         for idx in range(total_measurements):
-            data_fft = np.fft.fft(air_data[idx, :])
+            data_fft = np.fft.rfft(air_data[idx, :])
             mag_fft = np.abs(data_fft)
             average_mag = np.mean(mag_fft[fb_start:fb_end])
             if average_mag > 0:
@@ -847,12 +852,16 @@ def prepare_air_dataset(
             delay_win_hop_size = CN.DELAY_WIN_HOP_SIZE
             delay_win_hops = CN.DELAY_WIN_HOPS_A
 
-            if ir_set in CN.AC_SPACE_LIST_SUB:
-                cutoff_alignment = CN.CUTOFF_ALIGNMENT_SUBRIR
-            elif apply_transform == 1:
-                cutoff_alignment = CN.CUTOFF_ALIGNMENT_TR_AIR
+            #which alignment frequency to use?
+            if f_alignment <= 0:
+                if ir_set in CN.AC_SPACE_LIST_SUB:
+                    cutoff_alignment = CN.CUTOFF_ALIGNMENT_SUBRIR
+                elif apply_transform == 1:
+                    cutoff_alignment = CN.CUTOFF_ALIGNMENT_TR_AIR
+                else:
+                    cutoff_alignment = CN.CUTOFF_ALIGNMENT_AIR
             else:
-                cutoff_alignment = CN.CUTOFF_ALIGNMENT_AIR
+                cutoff_alignment=f_alignment
 
             peak_to_peak_window = int(np.divide(samp_freq_ash, cutoff_alignment) * 1.0)
             delay_eval_set = np.zeros((total_measurements, num_intervals))
@@ -903,7 +912,7 @@ def prepare_air_dataset(
         fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
         fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
         for idx in range(total_measurements):
-            data_fft = np.fft.fft(air_data[idx, :])
+            data_fft = np.fft.rfft(air_data[idx, :])
             mag_fft = np.abs(data_fft)
             average_mag = np.mean(mag_fft[fb_start:fb_end])
             if average_mag > 0:
@@ -1269,15 +1278,18 @@ def convert_airs_to_brirs(
         brir_reverberation[0, :, :, :] *= l_fade_out_win  # broadcasted multiply
         
         # Normalize each direction to average magnitude between fb_start and fb_end
+        # Convert target frequency range to rfft bins
         fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
         fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
-        # Vectorized FFT over all directions and both channels
-        fft_data = np.fft.fft(brir_reverberation[0, :, :, :CN.N_FFT], axis=-1)
+        # # Vectorized FFT over all directions and both channels
+        # Convert to rfft domain (half spectrum)
+        fft_data = np.fft.rfft(brir_reverberation[0, :, :, :CN.N_FFT], axis=-1)
+        # Compute magnitudes within that frequency band
         fft_magnitudes = np.abs(fft_data[:, :, fb_start:fb_end])
         avg_magnitudes = np.mean(fft_magnitudes, axis=-1)  # shape: (num_brir_sources, 2)
         avg_mag = np.mean(avg_magnitudes, axis=1)  # shape: (num_brir_sources,)
-        # Normalize using broadcasting
-        brir_reverberation[0, :, :, :] = brir_reverberation[0, :, :, :] / avg_mag[:, np.newaxis, np.newaxis]
+        # Normalize each direction's time-domain signal by the magnitude
+        brir_reverberation[0, :, :, :] /= avg_mag[:, np.newaxis, np.newaxis]
                 
         #
         #optional: create compensation filter from average response and target, then equalise each BRIR
@@ -1316,7 +1328,8 @@ def convert_airs_to_brirs(
                 # Compensation filter (smoothed)
                 comp_mag = hf.db2mag(hf.mag2db(brir_fft_target_mag) - hf.mag2db(brir_fft_avg_mag_sm))
                 comp_mag = hf.smooth_fft_octaves(comp_mag, win_size_base = 7)
-                comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
+                #comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
+                comp_eq_fir = hf.build_min_phase_filter(comp_mag)
         
                 # Equalize both channels (loop still needed for convolution)
                 for chan in range(total_chan_hrir):
@@ -1335,15 +1348,19 @@ def convert_airs_to_brirs(
         #set each direction to 0 level again
         #
         # Normalize each direction to average magnitude between fb_start and fb_end
+        # Convert target frequency range to rfft bins
         fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
         fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
-        # Vectorized FFT over all directions and both channels
-        fft_data = np.fft.fft(brir_reverberation[0, :, :, :CN.N_FFT], axis=-1)
+        
+        # # Vectorized FFT over all directions and both channels
+        # Convert to rfft domain (half spectrum)
+        fft_data = np.fft.rfft(brir_reverberation[0, :, :, :CN.N_FFT], axis=-1)
+        # Compute magnitudes within that frequency band
         fft_magnitudes = np.abs(fft_data[:, :, fb_start:fb_end])
         avg_magnitudes = np.mean(fft_magnitudes, axis=-1)  # shape: (num_brir_sources, 2)
         avg_mag = np.mean(avg_magnitudes, axis=1)  # shape: (num_brir_sources,)
-        # Normalize using broadcasting
-        brir_reverberation[0, :, :, :] = brir_reverberation[0, :, :, :] / avg_mag[:, np.newaxis, np.newaxis]
+        # Normalize each direction's time-domain signal by the magnitude
+        brir_reverberation[0, :, :, :] /= avg_mag[:, np.newaxis, np.newaxis]
 
 
         
@@ -1865,7 +1882,8 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
             #invert response
             brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
             #create min phase FIR
-            brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
+            #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
+            brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
             df_eq = brir_df_inv_fir
             
         if df_comp == True:
@@ -1937,7 +1955,8 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
             comp_mag = hf.db2mag(np.subtract(hf.mag2db(brir_fft_target_mag),hf.mag2db(brir_fft_avg_mag_sm)))
             comp_mag = hf.smooth_fft_octaves(data=comp_mag, win_size_base = 30)
             #create min phase FIR
-            comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
+            #comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
+            comp_eq_fir = hf.build_min_phase_filter(comp_mag)
  
             #equalise each brir with comp filter
             for direc in range(num_out_dirs):
@@ -2114,7 +2133,7 @@ def calc_avg_room_target_mag(gui_logger=None):
         
         #create min phase FIR
         #avg_room_min_fir = hf.mag_to_min_fir(air_fft_avg_mag_sm, crop=1)
-
+        #avg_room_min_fir = hf.build_min_phase_filter(air_fft_avg_mag_sm)
  
         if CN.PLOT_ENABLE == True:
             print(str(num_airs_avg))
@@ -2597,7 +2616,8 @@ def calc_subrir(gui_logger=None):
                     #invert response
                     brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
                     #create min phase FIR
-                    brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
+                    #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
+                    brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
                     df_eq = brir_df_inv_fir
                     #convolve with inverse filter
                     for chan in range(total_chan_brir):
@@ -3110,7 +3130,8 @@ def calc_subrir(gui_logger=None):
             #invert response
             brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
             #create min phase FIR
-            brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
+            #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
+            brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
             df_eq = brir_df_inv_fir
             #convolve with inverse filter
             for chan in range(total_chan_brir):
@@ -3535,7 +3556,8 @@ def calc_room_target_dataset(gui_logger=None):
                 room_target_mag_new = hf.level_spectrum_ends(room_target_mag, 20, 20000, smooth_win = 3)#150
                 room_target_mag_new_sm = hf.smooth_fft_octaves(data=room_target_mag_new, n_fft=n_fft,fund_freq=150,win_size_base = 3)
                 #create min phase FIR
-                room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
+                #room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
+                room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
 
 
                 #save into numpy array
@@ -3554,7 +3576,8 @@ def calc_room_target_dataset(gui_logger=None):
             room_target_mag_new_sm = hf.smooth_fft(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
             
             #create min phase FIR
-            room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
+            #room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
+            room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
             
             #store into numpy array
             new_id=num_targets+idx
@@ -3578,7 +3601,8 @@ def calc_room_target_dataset(gui_logger=None):
             room_target_mag_new_sm = hf.smooth_fft(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
             
             #create min phase FIR
-            room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
+            #room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
+            room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
             
             #store into numpy array
             new_id=num_targets*2+idx
