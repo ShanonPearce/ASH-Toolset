@@ -647,7 +647,7 @@ def prepare_air_dataset(
     save_npy=False,
     desired_measurements=3000, noise_reduction_mode=False,
     pitch_range=(0, 12),
-    long_mode=False, report_progress=0, cancel_event=None, f_alignment = 0, pitch_shift_comp=True
+    long_mode=False, report_progress=0, cancel_event=None, f_alignment = 0, pitch_shift_comp=True, ignore_ms=CN.IGNORE_MS
 ):
     """
     Loads and processes individual IR files from a dataset folder, extracting the impulse responses
@@ -785,7 +785,7 @@ def prepare_air_dataset(
             air_data, status_code = hf.expand_measurements_with_pitch_shift(
                 measurement_array=air_data,
                 desired_measurements=desired_measurements,pitch_range=pitch_range,gui_logger=gui_logger,
-                cancel_event=cancel_event,report_progress=report_progress, pitch_shift_comp=pitch_shift_comp
+                cancel_event=cancel_event,report_progress=report_progress, pitch_shift_comp=pitch_shift_comp,ignore_ms=ignore_ms
             ) 
             if status_code > 0:#failure or cancelled
                 return air_data, status_code

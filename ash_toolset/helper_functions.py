@@ -822,11 +822,12 @@ def expand_measurements_with_pitch_shift(
     shuffle: bool = False,
     antialias: bool = True,
     seed=65529189939976765123732762606216328531,
-    plot_sample: int = 0,
+    plot_sample: int = 0,#0
     num_threads: int = 4,
     gui_logger=None,
     cancel_event=None,
     pitch_shift_comp=True,
+    ignore_ms: float = CN.IGNORE_MS,  # 0
     report_progress=0
 ) -> tuple[np.ndarray, int]:
     """
@@ -853,6 +854,11 @@ def expand_measurements_with_pitch_shift(
     base_n, sample_len = measurement_array.shape
     output = np.empty((desired_measurements, sample_len), dtype=np.float64)
     status = 1
+    
+    # Convert ms to samples
+    ignore_samples = int((ignore_ms / 1000.0) * fs)
+    if ignore_samples >= sample_len:
+        raise ValueError(f"ignore_samples ({ignore_samples}) must be less than the measurement length ({sample_len})")
 
     count_lock = threading.Lock()
     count = 0
@@ -879,7 +885,8 @@ def expand_measurements_with_pitch_shift(
             f_min = 20
             f_max = 20000
             # Precompute FFT magnitudes of base measurements once
-            base_mags = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
+            #base_mags = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
+            base_mags = np.abs(np.fft.rfft(measurement_array[:, ignore_samples:], n=n_fft, axis=1))
             avg_mag = np.mean(base_mags, axis=0)
             # Sample compensation points across pitch range
             pitch_probe_points = np.linspace(pitch_range[0], pitch_range[1], 20)#increase to improve quality
@@ -888,8 +895,11 @@ def expand_measurements_with_pitch_shift(
             max_base = 20  # Limit number of base measurements used
             for p in pitch_probe_points:
                 # Pitch shift all base measurements for this probe once
-                shifted_irs = [apply_pitch_shift(measurement_array[i], fs, p, antialias) for i in range(min(base_n, max_base))]
-    
+                shifted_irs = [
+                    apply_pitch_shift(measurement_array[i], fs, p, antialias)[ignore_samples:]
+                    for i in range(min(base_n, max_base))
+                ]
+                
                 # Compute FFT magnitudes once per shifted IR
                 shifted_mags = np.abs(np.fft.rfft(np.stack(shifted_irs), n=n_fft, axis=1))
                 shifted_mag_mean = np.mean(shifted_mags, axis=0)
