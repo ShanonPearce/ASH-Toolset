@@ -17,6 +17,7 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 
 ![screenshot](docs/images/ash_toolset_sample_a.png)
 
+---
 ## Features <a name="Features"></a> 
 - **Headphone Correction** — Generate headphone correction filters in WAV format for IR convolution or as configurations for graphic equalisers.
 - **Binaural Room Simulation** —  Generate customised binaural simulations of different acoustic environments including control rooms, studios, halls, and more. Resulting filters can be saved in WAV format or SOFA format for IR convolution.
@@ -24,6 +25,7 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 - **HeSuVi Compatibility** —  Generates filters in formats compatible with HeSuVi, a headphone surround virtualization tool for Equalizer APO.
 - **SOFA Format Compatibility** - Load HRTF datasets and export customised binaural responses in SOFA format
 
+---
 ## Background <a name="Background"></a> 
 
 #### Binaural Room Impulse Responses
@@ -39,7 +41,7 @@ Although diffuse-field calibrated headphones are common, differences in frequenc
 The ASH Toolset can be used to generate and apply Headphone Correction Filters (HpCFs) for a wide range of headphones. The filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
 
 
-
+---
 ## Getting Started <a name="Getting-Started"></a> 
 
 ASH Toolset is a python app built with Python, Numpy, Scipy, & DearPyGui.\
@@ -87,7 +89,7 @@ Optional:
 3. Extract data folder to ASH-Toolset root folder. The folder hierarchy will be 'ASH-Toolset/data'.
 4. (optional) If using Equalizer APO for the first time, download [Equalizer APO](http://sourceforge.net/projects/equalizerapo) and follow the Equalizer APO [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial). 
 
-
+---
 ## Usage <a name="Usage"></a> 
 
 Run the ash_toolset.py using python to launch the GUI
@@ -101,6 +103,7 @@ The app contains the following 3 tabs:
 - The ‘Filter & Dataset export’ tab can be used to export correction filters and binaural datasets to a local directory
 - The ‘Additional Tools & Settings’ tab contains some miscellaneous options and log messages
 
+---
 ### Headphone Correction
 In the 'Quick Configuration’ tab, this tool is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
 
@@ -121,7 +124,7 @@ In the 'Quick Configuration’ tab, this tool is used to apply headphone correct
 7. **Click the 'Apply Selection' button** to apply the selected filter in Equalizer APO or **click the 'Process' button** to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Outputs` but can be changed using the change folder option.
 
 
-
+---
 ### Binaural Room Simulation over Headphones
 #### Quick Configuration
 In the 'Quick Configuration’ tab, this tool is used to apply customised binaural room simulations over headphones in equalizer APO. 
@@ -148,7 +151,6 @@ In the 'Quick Configuration’ tab, this tool is used to apply customised binaur
 11. **Select Sample Rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated WAV files should match the sample rate of the sound device.
 12. **Select Bit Depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
 13. **Click the 'Apply Parameters' button** to apply the binaural simulation in Equalizer APO.
-
 
 
 #### Filter & Dataset export
@@ -188,6 +190,7 @@ In the ‘Filter & Dataset export’ tab, this is used to export a customised bi
     - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format. The SOFA convention can be selected in the Misc. Settings section under 'Additional Tools & Settings' tab.
 15. **Click the 'Process' button** to export the binaural dataset to the output directory.
 
+---
 ### Using the Correction Filters and Binaural Simulations
 
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
@@ -239,9 +242,91 @@ As an alternative to above method in Equalizer APO, the generated filters can be
 3. The binaural room simulations can be selected in the `Virtualisation` tab. The simulation can be found under the `Common HRIRs` section at the top of the list.
 4. The headphone correction filters can be selected in the `Equalizer` tab. The filters can be found under `_HpCFs` at the bottom of the list.
 
+---
+### Acoustic Space Import
 
+This tab can be used to generate new acoustic spaces from reverberant impulse response (IR) files such as room impulse responses (RIRs). Imported acoustic spaces can be used in the quick configuration and filter & dataset export tabs.
 
+**Set IR Folder**
+- To prepare new inputs, click **“Open Input Folder”** to open the directory where IR folders should be stored.
+  - Ensure all IR files for one space are grouped into a **single subfolder** (e.g., `Room A`).
+  - **Supported file types:** `.wav`, `.sofa`, `.mat`, `.npy`, `.hdf5`
+- Click **“Refresh Folder List”** to load available IR folders if new folder was created.
+- Select a folder from the **IR Folder List** dropdown. 
 
+**Enter Metadata (Optional)**
+- **Name:** Enter a name for the acoustic space. If left blank, the folder name will be used.
+- **Description:** Enter a brief description of the space.
+
+**IR Processing Options** 
+- **Long Reverb Tail Mode:**  
+  Enable if IRs have long decay tails (over 1.5 seconds). This increases processing time.
+- **Noise Reduction:**  
+  Enable if IRs contain a high noise floor.
+
+**Spatial Sampling**
+- **Desired Directions:**  
+  Specify the number of simulated source directions to generate.  
+  - Minimum: `1000`, Maximum: `3000` (default: `1750`)
+  - Lower values will reduce processing time.
+- **Alignment Frequency (Hz):**  
+  Set the cutoff frequency for time-domain alignment.  
+  - Minimum: `50`, Maximum: `150` (default: `110`)
+
+**Pitch Shifting (for dataset expansion)**
+
+The below parameters are only used to expand the dataset with new simulated source directions in cases where few IRs are supplied
+- **Pitch Shift Range:**
+  - **Low:** Minimum pitch shift in semitones. *(default: `0.0`)*
+  - **High:** Maximum pitch shift in semitones. *(default: `24.0`)*
+- **Pitch Shift Compensation:**  
+  Enable to correct frequency response of pitch-shifted IRs. May introduce artifacts.
+
+**Start Processing**
+- Click **“Start Processing”** to begin.
+  - Processing may take several minutes depending on the dataset and settings.
+
+---
+### Room Target Generator
+
+This tab can be used to create custom room target curves using low-shelf and high-shelf filters. These targets can be used later in quick configuration and dataset export.
+
+**Enter Target Name (Optional)**
+- **Name:** Provide a name for your new room target.
+  - If left blank, a name will be auto-generated based on the filter parameters.
+
+**Configure Low-Shelf Filter**
+- **Frequency (Hz):**  
+  Set the cutoff frequency for the low-shelf filter.  
+  - Range: `20–1000 Hz` (default: `100 Hz`)
+- **Gain (dB):**  
+  Set the gain.  
+  - Negative values attenuate low frequencies.  
+  - Range: `-6.0 to 18.0 dB` (default: `6.0 dB`)
+- **Q-Factor:**  
+  Controls the slope of the filter.  
+  - Lower values = broader curve.  
+  - Range: `0.1 to 5.0` (default: `0.707`)
+
+**Configure High-Shelf Filter**
+- **Frequency (Hz):**  
+  Set the cutoff frequency for the high-shelf filter.  
+  - Range: `1000–20000 Hz` (default: `7000 Hz`)
+- **Gain (dB):**  
+  Set the gain.  
+  - Positive values boost high frequencies.  
+  - Range: `-18.0 to 6.0 dB` (default: `-4.0 dB`)
+- **Q-Factor:**  
+  Controls the slope of the filter.  
+  - Lower values = broader curve.  
+  - Range: `0.1 to 5.0` (default: `0.4`)
+
+**Generate the Room Target**
+- The **Room Target Name** will be displayed below if entered.
+- Click **“Generate Target”** to apply your filter settings.
+  - The new target will be saved and made available in the **Quick Config** and **Dataset Export** tabs.
+
+---
 ### File Naming and Structure
 Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder under the output directory. This will be in the Equalizer APO config directory (e.g. `C:\Program Files\EqualizerAPO\config\ASH-Outputs`) by default. HeSuVi files will be saved within the HeSuVi folder (e.g. `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default. If required, the output directory can be changed using the directory selector. The `EqualizerAPO\config` directory should be selected if using Equalizer APO to ensure the filters and configurations can be read by Equalizer APO. 
 
@@ -267,6 +352,7 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 - A set of IR convolution configuration files are created for each binaural dataset and for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
 - A set of IR convolution configuration files are created for each headphone correction filter
 
+---
 ## Supporting Information <a name="Supporting-Information"></a> 
 
 ### Supported SOFA Conventions
@@ -322,6 +408,7 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 | Subwoofer Response C | Listening Room | 350            | 5Hz-150Hz       | 20Hz-120Hz +/-1.4dB | Previously used in ASH-Listening-Set |
 | Subwoofer Response D | Studio         | 240            | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Newly added in v3.2.0                |
 
+---
 ## License <a name="License"></a> 
 ASH-Toolset is distributed under the terms of the GNU Affero General Public License v3.0 (AGPL-3.0). A copy of this license is provided in the file LICENSE.
 
