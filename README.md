@@ -17,7 +17,7 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 
 ![screenshot](docs/images/ash_toolset_sample_a.png)
 
----
+
 ## Features <a name="Features"></a> 
 - **Headphone Correction** — Generate headphone correction filters in WAV format for IR convolution or as configurations for graphic equalisers.
 - **Binaural Room Simulation** —  Generate customised binaural simulations of different acoustic environments including control rooms, studios, halls, and more. Resulting filters can be saved in WAV format or SOFA format for IR convolution.
