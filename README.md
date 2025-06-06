@@ -103,7 +103,7 @@ The app contains the following 3 tabs:
 - The ‘Filter & Dataset export’ tab can be used to export correction filters and binaural datasets to a local directory
 - The ‘Additional Tools & Settings’ tab contains some miscellaneous options and log messages
 
----
+
 ### Headphone Correction
 In the 'Quick Configuration’ tab, this tool is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
 
