@@ -263,6 +263,8 @@ This tab can be used to generate new acoustic spaces from reverberant impulse re
   Enable if IRs have long decay tails (over 1.5 seconds). This increases processing time.
 - **Noise Reduction:**  
   Enable if IRs contain a high noise floor.
+- **Rise Time (ms):**  
+  Select the duration of the fade in window applied to the response.
 
 **Spatial Sampling**
 - **Desired Directions:**  
