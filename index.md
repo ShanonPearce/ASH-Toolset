@@ -182,6 +182,8 @@ This tab can be used to generate new acoustic spaces from reverberant impulse re
 - **Alignment Frequency (Hz):**  
   Set the cutoff frequency for time-domain alignment.  
   - Minimum: `50`, Maximum: `150` (default: `110`)
+- **Rise Time (ms):**  
+  Select the duration of the fade in window applied to the response.
 
 **Pitch Shifting (for dataset expansion)**
 
@@ -322,6 +324,13 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 
 ---
 ## Changelog <a name="Changelog"></a> 
+Version 3.3.1:
+- Improved support for loading of .mat files in acoustic space import tab
+- Improvements made to pitch shift compensation method in acoustic space import tab
+- Added rise time (ms) parameter to acoustic space import tab
+- Reduced minimum value of subwoofer crossover frequency to 20Hz and adjusted default crossover frequency
+- Added new acoustic space: Tennis court B
+  
 Version 3.3.0:
 - Added new tool: Acoustic Space Import. This can be used to generate new acoustic spaces from impulse response (IR) files. Imported acoustic spaces can be used in the quick configuration and filter & dataset export tabs.
 - 24 new acoustic spaces added
