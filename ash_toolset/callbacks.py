@@ -926,82 +926,6 @@ def update_ac_space(sender, app_data, user_data):
         
     update_brir_param()
 
-# def qc_select_room_target(sender, app_data):
-#     """ 
-#     GUI function to update brir based on input
-#     """
-#     target_sel = app_data
-#     #run plot
-#     try:
-
-#         # populate room target dictionary for plotting
-#         # load room target filters (FIR)
-#         npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
-#         room_target_mat = np.load(npy_fname)
-#         #create dictionary
-#         target_mag_dict = {} 
-#         for idx, target in enumerate(CN.ROOM_TARGET_LIST_SHORT):
-#             room_target_fir=np.zeros(CN.N_FFT)
-#             room_target_fir[0:4096] = room_target_mat[idx]
-#             data_fft = np.fft.fft(room_target_fir)
-#             room_target_mag=np.abs(data_fft)
-#             room_target_name=CN.ROOM_TARGET_LIST[idx]
-#             target_mag_dict.update({room_target_name: room_target_mag})
-    
-#         mag_response = target_mag_dict.get(target_sel)
-#         plot_tile = target_sel + ' frequency response'
-#         hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, y_lim_a=-12, y_lim_b=12, save_plot=0, normalise=2, plot_type=2)
-
-#     except:
-#         pass
-
-#     #reset progress bar
-#     qc_update_brir_param()
-
-# def qc_select_room_target(sender, app_data): 
-#     """
-#     GUI function to plot the selected room target and update progress bar.
-#     Uses preloaded FIR data from CN.ROOM_TARGETS_DICT.
-#     """
-#     target_sel = app_data
-
-#     try:
-#         # Get the FIR from the dictionary
-#         target_data = CN.ROOM_TARGETS_DICT.get(target_sel)
-#         if not target_data:
-#             logging.warning(f"Room target '{target_sel}' not found in ROOM_TARGETS_DICT.")
-#             return
-
-#         fir = target_data["impulse_response"]
-
-#         # Zero-pad to desired FFT length
-#         room_target_fir = np.zeros(CN.N_FFT)
-#         room_target_fir[:len(fir)] = fir
-
-#         # Compute magnitude response
-#         data_fft = np.fft.fft(room_target_fir)
-#         room_target_mag = np.abs(data_fft)
-
-#         # Plot
-#         plot_title = f"{target_sel} frequency response"
-#         hf.plot_data(
-#             room_target_mag,
-#             title_name=plot_title,
-#             n_fft=CN.N_FFT,
-#             samp_freq=CN.SAMP_FREQ,
-#             y_lim_adjust=1,
-#             y_lim_a=-12,
-#             y_lim_b=12,
-#             save_plot=0,
-#             normalise=2,
-#             plot_type=2
-#         )
-
-#     except Exception as e:
-#         logging.error(f"Failed to plot room target '{target_sel}': {e}")
-
-#     # Update progress bar or GUI state
-#     update_brir_param()
  
 def select_room_target(sender, app_data):
     """Callback for room target tab 1, uses plot_type=1."""
@@ -1840,25 +1764,44 @@ def qc_process_brirs(use_dict_list=False):
     log_string = 'Processing: ' + brir_name
     hf.log_with_timestamp(log_string, logz)
     
-    brir_dict_list=dpg.get_item_user_data("e_apo_brir_conv")#contains previously processed brirs
+    # #contains previously processed brirs
+    # brir_dict_list=dpg.get_item_user_data("e_apo_brir_conv")
     
-    #which brir dict to use for output, only used to specify directons
-    force_use_brir_dict=dpg.get_item_user_data("qc_e_apo_curr_brir_set")
-    if use_dict_list == False and force_use_brir_dict == False:#grab relevant config data from gui elements
-        brir_dict_out=get_brir_dict()
-    else:
-        brir_dict_out=dpg.get_item_user_data("qc_e_apo_sel_brir_set")#grab from previously stored values, in case of direction change where brirs dont exist
+    # #which brir dict to use for output, only used to specify directons
+    # force_use_brir_dict=dpg.get_item_user_data("qc_e_apo_curr_brir_set")
+    # if use_dict_list == False and force_use_brir_dict == False:#grab relevant config data from gui elements
+    #     brir_dict_out=get_brir_dict()
+    # else:
+    #     brir_dict_out=dpg.get_item_user_data("qc_e_apo_sel_brir_set")#grab from previously stored values, in case of direction change where brirs dont exist
     
 
+    # """
+    # #Run BRIR integration
+    # """
+    # if use_dict_list == False or not brir_dict_list:#run brir integration process if use dict list not flagged or dict list has no data
+    #     brir_gen, status = brir_generation.generate_integrated_brir(brir_name=out_dataset_name, spatial_res=spat_res_int, report_progress=1, gui_logger=logz, brir_dict=brir_dict_params)
+    # else:
+    #     brir_gen= np.array([])
+    #     status=0
+    
+    #contains previously processed brirs
+    brir_dict_list = dpg.get_item_user_data("e_apo_brir_conv") or []
+    force_use_brir_dict = dpg.get_item_user_data("qc_e_apo_curr_brir_set") or False
+    
+    # Decide which brir dict to use for output
+    if not use_dict_list and not force_use_brir_dict:
+        brir_dict_out = get_brir_dict()#grab relevant config data from gui elements
+    else:
+        brir_dict_out = dpg.get_item_user_data("qc_e_apo_sel_brir_set") or {}#grab from previously stored values, in case of direction change where brirs dont exist
+    
     """
     #Run BRIR integration
     """
-    if use_dict_list == False or not brir_dict_list:#run brir integration process
+    if not use_dict_list or not brir_dict_list:
         brir_gen, status = brir_generation.generate_integrated_brir(brir_name=out_dataset_name, spatial_res=spat_res_int, report_progress=1, gui_logger=logz, brir_dict=brir_dict_params)
     else:
-        brir_gen= np.array([])
-        status=0
-    
+        brir_gen = np.array([])
+        status = 0
     
     
     """
@@ -1883,11 +1826,22 @@ def qc_process_brirs(use_dict_list=False):
         dpg.set_value("e_apo_brir_conv", True)
         #save dict list within gui element
         if brir_dict_list_new:#only update if not empty list
-            old_data=dpg.get_item_user_data("e_apo_brir_conv")
+            # old_data=dpg.get_item_user_data("e_apo_brir_conv")
+            # # Prevent memory leak by clearing old references
+            # if isinstance(old_data, list):
+            #     old_data.clear()
+            # dpg.configure_item('e_apo_brir_conv',user_data=brir_dict_list_new)#use later if changing directions
+            
             # Prevent memory leak by clearing old references
-            if isinstance(old_data, list):
-                old_data.clear()
-            dpg.configure_item('e_apo_brir_conv',user_data=brir_dict_list_new)#use later if changing directions
+            old_data = dpg.get_item_user_data("e_apo_brir_conv") or []
+            for item in old_data:
+                if isinstance(item, dict):
+                    item.clear()
+            old_data.clear()
+            dpg.set_item_user_data("e_apo_brir_conv", None)# Ensure no lingering references
+            dpg.set_item_user_data("e_apo_brir_conv", brir_dict_list_new)#use later if changing directions
+                        
+            
         if use_dict_list == False:#only update if normal process
             #update current brir set text
             dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
@@ -1902,17 +1856,16 @@ def qc_process_brirs(use_dict_list=False):
             e_apo_update_direction(aquire_config=False, brir_dict_new=brir_dict_out)
         #Reset user data flag
         dpg.configure_item('qc_e_apo_curr_brir_set',user_data=False)
-        #rewrite config file
+        #rewrite config file, will also save settings
         e_apo_config_acquire()
-        
-        if use_dict_list == False:#only update if normal process
+        #only update settings if following normal process, new brirs were generated which means those parameters should be saved
+        if use_dict_list == False:
             save_settings(update_brir_pars=True)
             #if live set, also write a file containing name of dataset
             out_file_path = pjoin(output_path, CN.PROJECT_FOLDER_BRIRS,out_dataset_name,'dataset_name.txt')
             with open(out_file_path, 'w') as file:
                 file.write(brir_name)
-        else:
-            save_settings(update_brir_pars=False)
+
             
     elif status == 1:
         progress = 0/100
@@ -1935,7 +1888,8 @@ def qc_process_brirs(use_dict_list=False):
         qc_reset_progress()
     #plot LF analysis if toggled
     activated = dpg.get_value("qc_lf_analysis_toggle")
-    qc_lf_analyse_toggle(app_data=activated)
+    if activated:
+        qc_lf_analyse_toggle(app_data=activated)
 
 def calc_brir_set_name(full_name=True):
     """ 
@@ -2135,7 +2089,7 @@ def save_settings(update_hpcf_pars=False,update_brir_pars=False):
         config['DEFAULT']['crossover_f'] = str(dpg.get_value('crossover_f'))
         config['DEFAULT']['sub_response'] = str(dpg.get_value('sub_response'))
         config['DEFAULT']['hp_rolloff_comp'] = str(dpg.get_value('hp_rolloff_comp'))
-        config['DEFAULT']['fb_filtering'] = str(dpg.get_value('fb_filtering'))
+        config['DEFAULT']['fb_filtering_mode'] = str(dpg.get_value('fb_filtering'))
         
         if update_hpcf_pars:
             # overwrite HPCF-related keys
@@ -2156,12 +2110,16 @@ def save_settings(update_hpcf_pars=False,update_brir_pars=False):
             config['DEFAULT']['qc_crossover_f'] = qc_crossover_f_str
             config['DEFAULT']['qc_sub_response'] = qc_sub_response_str
             config['DEFAULT']['qc_hp_rolloff_comp'] = qc_hp_rolloff_comp_str
-            config['DEFAULT']['qc_fb_filtering'] = qc_fb_filtering_str
+            config['DEFAULT']['qc_fb_filtering_mode'] = qc_fb_filtering_str
             
    
         # Save back the config file (with unchanged keys preserved)
         with open(CN.SETTINGS_FILE, 'w') as configfile:
             config.write(configfile)
+            
+        #print memory usage as well
+        if CN.LOG_MEMORY:
+            hf.log_memory_usage()
 
     except Exception as e: 
         logging.error(f"Failed to write to settings.ini Error: {e}")
@@ -2714,6 +2672,8 @@ def e_apo_activate_direction(aquire_config=False, force_reset=False):
     brir_dict=get_brir_dict()
     #print(brir_dict)
     
+    # Explicitly clear any previous BRIRs stored in GUI to avoid leaks
+    dpg.configure_item('qc_e_apo_sel_brir_set', user_data=None)
     #Get brir_dict for desired directions, store in a gui element
     dpg.configure_item('qc_e_apo_sel_brir_set',user_data=brir_dict)
     
@@ -3474,6 +3434,7 @@ def start_processing_callback():
         long_reverb_mode = dpg.get_value("long_tail_mode")
         pitch_shift_comp = dpg.get_value("pitch_shift_comp")
         alignment_freq = dpg.get_value("alignment_freq")
+        rise_time = dpg.get_value("as_rise_time")
         __version__ = dpg.get_item_user_data("log_text")  # contains version
 
         # Input validation
@@ -3551,7 +3512,7 @@ def start_processing_callback():
             ir_set=name_src, ir_group='user',
             air_dataset=air_dataset, gui_logger=logger_obj,
             wav_export=False, long_mode=long_reverb_mode, use_user_folder=True,
-            cancel_event=cancel_event, report_progress=3
+            cancel_event=cancel_event, report_progress=3, rise_time=rise_time
         )
         if status_code != 0:
             hf.update_gui_progress(report_progress=3, progress=0.0) # Reset on failure
@@ -3572,7 +3533,17 @@ def start_processing_callback():
 
         # Timestamp for notes
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        notes = f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str}"
+        #notes = f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str}"
+        notes = (
+            f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str} | "
+            f"noise_reduction_mode={noise_reduction_mode}, "
+            f"pitch_range=({pitch_low}, {pitch_high}), "
+            f"long_reverb_mode={long_reverb_mode}, "
+            f"pitch_shift_comp={pitch_shift_comp}, "
+            f"alignment_freq={alignment_freq}Hz, "
+            f"rise_time={rise_time}ms, "
+            f"directions={directions}"
+        )
         description = notes if not description.strip() else f"{description}, {notes}"
         noise_reduction = "Yes" if noise_reduction_mode else "No"
         low_rt60 = "Yes" if not long_reverb_mode else "No"

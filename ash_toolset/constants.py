@@ -332,6 +332,7 @@ THRESHOLD_CROP = 0.0000005#0.0000005 -120db with reference level of 0.5
 
 #Developer settings
 PLOT_ENABLE = False#False
+LOG_MEMORY=False #False
 LOG_INFO=True     
 LOG_GUI=True
 HEAD_TRACK_RUNNING = False
@@ -349,7 +350,9 @@ ORDER=9#8
 F_CROSSOVER = 120#120, default
 EVAL_POLARITY=True#True
 PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
-
+FILTFILT_TDALIGN = False#apply forward reverse filtering in td alignment method?
+FILTFILT_TDALIGN_AIR = False#apply forward reverse filtering in td alignment method?
+FILTFILT_THRESH_F = 45
 #size to hop peak to peak window
 DELAY_WIN_HOP_SIZE = 25#10
 DELAY_WIN_MIN_T = 0
@@ -364,14 +367,25 @@ NUM_INTERVALS = int(np.abs((MAX_T_SHIFT-MIN_T_SHIFT)/T_SHIFT_INTERVAL))
 
 #sub alignment with reverb - neg pol
 T_SHIFT_INTERVAL_N = 10#25
-MIN_T_SHIFT_N = -230#-220
-MAX_T_SHIFT_N = 50#100
+MIN_T_SHIFT_N = -230#-230
+MAX_T_SHIFT_N = 50#50
 NUM_INTERVALS_N = int(np.abs((MAX_T_SHIFT_N-MIN_T_SHIFT_N)/T_SHIFT_INTERVAL_N))
 #sub alignment with reverb - pos pol
 T_SHIFT_INTERVAL_P = 10#25
-MIN_T_SHIFT_P = -230#-220
-MAX_T_SHIFT_P = 50#100
+MIN_T_SHIFT_P = -230#-230
+MAX_T_SHIFT_P = 50#50
 NUM_INTERVALS_P = int(np.abs((MAX_T_SHIFT_P-MIN_T_SHIFT_P)/T_SHIFT_INTERVAL_P))
+
+# #sub alignment with reverb - short window
+# T_SHIFT_INTERVAL_WS = 10#25
+# MIN_T_SHIFT_WS = -230#-220
+# MAX_T_SHIFT_WS = 50#100
+# NUM_INTERVALS_WS = int(np.abs((MAX_T_SHIFT_WS-MIN_T_SHIFT_WS)/T_SHIFT_INTERVAL_WS))
+# #sub alignment with reverb - larger window
+# T_SHIFT_INTERVAL_WL = 10#25
+# MIN_T_SHIFT_WL = -250#-220
+# MAX_T_SHIFT_WL = 100#100
+# NUM_INTERVALS_WL = int(np.abs((MAX_T_SHIFT_WL-MIN_T_SHIFT_WL)/T_SHIFT_INTERVAL_WL))
 
 #reverb alignment with hrir
 T_SHIFT_INTERVAL_R = 25
@@ -389,8 +403,8 @@ DELAY_WIN_MAX_H = 150
 DELAY_WIN_HOPS_H = int((DELAY_WIN_MAX_H-DELAY_WIN_MIN_H)/DELAY_WIN_HOP_SIZE)
 
 #AIR alignment
-CUTOFF_ALIGNMENT_AIR = 110#110
-CUTOFF_ALIGNMENT_TR_AIR = 110#transformation applied cases, 140, 130, 120
+CUTOFF_ALIGNMENT_AIR = 100#110,100
+CUTOFF_ALIGNMENT_TR_AIR = CUTOFF_ALIGNMENT_AIR#transformation applied cases, 140, 130, 120
 PEAK_TO_PEAK_WINDOW_AIR = int(np.divide(SAMP_FREQ,CUTOFF_ALIGNMENT_AIR)*0.95) 
 MIN_T_SHIFT_A = -1000#-1000
 MAX_T_SHIFT_A = 250#250
@@ -421,9 +435,9 @@ INTERIM_ELEVS = 1
 NEAREST_AZ_BRIR_REVERB = 15
 OUTPUT_AZIMS_REVERB = int(360/NEAREST_AZ_BRIR_REVERB)
 
+
 #apply room sorting based on size
 SORT_ROOMS_BY_SIZE=1
-
 #enable shifting of rooms list
 ROLL_ROOM = 0
 
@@ -433,7 +447,7 @@ SPECT_SNAP_F0=160
 SPECT_SNAP_F1=3500#1500
 SPECT_SNAP_M_F0=800#1200
 SPECT_SNAP_M_F1=2100#1800
-IGNORE_MS=50#100
+IGNORE_MS=0#50,100
 #window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
 WINDOW_TYPE=2#1
 ALIGNMENT_METHOD = 5
@@ -825,7 +839,7 @@ HRTF_TYPE_DATASET_DICT = {
 
 #SUB Related
 SUB_FC_SETTING_LIST = ['Auto Select', 'Custom Value']
-SUB_FC_MIN=40
+SUB_FC_MIN=20
 SUB_FC_MAX=150
 SUB_FC_DEFAULT=120
 

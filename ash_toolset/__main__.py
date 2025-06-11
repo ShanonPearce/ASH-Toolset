@@ -481,12 +481,12 @@ def main():
         qc_crossover_f_loaded = safe_get(config, 'qc_crossover_f', int, crossover_f_default)
         qc_sub_response_loaded = safe_get(config, 'qc_sub_response', str, sub_response_default)
         qc_hp_rolloff_comp_loaded = safe_get(config, 'qc_hp_rolloff_comp', bool, hp_rolloff_comp_default)
-        qc_fb_filtering_loaded = safe_get(config, 'qc_fb_filtering', bool, fb_filtering_default)
+        qc_fb_filtering_loaded = safe_get(config, 'qc_fb_filtering_mode', bool, fb_filtering_default)
         crossover_f_mode_loaded = safe_get(config, 'crossover_f_mode', str, crossover_f_mode_default)
         crossover_f_loaded = safe_get(config, 'crossover_f', int, crossover_f_default)
         sub_response_loaded = safe_get(config, 'sub_response', str, sub_response_default)
         hp_rolloff_comp_loaded = safe_get(config, 'hp_rolloff_comp', bool, hp_rolloff_comp_default)
-        fb_filtering_loaded = safe_get(config, 'fb_filtering', bool, fb_filtering_default)
+        fb_filtering_loaded = safe_get(config, 'fb_filtering_mode', bool, fb_filtering_default)
         
 
         
@@ -794,6 +794,23 @@ def main():
         """ 
         GUI function to perform further initial configuration of gui elements
         """
+        
+        # acoustic space manager: Add a logger object inside the child window
+        if CN.SHOW_AS_TAB:
+            import_console_log = logger.mvLogger(parent="import_console_window")
+            dpg.configure_item("import_console_window", user_data=import_console_log)
+            cb.update_ir_folder_list()
+            cb.update_as_table_from_csvs()
+        # #room target manager
+        cb.update_room_target_list()
+        
+        #check for updates on start
+        if auto_check_updates_loaded == True:
+            #start thread
+            thread = threading.Thread(target=cb.check_all_updates, args=(), daemon=True)
+            thread.start()
+
+
         #inital configuration
         #update channel gui elements on load, will also write e-APO config again
         cb.e_apo_select_channels(app_data=dpg.get_value('audio_channels_combo'),aquire_config=False)
@@ -802,7 +819,7 @@ def main():
             dpg.set_value("tab_bar", tab_selected_loaded)
         except Exception:
             pass
-        cb.save_settings()
+        #cb.save_settings()#not needed
         hpcf_is_active=dpg.get_value('e_apo_hpcf_conv')
         brir_is_active=dpg.get_value('e_apo_brir_conv')
         #show hpcf history
@@ -1166,7 +1183,7 @@ def main():
                                                 dpg.add_text("Auto Select mode will select an optimal frequency for the selected acoustic space")
                                             dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='qc_crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=qc_crossover_f_loaded,min_clamped=True, max_clamped=True, callback=cb.qc_update_crossover_f)
                                             with dpg.tooltip("qc_crossover_f"):
-                                                dpg.add_text("Crossover Frequency can be adjusted to a value between 40Hz and 150Hz")
+                                                dpg.add_text("Crossover Frequency can be adjusted to a value between 20Hz and 150Hz")
                                                 dpg.add_text("This can be used to tune the integration of the cleaner subwoofer response and original room response")
                                                 dpg.add_text("Higher values may result in a smoother bass response")
                                             dpg.add_separator()
@@ -1738,7 +1755,7 @@ def main():
                                                 
                                             dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=crossover_f_loaded,min_clamped=True, max_clamped=True, callback=cb.update_crossover_f)
                                             with dpg.tooltip("crossover_f"):
-                                                dpg.add_text("Crossover Frequency can be adjusted to a value between 40Hz and 150Hz")
+                                                dpg.add_text("Crossover Frequency can be adjusted to a value between 20Hz and 150Hz")
                                                 dpg.add_text("This can be used to tune the integration of the cleaner subwoofer response and original room response")
                                                 dpg.add_text("Higher values may result in a smoother bass response")
                                             dpg.add_separator()
@@ -2007,19 +2024,19 @@ def main():
                                         dpg.add_text("Click to open in explorer the folder where the user IRs are stored")
                                         dpg.add_text("IRs should be stored toether in a single subfolder, for example: 'Room A'")
                                         dpg.add_text("Supported file types: wav, sofa, mat, npy, hdf5")
-                                dpg.add_listbox(items=[], label="", tag="ir_folder_list", callback=cb.folder_selected_callback, width=270, num_items=4)
+                                dpg.add_listbox(items=[], label="", tag="ir_folder_list", callback=cb.folder_selected_callback, width=300, num_items=4)
                                 with dpg.tooltip("ir_folder_list"):
                                     dpg.add_text("Choose an IR folder from the list")
                     
                                 dpg.add_text("Name (optional)")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_text(label="", tag="space_name", width=270)
+                                dpg.add_input_text(label="", tag="space_name", width=300)
                                 with dpg.tooltip("space_name"):
                                     dpg.add_text("Enter a name for the new acoustic space. If left blank, folder name will be used")
                     
                                 dpg.add_text("Description (optional)")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_text(label="", tag="space_description", width=270, multiline=True, height=50)
+                                dpg.add_input_text(label="", tag="space_description", width=300, multiline=False, height=50)
                                 with dpg.tooltip("space_description"):
                                     dpg.add_text("Enter a brief description of the acoustic space (optional)")
                                 
@@ -2081,6 +2098,12 @@ def main():
                                         with dpg.tooltip("pitch_shift_comp"):
                                             dpg.add_text("Enable to correct pitch of new directions after expanding dataset")
                                             dpg.add_text("This may introduce artefacts")
+                                        dpg.add_text("Rise Time (ms)")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_input_float(label="", tag="as_rise_time", width=120,default_value=5.0, min_value=0.0, max_value=20.0, format="%.2f",min_clamped=True, max_clamped=True)
+                                        with dpg.tooltip("as_rise_time"):
+                                            dpg.add_text("This will apply a fade in window of specified duration")
+                                            dpg.add_text("Min: 0, Max: 20")
                     
                                 
                     
@@ -2580,29 +2603,12 @@ def main():
     
     logz=logger.mvLogger(parent="console_window")
     dpg.configure_item('console_window',user_data=logz)#store as user data
-    
-    # acoustic space manager: Add a logger object inside the child window
-    if CN.SHOW_AS_TAB:
-        import_console_log = logger.mvLogger(parent="import_console_window")
-        dpg.configure_item("import_console_window", user_data=import_console_log)
-        cb.update_ir_folder_list()
-        cb.update_as_table_from_csvs()
-    # #room target manager
-    # rt_console_log = logger.mvLogger(parent="rt_console_window")
-    # dpg.configure_item("rt_console_window", user_data=rt_console_log)
-    cb.update_room_target_list()
 
     #section to log tool version on startup
     #log results
     log_string = 'Started ASH Toolset - Version: ' + __version__
     hf.log_with_timestamp(log_string, logz)
-    
-    #check for updates on start
-    if auto_check_updates_loaded == True:
-        #start thread
-        thread = threading.Thread(target=cb.check_all_updates, args=(), daemon=True)
-        thread.start()
-
+  
     dpg.show_viewport()
     dpg.set_primary_window("Primary Window", True)
     dpg.configure_item("Primary Window", horizontal_scrollbar=True)

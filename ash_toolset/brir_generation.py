@@ -118,6 +118,8 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         as_folder = CN.extract_column(data=reverb_data, column='folder', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
         
         #filters
+        if f_crossover_var < CN.FILTFILT_THRESH_F:
+            fb_filtering=True#force true if below threshold due to strong delays
         lp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=fb_filtering, b_type='low')
         hp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=fb_filtering, b_type='high')
 
@@ -601,7 +603,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
   
         if CN.ENABLE_SUB_INTEGRATION == True:
         
-            sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var)
+            sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var, fb_filtering)
             
             if report_progress > 0:
                 progress = 60/100
@@ -811,17 +813,47 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
     return brir_out,status
 
 
-def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var):
+def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var, fb_filtering):
     """
     Function performs time domain alignment of sub brir array
     :param sub_brir_ir: numpy array containing sub brirs
     :return: None
     """ 
-
+    #create low pass filter
+    lp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=CN.FILTFILT_TDALIGN, b_type='low')
+    
+    #calculate limits for time domain shifting based on crossover frequency
+    total_shift_quota = int(CN.FS / f_crossover_var)
+    shift_quota_per_pol = int(total_shift_quota / 2)  # Only half size needed due to flipping polarities
+    t_shift_interval = 10
+    
+    # Round min_t_shift down to the nearest multiple of t_shift_interval
+    min_t_shift = int(np.floor((0 - shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
+    # Round max_t_shift up to the nearest multiple of t_shift_interval
+    max_t_shift = int(np.ceil((0 + shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
+    
+    # if fb_filtering == True:#symmetrical case
+    #     # Round min_t_shift down to the nearest multiple of t_shift_interval
+    #     min_t_shift = int(np.floor((0 - shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
+    #     # Round max_t_shift up to the nearest multiple of t_shift_interval
+    #     max_t_shift = int(np.ceil((0 + shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
+    # else:#bias towards lower values
+    #     # Round min_t_shift down to the nearest multiple of t_shift_interval
+    #     min_t_shift = int(np.floor((0 - shift_quota_per_pol * (2/3)) / t_shift_interval) * t_shift_interval)
+    #     # Round max_t_shift up to the nearest multiple of t_shift_interval
+    #     max_t_shift = int(np.ceil((0 + shift_quota_per_pol * (1/3)) / t_shift_interval) * t_shift_interval)
+        
+    # Calculate the number of intervals
+    num_intervals = int(np.abs((max_t_shift - min_t_shift) / t_shift_interval))
+    
+    # print(str(min_t_shift))
+    # print(str(max_t_shift))
+    # print(str(num_intervals))
+    
     peak_to_peak_window = int(np.divide(CN.FS,f_crossover_var)*0.95)
     
-    delay_eval_set_sub_p = np.zeros((CN.NUM_INTERVALS_P))
-    delay_eval_set_sub_n = np.zeros((CN.NUM_INTERVALS_N))
+    delay_eval_set_sub_p = np.zeros((num_intervals))
+    delay_eval_set_sub_n = np.zeros((num_intervals))
 
     #take sum of reference BRIR and Sub BRIR, low pass, compare peak to peak distance in low freqs
     #then calculate distance from peak to peak within a 400 sample window 
@@ -847,15 +879,19 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
     subrir_sample_n = np.multiply(np.copy(sub_brir_ir[0][:]),-1)
 
     #apply low pass before shifting
-    brir_sample_lp = hf.signal_lowpass_filter(brir_sample, f_crossover_var, CN.FS, order_var)
-    subrir_sample_p_lp = hf.signal_lowpass_filter(subrir_sample_p, f_crossover_var, CN.FS, order_var)
-    subrir_sample_n_lp = hf.signal_lowpass_filter(subrir_sample_n, f_crossover_var, CN.FS, order_var)
+    # brir_sample_lp = hf.signal_lowpass_filter(brir_sample, f_crossover_var, CN.FS, order_var)
+    # subrir_sample_p_lp = hf.signal_lowpass_filter(subrir_sample_p, f_crossover_var, CN.FS, order_var)
+    # subrir_sample_n_lp = hf.signal_lowpass_filter(subrir_sample_n, f_crossover_var, CN.FS, order_var)
+    
+    brir_sample_lp = hf.apply_sos_filter(brir_sample, lp_sos, filtfilt=CN.FILTFILT_TDALIGN)
+    subrir_sample_p_lp = hf.apply_sos_filter(subrir_sample_p, lp_sos, filtfilt=CN.FILTFILT_TDALIGN)
+    subrir_sample_n_lp = hf.apply_sos_filter(subrir_sample_n, lp_sos, filtfilt=CN.FILTFILT_TDALIGN)
 
     #run once for positive polarity
-    for delay in range(CN.NUM_INTERVALS_P):
+    for delay in range(num_intervals):
     
         #shift SUBBRIR
-        current_shift = CN.MIN_T_SHIFT_P+(delay*CN.T_SHIFT_INTERVAL_P)
+        current_shift = min_t_shift+(delay*t_shift_interval)
         subrir_shift_c = np.roll(subrir_sample_p_lp,current_shift)
         
         #add (BRIR) to shifted SUBBRIR
@@ -881,10 +917,10 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
     index_shift_p = np.argmax(delay_eval_set_sub_p[:])
     
     #run once for negative polarity
-    for delay in range(CN.NUM_INTERVALS_N):
+    for delay in range(num_intervals):
     
         #shift SUBBRIR
-        current_shift = CN.MIN_T_SHIFT_N+(delay*CN.T_SHIFT_INTERVAL_N)
+        current_shift = min_t_shift+(delay*t_shift_interval)
         subrir_shift_c = np.roll(subrir_sample_n_lp,current_shift)
         
         #add (BRIR) to shifted SUBBRIR
@@ -913,12 +949,12 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
         index_shift=index_shift_p
         sub_polarity=1
         #shift subrir by delay that has largest peak to peak distance
-        samples_shift=CN.MIN_T_SHIFT_P+(index_shift*CN.T_SHIFT_INTERVAL_P)
+        samples_shift=min_t_shift+(index_shift*t_shift_interval)
     else:
         index_shift=index_shift_n
         sub_polarity=-1
         #shift subrir by delay that has largest peak to peak distance
-        samples_shift=CN.MIN_T_SHIFT_N+(index_shift*CN.T_SHIFT_INTERVAL_N)
+        samples_shift=min_t_shift+(index_shift*t_shift_interval)
     
     
     

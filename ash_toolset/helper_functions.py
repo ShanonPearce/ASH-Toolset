@@ -41,6 +41,140 @@ import scipy.signal as signal
 from scipy.stats import linregress
 from os.path import exists
 import concurrent.futures
+from collections import Counter
+
+#memory tracing
+if CN.LOG_MEMORY:
+    import gc
+    import psutil
+    import tracemalloc
+    #from pympler import muppy, summary  # pip install pympler
+    # Start tracemalloc once to avoid overhead later
+    if not tracemalloc.is_tracing():
+        tracemalloc.start()
+
+
+_last_snapshot = None  # Global snapshot for comparison
+
+
+def log_memory_usage(label="Memory Check", log_type=0, top_lines=10, top_arrays=5,
+                     compare_snapshots=False, filter_project="ash_toolset"):
+    """
+    Logs detailed memory diagnostics with optional snapshot comparison and project path filtering.
+    """
+    global _last_snapshot
+    gc.collect()
+    log_with_timestamp(f"{label} - New memory check...", log_type=log_type)
+
+    # Process memory info
+    process = psutil.Process(os.getpid())
+    rss = process.memory_info().rss / 1024 / 1024
+    vms = process.memory_info().vms / 1024 / 1024
+    log_with_timestamp(f"{label} - Total Memory Usage (RSS): {rss:.2f} MB", log_type=log_type)
+    log_with_timestamp(f"{label} - Virtual Memory Size (VMS): {vms:.2f} MB", log_type=log_type)
+
+    # NumPy array tracking
+    numpy_arrays = []
+    total_numpy_bytes = 0
+    skipped_arrays = 0
+
+    for obj in gc.get_objects():
+        try:
+            if isinstance(obj, np.ndarray):
+                total_numpy_bytes += obj.nbytes
+                numpy_arrays.append(obj)
+        except ReferenceError:
+            skipped_arrays += 1
+            continue
+        except Exception:
+            skipped_arrays += 1
+            continue
+
+    numpy_mb = total_numpy_bytes / 1024 / 1024
+    log_with_timestamp(f"{label} - NumPy Arrays Total Memory: {numpy_mb:.2f} MB", log_type=log_type)
+    if skipped_arrays:
+        log_with_timestamp(f"{label} - Skipped {skipped_arrays} NumPy objects due to inspection errors.", log_type=log_type)
+
+    if numpy_arrays:
+        safe_arrays = []
+        for arr in numpy_arrays:
+            try:
+                safe_arrays.append((arr.nbytes, arr))
+            except Exception:
+                continue
+
+        safe_arrays.sort(reverse=True, key=lambda x: x[0])
+        log_with_timestamp(f"{label} - Top {top_arrays} largest NumPy arrays:", log_type=log_type)
+        for i, (size_bytes, arr) in enumerate(safe_arrays[:top_arrays]):
+            try:
+                arr_mb = size_bytes / 1024 / 1024
+                summary_str = f"  {i+1}. Shape: {arr.shape}, Dtype: {arr.dtype}, Size: {arr_mb:.2f} MB"
+                if arr.size > 0:
+                    summary_str += f", Mean: {np.mean(arr):.3f}"
+                log_with_timestamp(summary_str, log_type=log_type)
+            except Exception as e:
+                log_with_timestamp(f"  {i+1}. <Error inspecting array>: {e}", log_type=1)
+
+    # GC stats
+    gen_counts = gc.get_count()
+    log_with_timestamp(f"{label} - GC Object Counts (gen0, gen1, gen2): {gen_counts}", log_type=log_type)
+
+    obj_types = Counter()
+    skipped_types = 0
+    for obj in gc.get_objects():
+        try:
+            obj_types[type(obj).__name__] += 1
+        except ReferenceError:
+            skipped_types += 1
+        except Exception:
+            skipped_types += 1
+
+    log_with_timestamp(f"{label} - Top 5 object types in gc:", log_type=log_type)
+    for i, (typename, count) in enumerate(obj_types.most_common(5)):
+        log_with_timestamp(f"  {i+1}. {typename}: {count}", log_type=log_type)
+    if skipped_types:
+        log_with_timestamp(f"{label} - Skipped {skipped_types} objects during type inspection.", log_type=log_type)
+
+    # # Pympler summary
+    # try:
+    #     all_objects = muppy.get_objects()
+    #     sum_obj = summary.summarize(all_objects)
+    #     log_with_timestamp(f"{label} - Pympler memory summary (top 5):", log_type=log_type)
+    #     for line in list(summary.format_(sum_obj))[:5]:
+    #         log_with_timestamp("  " + line.strip(), log_type=log_type)
+    # except Exception as e:
+    #     log_with_timestamp(f"{label} - Pympler summary skipped: {e}", log_type=1)
+
+    # Tracemalloc snapshot
+    snapshot = tracemalloc.take_snapshot()
+    top_stats = snapshot.statistics('lineno')
+    trace_count = len(snapshot.traces)
+    log_with_timestamp(f"{label} - Tracemalloc traces captured: {trace_count}", log_type=log_type)
+
+    log_with_timestamp(f"{label} - Top {top_lines} memory allocations:", log_type=log_type)
+    for i, stat in enumerate(top_stats[:top_lines]):
+        log_with_timestamp(f"  {i+1}. {stat}", log_type=log_type)
+
+    # Filter by project path
+    if filter_project:
+        project_stats = [s for s in top_stats if filter_project in str(s.traceback)]
+        log_with_timestamp(f"{label} - Top {top_lines} allocations filtered by '{filter_project}':", log_type=log_type)
+        if not project_stats:
+            log_with_timestamp("  None found in specified project path.", log_type=log_type)
+        else:
+            for i, stat in enumerate(project_stats[:top_lines]):
+                log_with_timestamp(f"  P{i+1}. {stat}", log_type=log_type)
+
+    # Snapshot diff
+    if compare_snapshots and _last_snapshot is not None:
+        log_with_timestamp(f"{label} - Comparing with previous snapshot...", log_type=log_type)
+        stats_diff = snapshot.compare_to(_last_snapshot, 'lineno')
+        for i, stat in enumerate(stats_diff[:top_lines]):
+            log_with_timestamp(f"  Δ{i+1}. {stat}", log_type=log_type)
+
+    _last_snapshot = snapshot
+
+
 
 def sort_names_by_values(names, values, descending=False):
     """
@@ -814,15 +948,17 @@ def plot_average_measurements(file_path: str):
 
 
 
+
+
 def expand_measurements_with_pitch_shift(
     measurement_array: np.ndarray,
     desired_measurements: int,
     fs: int = CN.SAMP_FREQ,
     pitch_range: tuple = (0, 24),
     shuffle: bool = False,
-    antialias: bool = True,
+    antialias: bool = False,#disable due to artefacts #unused
     seed=65529189939976765123732762606216328531,
-    plot_sample: int = 0,#0
+    plot_sample: int = 0,#unused
     num_threads: int = 4,
     gui_logger=None,
     cancel_event=None,
@@ -840,14 +976,7 @@ def expand_measurements_with_pitch_shift(
     """
 
     def apply_pitch_shift(ir, fs, n_steps, antialias):
-        if antialias:
-            rate = 2 ** (-n_steps / 12.0)
-            new_sr = int(fs * rate)
-            resampled = librosa.resample(ir, orig_sr=fs, target_sr=new_sr, res_type="kaiser_best")
-            shifted = librosa.effects.pitch_shift(resampled, sr=new_sr, n_steps=n_steps)
-            shifted = librosa.resample(shifted, orig_sr=new_sr, target_sr=fs, res_type="kaiser_best")
-        else:
-            shifted = librosa.effects.pitch_shift(ir, sr=fs, n_steps=n_steps)
+        shifted = librosa.effects.pitch_shift(ir, sr=fs, n_steps=n_steps, res_type="kaiser_best")
         return shifted
 
     measurement_array = measurement_array.astype(np.float64, copy=False)
@@ -855,10 +984,16 @@ def expand_measurements_with_pitch_shift(
     output = np.empty((desired_measurements, sample_len), dtype=np.float64)
     status = 1
     
-    # Convert ms to samples
-    ignore_samples = int((ignore_ms / 1000.0) * fs)
-    if ignore_samples >= sample_len:
-        raise ValueError(f"ignore_samples ({ignore_samples}) must be less than the measurement length ({sample_len})")
+    # Convert ms to fade-in samples
+    fade_in_samples = int((ignore_ms / 1000.0) * fs)
+    if fade_in_samples >= sample_len:
+        raise ValueError(f"fade_in_samples ({fade_in_samples}) must be less than the measurement length ({sample_len})")
+    
+    # Generate fade-in window
+    fade_in_window = np.ones(sample_len)
+    if fade_in_samples > 0:
+        hanning = np.hanning(fade_in_samples * 2)
+        fade_in_window[:fade_in_samples] = hanning[:fade_in_samples]
 
     count_lock = threading.Lock()
     count = 0
@@ -886,7 +1021,7 @@ def expand_measurements_with_pitch_shift(
             f_max = 20000
             # Precompute FFT magnitudes of base measurements once
             #base_mags = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
-            base_mags = np.abs(np.fft.rfft(measurement_array[:, ignore_samples:], n=n_fft, axis=1))
+            base_mags = np.abs(np.fft.rfft(measurement_array * fade_in_window, n=n_fft, axis=1))
             avg_mag = np.mean(base_mags, axis=0)
             # Sample compensation points across pitch range
             pitch_probe_points = np.linspace(pitch_range[0], pitch_range[1], 20)#increase to improve quality
@@ -896,7 +1031,7 @@ def expand_measurements_with_pitch_shift(
             for p in pitch_probe_points:
                 # Pitch shift all base measurements for this probe once
                 shifted_irs = [
-                    apply_pitch_shift(measurement_array[i], fs, p, antialias)[ignore_samples:]
+                    apply_pitch_shift(measurement_array[i], fs, p, antialias)[:sample_len] * fade_in_window
                     for i in range(min(base_n, max_base))
                 ]
                 
@@ -912,7 +1047,7 @@ def expand_measurements_with_pitch_shift(
                 )
                 compensation_filters[p] = impulse
 
-        if plot_sample > 0 and pitch_shift_comp:
+        if CN.PLOT_ENABLE and pitch_shift_comp:
             log_with_timestamp("Plotting compensation curves...", gui_logger)
             import matplotlib.pyplot as plt
             freqs = np.fft.rfftfreq(n_fft, 1 / fs)
@@ -1007,8 +1142,6 @@ def expand_measurements_with_pitch_shift(
         status = 1
 
     return output, status
-
-
 
 
 

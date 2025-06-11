@@ -30,6 +30,8 @@ import time
 from scipy.io import loadmat
 import csv
 import glob
+from typing import Any, Dict, Optional, Tuple, List, Callable
+from scipy.io.matlab import mat_struct
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -272,201 +274,240 @@ def split_airs_to_set(ir_set='fw', gui_logger=None):
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
     
-     
-        
-def create_air_transform_matrix(ir_set='default_set_name', gui_logger=None, transform_desired_samples = 40000):
+  
+
+
+def find_valid_ir_and_sr(obj, gui_logger=None):
     """
-    function to load individual IR files and datasets and inserts into numpy array for later use
-    saves air transform matrix as npy array. irs*n_fft
-    :param ir_set: str, name of impulse response set. Must correspond to a folder in ASH-Toolset\data\raw\ir_data\raw_airs
-    :param num_out_sets: int, number of output sets
-    :return: None
+    Recursively search a MATLAB-loaded object for a valid IR array and sample rate.
+    Prioritizes specific key names and ignores keys containing 'raw', 'meta', or 'info'.
+
+    Args:
+        obj (Any): The MATLAB-loaded object (typically a dict from loadmat).
+        gui_logger (Optional[Callable[[str], None]], optional):
+            Logger object for GUI output. Defaults to None.
+
+    Returns:
+        Tuple[np.ndarray, int, bool]:
+            - fir_array (np.ndarray): The extracted impulse response array.
+            - sample_rate (int): The extracted or fallback sample rate.
+            - inferred_flag (bool): True if sample rate was inferred, False otherwise.
+
+    Raises:
+        ValueError: If no valid impulse response array is found after exhaustive search.
     """
-    
-    
-    #limit number of samples
-    n_fft=CN.N_FFT
-    
-    #param sofa_mode: int, 0 = divide sofa objects evenly among sets, 1 = each sofa object has a corresponding set
-    sofa_mode=0
-        
-    #set noise reduction based on AC space
-    if ir_set in CN.AC_SPACE_LIST_NR:
-        noise_reduction=1
+    fallback_sr = 48000
+    # Prioritize common and unambiguous IR keys
+    preferred_ir_keys = ['ImpulseResponse', 'RIR', 'ir', 'Bformat', 'h', 'W', 'X', 'Y', 'Z'] # Added 'h' as a common variable name
+    # Prioritize common sample rate keys
+    preferred_sr_keys = ['fs', 'samplingrate', 'samplerate', 'sr'] # Added 'samplerate' and 'sr'
+    # Keywords to ignore (case-insensitive) - often denote raw, unprocessed, or metadata
+    ignore_keywords = ['raw', 'meta', 'info', 'calibration', 'config', 'header', 'comments']
+
+
+    def is_valid_ir(arr) -> bool:
+        """
+        Checks if an array is a valid candidate for an impulse response.
+        Must be a NumPy array, floating point, and at least 1-dimensional.
+        We allow 1D here, as etl_airs handles reshaping later.
+        """
+        return isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.floating) and arr.ndim >= 1
+
+    def is_valid_sr(val) -> bool:
+        """
+        Checks if a value is a valid sample rate.
+        Must be convertible to float, and within a reasonable audio sample rate range.
+        """
+        try:
+            sr_val = float(val)
+            # Typical audio sample rates (e.g., 8kHz to 192kHz)
+            return 1000 <= sr_val <= 200000
+        except (ValueError, TypeError):
+            return False
+
+    def flatten_field(field) -> Any:
+        """
+        Recursively flattens single-element NumPy arrays, lists, or tuples.
+        This helps extract the actual content from MATLAB's sometimes wrapped structures.
+        """
+        try:
+            # Handle list/tuple containing single element
+            if isinstance(field, (list, tuple)) and len(field) == 1:
+                return flatten_field(field[0]) # Recurse on the single element
+
+            # Handle single-element numpy arrays
+            while isinstance(field, np.ndarray) and field.size == 1:
+                field = field.item() # Extract the scalar value
+            return field
+        except Exception as e:
+            hf.log_with_timestamp(f"[DEBUG] Failed to flatten field: {field} (type: {type(field)}). Error: {e}", gui_logger)
+            return field # Return original if flattening fails
+
+    # Use lists to store all found candidates, along with their preference status and key
+    # This allows for a final prioritization step after searching the entire structure.
+    found_irs: List[Tuple[np.ndarray, bool, str]] = [] # (ir_array, is_preferred_key, original_key)
+    found_srs: List[Tuple[int, bool, str]] = []     # (sample_rate, is_preferred_key, original_key)
+
+    # Stack for Depth-First Search (DFS) traversal: elements are (key, value) tuples
+    stack: List[Tuple[Optional[str], Any]] = []
+
+    # Initialize stack with the top-level object, handling its type
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            stack.append((k, v))
+        hf.log_with_timestamp(f"[DEBUG] Initial object is a dictionary with {len(obj)} items.", gui_logger)
+    elif isinstance(obj, mat_struct):
+        for k in obj._fieldnames:
+            try:
+                stack.append((k, getattr(obj, k)))
+            except AttributeError:
+                hf.log_with_timestamp(f"[WARNING] Top-level mat_struct field '{k}' not accessible, skipping.", gui_logger)
+        hf.log_with_timestamp(f"[DEBUG] Initial object is a mat_struct with {len(obj._fieldnames)} fields.", gui_logger)
     else:
-        noise_reduction=0
-        
-    samp_freq_ash=CN.SAMP_FREQ
+        hf.log_with_timestamp(f"[INFO] Top-level object is not a dict or mat_struct (type: {type(obj)}). Attempting to process as a direct value.", gui_logger)
+        # If the top-level object itself is an IR or SR, add it as a candidate
+        obj_flat = flatten_field(obj)
+        if is_valid_ir(obj_flat):
+            found_irs.append((obj_flat, False, "root_value"))
+            hf.log_with_timestamp(f"[INFO] Found root object as potential IR with shape {obj_flat.shape}.", gui_logger)
+        elif is_valid_sr(obj_flat):
+            found_srs.append((int(float(obj_flat)), False, "root_value"))
+            hf.log_with_timestamp(f"[INFO] Found root object as potential SR: {int(float(obj_flat))}.", gui_logger)
 
-    total_chan_air=1
-    output_wavs=1
-    air_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'air_transform',ir_set)
-    #loop through folders
-    ir_data_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'air_transform',ir_set)
+    hf.log_with_timestamp(f"[INFO] Starting recursive search for IR and Sample Rate.", gui_logger)
 
-    try:
-        log_string_a = 'Starting create_air_transform_matrix processing for: '+ir_set
-        hf.log_with_timestamp(log_string_a, gui_logger)
+    while stack:
+        key, val = stack.pop() # Pop from the stack for DFS
+        #hf.log_with_timestamp(f"[DEBUG] Inspecting key: '{key}' (type: {type(val)}).", gui_logger)
 
-        #
-        #get number of IRs to define size of dataset
-        #
-        total_irs=0#also count individual channels
-        total_sofa_obj=0
-        total_irs_per_sofa=0
-        min_irs_per_sofa=10000
+        # Skip common MATLAB internal/metadata keys
+        if key and (key.startswith('__') or key.startswith('_sa_') or key.startswith('__header__')):
+            #hf.log_with_timestamp(f"[DEBUG] Skipping MATLAB internal key: '{key}'.", gui_logger)
+            continue
 
-        for root, dirs, files in os.walk(ir_data_folder):
-            for filename in files:
+        # Flatten the current value to expose underlying data
+        val_flat = flatten_field(val)
 
-      
-                if '.npy' in filename:
-                    #total_irs=total_irs+1#assume 1 channel per npy
-                    
-                    #read npy file
-                    npy_fname = pjoin(root, filename)
-                    fir_array = np.load(npy_fname)
-                    shape = fir_array.shape
-                    n_dims= fir_array.ndim
-                    # Sampling rate
-                    samplerate = 44100
-                        
-                    summary_string = hf.summarize_array(fir_array)
-                    log_string_a = 'loaded: '+filename + ', array structure: '+summary_string
-                    hf.log_with_timestamp(log_string_a, gui_logger)
-                    
-      
-                    #convert to 2 dimensions: IRs x samples
-                    air_data_2d = hf.reshape_array_to_two_dims(fir_array)
-                    
-                    input_meas = len(air_data_2d)
-                        
-                    total_irs=total_irs+input_meas
-                    
-                    log_string_a = 'npy data_ir shape: ' + str(shape) + ', Input Dimensions: ' + str(n_dims) + ', source samplerate: ' + str(samplerate) + ', input_meas: ' + str(input_meas)
-                    hf.log_with_timestamp(log_string_a, gui_logger)   
-            
-      
+        # Check for keywords to ignore in the key name (case-insensitive)
+        if key is not None:
+            key_lower = key.lower()
+            if any(ignore_kw in key_lower for ignore_kw in ignore_keywords):
+                hf.log_with_timestamp(f"[INFO] Ignoring value for key '{key}' due to ignore keyword match.", gui_logger)
+                continue # Skip processing this branch further
 
+            # Check if current value is a valid Sample Rate candidate
+            if is_valid_sr(val_flat):
+                sr_is_preferred = any(pk.lower() == key_lower for pk in preferred_sr_keys)
+                found_srs.append((int(float(val_flat)), sr_is_preferred, key))
+                hf.log_with_timestamp(f"[INFO] Found potential sample rate {int(float(val_flat))} for key '{key}' (Preferred: {sr_is_preferred}).", gui_logger)
+            # else:
+            #     hf.log_with_timestamp(f"[DEBUG] Value for key '{key}' is not a valid sample rate (value: {val_flat}).", gui_logger)
 
+            # Check if current value is a valid Impulse Response candidate
+            if is_valid_ir(val_flat):
+                ir_is_preferred = any(pk.lower() == key_lower for pk in preferred_ir_keys)
+                found_irs.append((val_flat, ir_is_preferred, key))
+                hf.log_with_timestamp(f"[INFO] Found potential IR in key '{key}' with shape {val_flat.shape} (Preferred: {ir_is_preferred}).", gui_logger)
+            # else:
+            #     hf.log_with_timestamp(f"[DEBUG] Value for key '{key}' is not a valid IR type (type: {type(val_flat)}, ndim: {getattr(val_flat, 'ndim', 'N/A')}, dtype: {getattr(val_flat, 'dtype', 'N/A')}).", gui_logger)
 
-        max_irs=CN.MAX_IRS_TRANSFORM
-        total_irs = min(total_irs,max_irs)
-        #set limits
-        num_out_sets=1
-        #numpy array, num sets x num irs in each set x y channels x NFFT max samples
-        irs_per_set=total_irs
-        
-        
-        log_string_a =  ' irs_per_set: ' + str(irs_per_set) + ', num_out_sets: ' + str(num_out_sets)  + ', total_irs: ' + str(total_irs)
-        hf.log_with_timestamp(log_string_a, gui_logger)
-            
-        
-        log_string_a = 'num_out_sets: ' + str(num_out_sets) + ', total_irs: ' + str(total_irs)
-        hf.log_with_timestamp(log_string_a, gui_logger)
-        
- 
-        
+        # Recurse into nested structures (dicts, mat_structs, structured arrays, lists/tuples of objects)
+        if isinstance(val_flat, dict):
+            #hf.log_with_timestamp(f"[DEBUG] Recursing into dictionary for key '{key}' with {len(val_flat)} items.", gui_logger)
+            for k, v in val_flat.items():
+                stack.append((k, v))
+        elif isinstance(val_flat, mat_struct):
+            #hf.log_with_timestamp(f"[DEBUG] Recursing into mat_struct for key '{key}' with {len(val_flat._fieldnames)} fields.", gui_logger)
+            for k in val_flat._fieldnames:
+                try:
+                    stack.append((k, getattr(val_flat, k)))
+                except AttributeError:
+                    hf.log_with_timestamp(f"[WARNING] Mat_struct field '{k}' not accessible in '{key}', skipping.", gui_logger)
+        elif isinstance(val_flat, np.ndarray) and val_flat.dtype.names: # Structured numpy array
+            #hf.log_with_timestamp(f"[DEBUG] Recursing into structured numpy array for key '{key}' with fields: {val_flat.dtype.names}.", gui_logger)
+            for name in val_flat.dtype.names:
+                try:
+                    # Flatten each structured array field before pushing to stack
+                    stack.append((name, flatten_field(val_flat[name])))
+                except Exception as e:
+                    hf.log_with_timestamp(f"[WARNING] Failed to access structured array field '{name}' in '{key}': {e}", gui_logger)
+        elif isinstance(val_flat, (list, tuple)) and len(val_flat) > 0:
+            # Iterate through lists/tuples, pushing non-primitive elements to stack
+            #hf.log_with_timestamp(f"[DEBUG] Recursing into list/tuple for key '{key}' with {len(val_flat)} elements.", gui_logger)
+            for idx, item in enumerate(val_flat):
+                # Only push if it's a compound type (dict, mat_struct, np.ndarray)
+                # or if it's a list/tuple that could contain more structures
+                if isinstance(item, (dict, mat_struct, np.ndarray)) or \
+                   (isinstance(item, (list, tuple)) and len(item) > 0):
+                    # Use a descriptive key for list/tuple elements if available, otherwise None
+                    item_key = f"{key}[{idx}]" if key else f"list_item_{idx}"
+                    stack.append((item_key, item))
+        # For other types (scalars, non-structured arrays already checked by is_valid_ir, etc.), stop recursing.
 
-        
-        #convert to 2 dimensions: IRs x samples
-        #already converted
-        #transform_desired_samples = 40000#44000
-        air_data_2d = hf.crop_samples(arr=air_data_2d, crop_length=transform_desired_samples)
-        air_data_2d = hf.crop_measurements(arr=air_data_2d, max_measurements=total_irs)
-        
-        # #also save to wav for testing
-        # if output_wavs == 1:
-        #     trans_n, trans_sample_len = air_data_2d.shape
-        #     for trans_num in range(trans_n):
-        #         out_file_name = 'reference_'+ir_set+'_'+str(trans_num)+'.wav'
-        #         out_file_path = pjoin(air_out_folder,out_file_name)
-        #         #create dir if doesnt exist
-        #         output_file = Path(out_file_path)
-        #         output_file.parent.mkdir(exist_ok=True, parents=True)
-        #         out_wav_array=np.zeros((transform_desired_samples,1))
-        #         #grab BRIR
-        #         out_wav_array[:,0] = np.copy(air_data_2d[trans_num,:])#2nd last transform array, all frequencies
-        #         hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=0, samplerate=samp_freq_ash)
-        
+    # --- Final selection logic based on all found candidates ---
+    hf.log_with_timestamp(f"[INFO] Search complete. Found {len(found_irs)} potential IRs and {len(found_srs)} potential SRs.", gui_logger)
 
-        #create transform matrix using frequency series            
-        air_transform_matrix = hf.create_transform_matrix_series(air_data_2d, print_last_row=True, crop_samples=transform_desired_samples)   #50000              
-                
-        # #change to 32 bit
-        # if air_transform_matrix.dtype == np.float64:
-        #     air_transform_matrix = air_transform_matrix.astype(np.float32)
-        
-        #balance RMS levels at ends - loss of precision
-        #air_transform_matrix = hf.balance_rms_fade(air_transform_matrix)
-        
-        #apply fading too
-        air_transform_matrix = hf.apply_fade_to_matrix(air_transform_matrix,fade_in_samples=100,fade_out_samples=100)
-        
-        #average groups of measurements - reduces size but also reduces variations
-        #air_transform_matrix = hf.average_measurement_groups(air_transform_matrix, group_size=3, shuffle=True, seed=5)
-        
-        
+    # Select the best Impulse Response: Prioritize preferred keys, then the first one found
+    final_fir_array: Optional[np.ndarray] = None
 
-        #save full size array (not combined)
-        npy_file_name = ir_set+'_transform_matrix.npy'
-        out_file_path = pjoin(air_out_folder,npy_file_name)      
-        #create dir if doesnt exist 
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        np.save(out_file_path,air_transform_matrix)
-        
-        log_string_a = 'Exported numpy file to: ' + out_file_path 
-        hf.log_with_timestamp(log_string_a, gui_logger)
-        
-        #debugging
-        time.sleep(3)
-        before=air_transform_matrix
-        after = np.load(out_file_path)
-        mean_row_before = np.mean(before[:], axis=0)
-        mean_deviation_before = np.mean(np.abs(mean_row_before))
-        print("mean_deviation_before saving:",mean_deviation_before)
-        mean_row_after = np.mean(after[:], axis=0)
-        mean_deviation_after = np.mean(np.abs(mean_row_after))
-        print("mean_deviation_after loading:", mean_deviation_after)
-        
-        # Sanity check and re-center if needed
-        residual_mean = np.mean(before[:], axis=0)
-        max_residual = np.max(np.abs(residual_mean))
-        print(f"Residual mean before saving (max abs): {max_residual:.2e}")
-        residual_mean = np.mean(after[:], axis=0)
-        max_residual = np.max(np.abs(residual_mean))
-        print(f"Residual mean after saving (max abs): {max_residual:.2e}")
-        print(before.dtype)
-        print(after.dtype)
-        
-        #also save to wav for testing
-        if output_wavs == 1:
-            trans_n, trans_sample_len = air_transform_matrix.shape
-            for trans_num in range(trans_n):
-                out_file_name = 'transform_'+ir_set+'_'+str(trans_num)+'.wav'
-                out_file_path = pjoin(air_out_folder,out_file_name)
-                #create dir if doesnt exist
-                output_file = Path(out_file_path)
-                output_file.parent.mkdir(exist_ok=True, parents=True)
-                out_wav_array=np.zeros((trans_sample_len,1))
-                #grab BRIR
-                out_wav_array[:,0] = np.copy(air_transform_matrix[trans_num,:])#2nd last transform array, all frequencies
-                hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash)
-
+    # Attempt to construct B-format IR if all components are found
+    b_format_keys = ['W', 'X', 'Y', 'Z']
+    b_format_map = {k.upper(): None for k in b_format_keys}
     
-    except Exception as ex:
-        log_string = 'Failed to complete AIR set processing for: ' + ir_set 
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-        
-                
- 
+    for arr, _, key in found_irs:
+        if key and key.upper() in b_format_map and is_valid_ir(arr):
+            b_format_map[key.upper()] = arr
     
- 
+    if all(b_format_map[k] is not None for k in b_format_keys):
+        try:
+            # Check all arrays have the same length
+            lengths = [arr.shape[-1] for arr in b_format_map.values()]
+            if len(set(lengths)) == 1:
+                combined_b_format = np.stack([b_format_map[k] for k in b_format_keys], axis=0)
+                final_fir_array = combined_b_format
+                hf.log_with_timestamp(
+                    f"[INFO] Constructed B-format IR from keys {b_format_keys} with shape {final_fir_array.shape}.",
+                    gui_logger
+                )
+            else:
+                hf.log_with_timestamp(
+                    f"[WARNING] B-format IR components found, but they have mismatched lengths: {lengths}. Skipping B-format construction.",
+                    gui_logger
+                )
+        except Exception as e:
+            hf.log_with_timestamp(
+                f"[ERROR] Failed to construct B-format IR: {e}",
+                gui_logger
+            )
     
+    # If B-format not successfully constructed, fall back to best single IR
+    if final_fir_array is None:
+        if found_irs:
+            found_irs.sort(key=lambda x: x[1], reverse=True)
+            final_fir_array = found_irs[0][0]
+            hf.log_with_timestamp(f"[INFO] Selected IR from key '{found_irs[0][2]}' with shape {final_fir_array.shape}.", gui_logger)
+        else:
+            error_msg = "No valid impulse response array found in the .mat file after exhaustive search."
+            hf.log_with_timestamp(f"[ERROR] {error_msg}", gui_logger)
+            raise ValueError(error_msg)
+
+    # Select the best Sample Rate: Prioritize preferred keys, then the first one found
+    final_sample_rate: int
+    final_inferred_flag: bool
+
+    if found_srs:
+        found_srs.sort(key=lambda x: x[1], reverse=True)
+        final_sample_rate = found_srs[0][0]
+        final_inferred_flag = False
+        hf.log_with_timestamp(f"[INFO] Selected sample rate {final_sample_rate} from key '{found_srs[0][2]}'.", gui_logger)
+    else:
+        final_sample_rate = fallback_sr
+        final_inferred_flag = True
+        hf.log_with_timestamp(f"[WARNING] Sample rate not found after search, falling back to default {fallback_sr}. (Inferred)", gui_logger)
+
+    return final_fir_array, final_sample_rate, final_inferred_flag
 
 
-#     return air_data
 
 def etl_airs(
     folder_path,
@@ -520,11 +561,12 @@ def etl_airs(
 
             # Load .mat file
             if ftype == 'mat':
-                mat = loadmat(path)
-                ir = next((v for v in mat.values() if isinstance(v, np.ndarray) and v.ndim >= 2), None)
-                if ir is None:
-                    raise ValueError(f"No valid IR array found in {path}")
-                ir = np.array(ir)
+                data = loadmat(path, squeeze_me=True, struct_as_record=False)
+                ir, samplerate, inferred_sr = find_valid_ir_and_sr(data, gui_logger=None)
+                ir = hf.reshape_array_to_two_dims(ir)
+                hf.log_with_timestamp(f"Loaded MAT file '{os.path.basename(path)}' with shape {ir.shape}, SR={samplerate}", gui_logger)
+                if inferred_sr:
+                    hf.log_with_timestamp(f"[Warning] Sample rate inferred as 48000 Hz for '{os.path.basename(path)}' — not found in file.", gui_logger, log_type=1)
 
             # Load .wav file
             elif ftype == 'wav':
@@ -559,8 +601,8 @@ def etl_airs(
             # Load .npy file
             elif ftype == 'npy':
                 ir = np.load(path)
-                if ir.ndim == 1:
-                    ir = ir[np.newaxis, :]
+                ir = hf.reshape_array_to_two_dims(ir)
+   
 
             else:
                 raise ValueError(f"Unsupported file type: {ftype}")
@@ -856,8 +898,6 @@ def prepare_air_dataset(
             if f_alignment <= 0:
                 if ir_set in CN.AC_SPACE_LIST_SUB:
                     cutoff_alignment = CN.CUTOFF_ALIGNMENT_SUBRIR
-                elif apply_transform == 1:
-                    cutoff_alignment = CN.CUTOFF_ALIGNMENT_TR_AIR
                 else:
                     cutoff_alignment = CN.CUTOFF_ALIGNMENT_AIR
             else:
@@ -865,7 +905,7 @@ def prepare_air_dataset(
 
             peak_to_peak_window = int(np.divide(samp_freq_ash, cutoff_alignment) * 1.0)
             delay_eval_set = np.zeros((total_measurements, num_intervals))
-            lp_sos = hf.get_filter_sos(cutoff=cutoff_alignment, fs=CN.FS, order=order, filtfilt=False, b_type='low')
+            lp_sos = hf.get_filter_sos(cutoff=cutoff_alignment, fs=CN.FS, order=order, filtfilt=CN.FILTFILT_TDALIGN_AIR, b_type='low')
 
             align_start_time = time.time()
             log_string_a = f"Starting time-domain alignment for {total_measurements} impulse responses..."
@@ -996,8 +1036,8 @@ def align_ir_2d(
         return
 
     # Filter both IRs
-    prior_lp = hf.apply_sos_filter(prior_airs, lp_sos, filtfilt=False)
-    this_lp = hf.apply_sos_filter(this_air, lp_sos, filtfilt=False)
+    prior_lp = hf.apply_sos_filter(prior_airs, lp_sos, filtfilt=CN.FILTFILT_TDALIGN_AIR)
+    this_lp = hf.apply_sos_filter(this_air, lp_sos, filtfilt=CN.FILTFILT_TDALIGN_AIR)
 
     # Generate shifted versions
     shifts = min_t_shift + np.arange(num_intervals) * t_shift_interval
@@ -1038,7 +1078,7 @@ def convert_airs_to_brirs(
     gui_logger=None,
     use_user_folder=False,
     wav_export=False,
-    long_mode=False, report_progress=0, cancel_event=None
+    long_mode=False, report_progress=0, cancel_event=None, distr_mode=0, rise_time=5.1
 ):
     """
     Converts a dataset of Ambisonic Impulse Responses (AIRs) into Binaural Room Impulse Responses (BRIRs)
@@ -1060,6 +1100,8 @@ def convert_airs_to_brirs(
         If True, exports resulting BRIRs to WAV files.
     long_mode : bool, default=False
         If True, use longer AIR processing with extended convolution (intended for high-reverb datasets).
+    long_mode : int, default=0
+        If 0 distributes measurements into contiguous blocks, if 1 distributes round-robin style
 
     Returns:
        Status code: 0 = Success, 1 = Failure, 2 = Cancelled
@@ -1090,7 +1132,8 @@ def convert_airs_to_brirs(
     if ir_set in CN.AC_SPACE_LIST_SLOWRISE:
         direct_hanning_size=1000#    
     else:
-        direct_hanning_size=450#
+        rise_samples = int((rise_time / 1000.0) * samp_freq_ash)
+        direct_hanning_size=rise_samples*2#
     direct_hanning_start=51#
     hann_direct_full=np.hanning(direct_hanning_size)
     hann_direct = np.split(hann_direct_full,2)[0]
@@ -1138,20 +1181,6 @@ def convert_airs_to_brirs(
         #
         #load HRIR dataset
         #
-
-        #dont use due to high pass
-        # hrir_dir_base = CN.DATA_DIR_HRIR_NPY_DH
-        # sub_directory = 'm'
-        # dataset='TU-BERLIN'
-        # hrtf='TU-FABIAN'
-        # #join spatial res subdirectory
-        # hrir_dir_sr = pjoin(hrir_dir_base, sub_directory)
-        # # Create dataset subdirectory
-        # hrir_dir_ds = pjoin(hrir_dir_sr, dataset)
-        # # full filename
-        # npy_fname = pjoin(hrir_dir_ds, f"{hrtf}.npy")
-        
-        #npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.npy')
         
         try:
             npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_TU-FABIAN.npy')
@@ -1216,8 +1245,14 @@ def convert_airs_to_brirs(
             plot_distribution=False
         )
         
-        # Split measurements evenly across sources
-        measurements_per_source = np.array_split(np.arange(total_measurements), num_brir_sources)
+        if distr_mode == 0:
+            # Split measurements evenly across sources
+            measurements_per_source = np.array_split(np.arange(total_measurements), num_brir_sources)
+        else:
+            # Distribute measurements round-robin across sources (as lists)
+            measurements_per_source = [[] for _ in range(num_brir_sources)]
+            for i in range(total_measurements):
+                measurements_per_source[i % num_brir_sources].append(i)
         
         # Distribution index counter
         dist_counter = 0
