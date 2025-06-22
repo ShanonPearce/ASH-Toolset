@@ -2177,8 +2177,8 @@ def main():
                         
                                     #dpg.add_table_column(label="")  # Selectable column (no header)
                                     dpg.add_table_column(label="Name", init_width_or_weight=100)
-                                    dpg.add_table_column(label="RT60 (ms)", init_width_or_weight=50)
-                                    dpg.add_table_column(label="Description", init_width_or_weight=250)
+                                    dpg.add_table_column(label="RT60 (ms)", init_width_or_weight=30)
+                                    dpg.add_table_column(label="Description", init_width_or_weight=270)
                     
                             # Panel 3 - Right (Logger)
                             with dpg.child_window(width=1285, height=296, tag="import_console_window"):

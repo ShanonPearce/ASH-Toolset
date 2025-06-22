@@ -1569,13 +1569,14 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     brir_dict_params=get_brir_dict()
     
     #calculate name
-    room_target = brir_dict_params.get("room_target")
-    direct_gain_db = brir_dict_params.get("direct_gain_db")
-    pinna_comp = brir_dict_params.get("pinna_comp")
-    brir_hrtf_short=brir_dict_params.get('brir_hrtf_short')
-    ac_space_short= brir_dict_params.get("ac_space_short")
-    brir_name = brir_hrtf_short + '_'+ac_space_short + '_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
-    
+    # room_target = brir_dict_params.get("room_target")
+    # direct_gain_db = brir_dict_params.get("direct_gain_db")
+    # pinna_comp = brir_dict_params.get("pinna_comp")
+    # brir_hrtf_short=brir_dict_params.get('brir_hrtf_short')
+    # ac_space_short= brir_dict_params.get("ac_space_short")
+    # brir_name = brir_hrtf_short + '_'+ac_space_short + '_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
+    #20250622: fix name related bug
+    brir_name = calc_brir_set_name(full_name=False,tab=1)
     
 
     
@@ -1891,36 +1892,61 @@ def qc_process_brirs(use_dict_list=False):
     if activated:
         qc_lf_analyse_toggle(app_data=activated)
 
-def calc_brir_set_name(full_name=True):
+def calc_brir_set_name(full_name=True,tab=0):
     """ 
     GUI function to calculate brir set name from currently selected parameters
     """
 
-    
-    brir_dict=get_brir_dict()
-    
-    room_target_name = brir_dict.get("qc_room_target")
-    target_name_short = CN.ROOM_TARGETS_DICT[room_target_name]["short_name"]
-    
-    direct_gain_db = brir_dict.get("qc_direct_gain_db")
-    ac_space_short = brir_dict.get("qc_ac_space_short")
-    pinna_comp = brir_dict.get("qc_pinna_comp")
-    sample_rate = brir_dict.get("qc_samp_freq_str")
-    bit_depth = brir_dict.get("qc_bit_depth_str")
-    hrtf_symmetry = brir_dict.get("hrtf_symmetry")
-    er_delay_time = brir_dict.get("er_delay_time")
-    qc_brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
-    
-    qc_crossover_f=brir_dict.get('qc_crossover_f')
-    qc_sub_response=brir_dict.get('qc_sub_response')
-    qc_sub_response_short=brir_dict.get('qc_sub_response_short')
-    qc_hp_rolloff_comp=brir_dict.get('qc_hp_rolloff_comp')
-    qc_fb_filtering=brir_dict.get('qc_fb_filtering')
-    
-    if full_name==True:
-        brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + target_name_short + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(qc_crossover_f) + ' ' + str(qc_sub_response) + ' ' + str(qc_hp_rolloff_comp) + ' ' + str(qc_fb_filtering) 
-    else:
-        brir_name = qc_brir_hrtf_short + ', '+ac_space_short + ', ' + str(direct_gain_db) + 'dB, ' + target_name_short + ', ' + qc_sub_response_short+ '-' +str(qc_crossover_f) + ', ' + CN.HP_COMP_LIST_SHORT[pinna_comp] 
+    if tab == 0:#quick config tab
+        brir_dict=get_brir_dict()
+        
+        room_target_name = brir_dict.get("qc_room_target")
+        target_name_short = CN.ROOM_TARGETS_DICT[room_target_name]["short_name"]
+        
+        direct_gain_db = brir_dict.get("qc_direct_gain_db")
+        ac_space_short = brir_dict.get("qc_ac_space_short")
+        pinna_comp = brir_dict.get("qc_pinna_comp")
+        sample_rate = brir_dict.get("qc_samp_freq_str")
+        bit_depth = brir_dict.get("qc_bit_depth_str")
+        hrtf_symmetry = brir_dict.get("hrtf_symmetry")
+        er_delay_time = brir_dict.get("er_delay_time")
+        qc_brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
+        
+        qc_crossover_f=brir_dict.get('qc_crossover_f')
+        qc_sub_response=brir_dict.get('qc_sub_response')
+        qc_sub_response_short=brir_dict.get('qc_sub_response_short')
+        qc_hp_rolloff_comp=brir_dict.get('qc_hp_rolloff_comp')
+        qc_fb_filtering=brir_dict.get('qc_fb_filtering')
+        
+        if full_name==True:
+            brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + target_name_short + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(qc_crossover_f) + ' ' + str(qc_sub_response) + ' ' + str(qc_hp_rolloff_comp) + ' ' + str(qc_fb_filtering) 
+        else:
+            brir_name = qc_brir_hrtf_short + ', '+ac_space_short + ', ' + str(direct_gain_db) + 'dB, ' + target_name_short + ', ' + qc_sub_response_short+ '-' +str(qc_crossover_f) + ', ' + CN.HP_COMP_LIST_SHORT[pinna_comp] 
+
+    else:#filter and dataset tab
+        brir_dict=get_brir_dict()
+        
+        room_target_name = brir_dict.get("room_target")
+        target_name_short = CN.ROOM_TARGETS_DICT[room_target_name]["short_name"]
+        
+        direct_gain_db = brir_dict.get("direct_gain_db")
+        ac_space_short = brir_dict.get("ac_space_short")
+        pinna_comp = brir_dict.get("pinna_comp")
+        sample_rate = brir_dict.get("samp_freq_str")
+        bit_depth = brir_dict.get("bit_depth_str")
+        hrtf_symmetry = brir_dict.get("hrtf_symmetry")
+        er_delay_time = brir_dict.get("er_delay_time")
+        brir_hrtf_short=brir_dict.get('brir_hrtf_short')
+        
+        crossover_f=brir_dict.get('crossover_f')
+        sub_response=brir_dict.get('sub_response')
+        sub_response_short=brir_dict.get('sub_response_short')
+        hp_rolloff_comp=brir_dict.get('hp_rolloff_comp')
+        fb_filtering=brir_dict.get('fb_filtering')
+        
+        brir_name = brir_hrtf_short + ', '+ac_space_short + ', ' + str(direct_gain_db) + 'dB, ' + target_name_short + ', ' + sub_response_short+ '-' +str(crossover_f) + ', ' + CN.HP_COMP_LIST_SHORT[pinna_comp] 
+
+        
 
     return brir_name
 
@@ -3535,7 +3561,7 @@ def start_processing_callback():
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         #notes = f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str}"
         notes = (
-            f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str} | "
+            f"Created with ASH Toolset {__version__} on {timestamp_str} | "
             f"noise_reduction_mode={noise_reduction_mode}, "
             f"pitch_range=({pitch_low}, {pitch_high}), "
             f"long_reverb_mode={long_reverb_mode}, "
