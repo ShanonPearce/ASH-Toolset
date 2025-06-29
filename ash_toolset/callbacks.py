@@ -1300,22 +1300,7 @@ def select_sub_brir(sender, app_data):
     sub_response=app_data
     
     #run plot
-    try:
-        
-        file_name = brir_generation.get_sub_f_name(sub_response=sub_response, gui_logger=logz)
-        npy_fname = pjoin(CN.DATA_DIR_SUB, file_name+'.npy')
-        sub_brir_npy = hf.load_convert_npy_to_float64(npy_fname)
-        sub_brir_ir = np.zeros(CN.N_FFT)
-        sub_brir_ir[0:CN.N_FFT] = sub_brir_npy[0][0:CN.N_FFT]
-        data_fft = np.fft.fft(sub_brir_ir)
-        sub_mag=np.abs(data_fft)
-    
-        plot_tile = sub_response
-        hf.plot_data(sub_mag, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, y_lim_a=-8, y_lim_b=8, x_lim_adjust = 1,x_lim_a=10, x_lim_b=150, save_plot=0, normalise=1, plot_type=1)
-
-
-    except:
-        pass
+    plot_sub_brir(sub_response,1)
 
     #reset progress bar
     update_brir_param()
@@ -1329,25 +1314,43 @@ def qc_select_sub_brir(sender, app_data):
     sub_response=app_data
     
     #run plot
+    plot_sub_brir(sub_response,2)
+
+    #reset progress bar
+    qc_update_brir_param()
+    
+def plot_sub_brir(name, plot_type):
+    
+    #run plot
     try:
         
-        file_name = brir_generation.get_sub_f_name(sub_response=sub_response, gui_logger=logz)
-        npy_fname = pjoin(CN.DATA_DIR_SUB, file_name+'.npy')
+        sub_data=CN.sub_data
+        sub_file_name = CN.extract_column(data=sub_data, column='file_name', condition_key='name_gui', condition_value=name, return_all_matches=False)
+        sub_folder = CN.extract_column(data=sub_data, column='folder', condition_key='name_gui', condition_value=name, return_all_matches=False)
+        #file_name = get_sub_f_name(sub_response=sub_response, gui_logger=gui_logger)
+        if sub_folder == 'sub' or sub_folder == 'lf_brir':#default sub responses
+            npy_fname = pjoin(CN.DATA_DIR_SUB, sub_file_name+'.npy')
+        else:#user sub response
+            file_folder = pjoin(CN.DATA_DIR_AS_USER,name)
+            npy_fname = pjoin(file_folder, sub_file_name+'.npy')
+        
         sub_brir_npy = hf.load_convert_npy_to_float64(npy_fname)
         sub_brir_ir = np.zeros(CN.N_FFT)
-        sub_brir_ir[0:CN.N_FFT] = sub_brir_npy[0][0:CN.N_FFT]
+        available_samples = min(CN.N_FFT, sub_brir_npy.shape[-1])
+        sub_brir_ir[:available_samples] = sub_brir_npy[0, :available_samples]
+        #sub_brir_ir[0:CN.N_FFT] = sub_brir_npy[0][0:CN.N_FFT]
         data_fft = np.fft.fft(sub_brir_ir)
         sub_mag=np.abs(data_fft)
     
-        plot_tile = sub_response
-        hf.plot_data(sub_mag, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, y_lim_a=-8, y_lim_b=8, x_lim_adjust = 1,x_lim_a=10, x_lim_b=150, save_plot=0, normalise=1, plot_type=2)
+        plot_tile = name
+        hf.plot_data(sub_mag, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, y_lim_a=-8, y_lim_b=8, x_lim_adjust = 1,x_lim_a=10, x_lim_b=150, save_plot=0, normalise=1, plot_type=plot_type)
 
 
     except:
         pass
-
-    #reset progress bar
-    qc_update_brir_param()
+    
+    
+    
 
 
 def update_brir_param(sender=None, app_data=None):
@@ -3461,6 +3464,7 @@ def start_processing_callback():
         pitch_shift_comp = dpg.get_value("pitch_shift_comp")
         alignment_freq = dpg.get_value("alignment_freq")
         rise_time = dpg.get_value("as_rise_time")
+        as_subwoofer_mode = dpg.get_value("as_subwoofer_mode")
         __version__ = dpg.get_item_user_data("log_text")  # contains version
 
         # Input validation
@@ -3473,6 +3477,9 @@ def start_processing_callback():
 
         as_name = selected_folder if name == '' else name
         name_formatted = as_name.replace(" ", "_")
+        #change naming convention for subwoofer cases
+        # if as_subwoofer_mode == True:
+        #     name_formatted="(SUB)-"+name_formatted
         file_name = "reverberation_dataset_" + name_formatted
         name_gui = as_name
         name_short = as_name
@@ -3512,7 +3519,8 @@ def start_processing_callback():
             wav_export=False, use_user_folder=True, save_npy=False,
             desired_measurements=desired_measurements,
             pitch_range=pitch_range, long_mode=long_reverb_mode,
-            cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, pitch_shift_comp=pitch_shift_comp
+            cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, 
+            pitch_shift_comp=pitch_shift_comp,subwoofer_mode=as_subwoofer_mode
         )
         #print(str(status_code))
         if status_code != 0:
@@ -3537,8 +3545,8 @@ def start_processing_callback():
         brir_reverberation, status_code = air_processing.convert_airs_to_brirs(
             ir_set=name_src, ir_group='user',
             air_dataset=air_dataset, gui_logger=logger_obj,
-            wav_export=False, long_mode=long_reverb_mode, use_user_folder=True,
-            cancel_event=cancel_event, report_progress=3, rise_time=rise_time
+             long_mode=long_reverb_mode, use_user_folder=True,
+            cancel_event=cancel_event, report_progress=3, rise_time=rise_time,subwoofer_mode=as_subwoofer_mode
         )
         if status_code != 0:
             hf.update_gui_progress(report_progress=3, progress=0.0) # Reset on failure
@@ -3562,29 +3570,38 @@ def start_processing_callback():
         #notes = f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str}"
         notes = (
             f"Created with ASH Toolset {__version__} on {timestamp_str} | "
+            f"subwoofer_mode={as_subwoofer_mode}, "
             f"noise_reduction_mode={noise_reduction_mode}, "
+            f"rise_time={rise_time}ms, "
             f"pitch_range=({pitch_low}, {pitch_high}), "
-            f"long_reverb_mode={long_reverb_mode}, "
             f"pitch_shift_comp={pitch_shift_comp}, "
             f"alignment_freq={alignment_freq}Hz, "
-            f"rise_time={rise_time}ms, "
-            f"directions={directions}"
+            f"directions={directions}, "
+            f"long_reverb_mode={long_reverb_mode}"
         )
-        description = notes if not description.strip() else f"{description}, {notes}"
+        description_full = notes if not description.strip() else f"{description}, {notes}"
         noise_reduction = "Yes" if noise_reduction_mode else "No"
         low_rt60 = "Yes" if not long_reverb_mode else "No"
+        folder="user"
 
         # Calculate RT60 robustly
         try:
-            sample_reverb = np.copy(brir_reverberation[0, 0, 0, :])
+            # Always get the last axis as the sample array
+            squeezed = np.squeeze(brir_reverberation)
+            if squeezed.ndim == 1:
+                sample_reverb = squeezed
+            elif squeezed.ndim >= 2:
+                sample_reverb = squeezed[0] if squeezed.ndim == 2 else squeezed[0, 0]
+            # Ensure we're dealing with a 1D array now
+            sample_reverb = np.asarray(sample_reverb).squeeze()
             band_rt60s = hf.compute_band_rt60s(sample_reverb)
             topt_values = [v for v in band_rt60s.values() if not np.isnan(v)]
             if len(topt_values) == 0:
                 raise ValueError("Topt values missing or all NaN.")
             topt_mean = np.mean(topt_values)
-            topt_ms = topt_mean * 1000#convert to milliseconds
+            topt_ms = topt_mean * 1000  # Convert to milliseconds
             est_rt60 = int(np.ceil(topt_ms / 50.0) * 50)  # Round up to nearest 50
-            meas_rt60 = int(round(topt_ms))                 # Regular rounding
+            meas_rt60 = int(round(topt_ms))               # Regular rounding
         except Exception as rt60_ex:
             hf.log_with_timestamp(f"RT60 estimation failed: {rt60_ex}", gui_logger=logger_obj, log_type=1)
             est_rt60 = 600
@@ -3600,22 +3617,50 @@ def start_processing_callback():
             "fade_start": 0,
             "gain":0,
             "low_rt60": low_rt60,
-            "folder": "user",
+            "folder": folder,
             "version": "1.0.0",
-            "f_crossover": 120,
+            "f_crossover": 110,
             "order_crossover": 9,
             "noise_reduce": noise_reduction,
-            "description": description,
+            "description": description_full,
             "notes": notes,
             "source_dataset": selected_folder
         }]
-        air_processing.write_as_metadata_csv(ir_set=name_src, data_rows=rows, gui_logger=logger_obj)
+        air_processing.write_as_metadata_csv(ir_set=name_src, data_rows=rows, sub_mode=as_subwoofer_mode, gui_logger=logger_obj)
         hf.update_gui_progress(report_progress=3, progress=1.0)
 
         hf.log_with_timestamp("Processing complete", gui_logger=logger_obj)
         #hf.log_with_timestamp("Note: Restart is required for new acoustic space to be displayed in other tabs", gui_logger=logger_obj, log_type=1)
+   
+        #also save subwoofer metadata file if subwoofer mode is enabled
+        if as_subwoofer_mode == True:
+            file_name_sub=file_name
+            name_gui_sub=name_gui
+            name_short_sub=name_short
+            acoustic_space_sub=description
+            est_rt60_sub=meas_rt60
+            comments_sub=f"Created with ASH Toolset {__version__} on {timestamp_str}"
+            frequency_range_sub=""
+            tolerance_sub=""
+            dataset_sub=""
+            folder_sub=folder
+            rows = [{
+                "file_name": file_name_sub,
+                "name_gui": name_gui_sub,
+                "name_short": name_short_sub,
+                "acoustic_space": acoustic_space_sub,
+                "est_rt60": est_rt60_sub,
+                "comments": comments_sub,
+                "frequency_range": frequency_range_sub,
+                "tolerance":tolerance_sub,
+                "folder": folder_sub,
+                "dataset": dataset_sub
+            }]
+            air_processing.write_sub_metadata_csv(ir_set=name_src, data_rows=rows, gui_logger=logger_obj)
+            
         time.sleep(0.1)
         update_as_table_from_csvs()
+        
 
     except Exception as ex:
         hf.log_with_timestamp(f"Unexpected error during processing: {ex}", log_type=2, gui_logger=logger_obj)
@@ -3781,7 +3826,9 @@ def update_as_table_from_csvs():
     """
     logger_obj = dpg.get_item_user_data("import_console_window")
     directory = CN.DATA_DIR_AS_USER
-    filename_key = CN.USER_CSV_KEY
+    filename_key = CN.USER_CSV_KEY#include user AS metadata
+    alt_filename_key = CN.ASI_USER_CSV_KEY
+    exclude_key = CN.SUB_USER_CSV_KEY#ignore sub metadata in as table
     matching_rows = []
 
     hf.log_with_timestamp("Starting search for saved acoustic spaces...", logger_obj)
@@ -3789,7 +3836,7 @@ def update_as_table_from_csvs():
     # Walk through directory
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(".csv") and filename_key in file:
+            if file.endswith(".csv") and (filename_key in file or alt_filename_key in file) and exclude_key not in file:
                 file_path = os.path.join(root, file)
                 try:
                     with open(file_path, mode='r', newline='', encoding='utf-8') as csvfile:
@@ -3831,6 +3878,10 @@ def update_as_table_from_csvs():
     CN.refresh_acoustic_space_metadata()
     dpg.configure_item("acoustic_space_combo", items=CN.AC_SPACE_LIST_GUI)
     dpg.configure_item("qc_acoustic_space_combo", items=CN.AC_SPACE_LIST_GUI)
+    
+    CN.refresh_sub_responses()#also update sub responses in case sub mode was enabled
+    dpg.configure_item("sub_response", items=CN.SUB_RESPONSE_LIST_GUI)
+    dpg.configure_item("qc_sub_response", items=CN.SUB_RESPONSE_LIST_GUI)
 
 
 def update_room_target_name_display(sender, app_data, user_data):

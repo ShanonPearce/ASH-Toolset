@@ -2573,66 +2573,6 @@ def group_delay(sig):
     return np.divide(br, b + 0.01).real
 
 
-# def smooth_fft(data, crossover_f=1000, win_size_a = 150, win_size_b = 750, n_fft=CN.N_FFT, fs=CN.FS):
-#     """
-#     Function to perform smoothing of fft mag response
-#     :param data: numpy array, magnitude response of a signal
-#     :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
-#     :param win_size_a: int, smoothing window size in Hz for lower frequencies
-#     :param win_size_b: int, smoothing window size in Hz for higher frequencies
-#     :param n_fft: int, fft size
-#     :return: numpy array, smoothed signal
-#     """  
-    
-#     crossover_fb= int(round(crossover_f*(n_fft/fs)))
-#     win_size_a=int(round(win_size_a*(n_fft/fs)))
-#     win_size_b=int(round(win_size_b*(n_fft/fs)))
-#     win_size_c=min(win_size_a,win_size_b)
-    
-#     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
-#     nyq_freq = n_unique_pts-1
-#     #apply win size a to low frequencies
-#     data_smooth_a = sp.ndimage.uniform_filter1d(data,size=win_size_a)
-#     data_smooth_b =np.zeros(n_fft)
-#     data_smooth_b[0:crossover_fb] = data_smooth_a[0:crossover_fb]
-#     #apply win size b to high frequencies
-#     data_smooth_b[crossover_fb:n_unique_pts] = sp.ndimage.uniform_filter1d(data_smooth_a,size=win_size_b)[crossover_fb:n_unique_pts]
-#     data_smooth_c = sp.ndimage.uniform_filter1d(data_smooth_b,size=win_size_c)#final pass
-    
-#     # Make symmetric (mirror below Nyquist into upper half)
-#     data_smooth_c[nyq_freq+1:] = data_smooth_c[1:nyq_freq][::-1]
-#     return data_smooth_c
-
-# def smooth_fft_octaves(data, fund_freq=120, win_size_base = 15, n_fft=CN.N_FFT, fs=CN.FS):
-#     """
-#     Function to perform smoothing of fft mag response
-#     :param data: numpy array, magnitude response of a signal
-#     :param crossover_f: int, crossover frequency in Hz. Below this freq a smoothing window of win_size_a will be applied and win_size_b above this freq
-#     :param win_size_a: int, smoothing window size in Hz for lower frequencies
-#     :param win_size_b: int, smoothing window size in Hz for higher frequencies
-#     :param n_fft: int, fft size
-#     :return: numpy array, smoothed signal
-#     """ 
-    
-#     n_unique_pts = int(np.ceil((n_fft+1)/2.0))
-#     nyq_freq = n_unique_pts-1
-    
-#     max_freq = int(fs/2)
-#     num_octaves = int(np.log2(max_freq/fund_freq))
-    
-#     for idx in range(num_octaves):
-#         power = np.power(2,idx)
-#         curr_cutoff_f = fund_freq*power
-#         curr_win_s_a = win_size_base#win_size_base*power
-#         curr_win_s_b = win_size_base*power#curr_win_s_a*2
-        
-#         data = smooth_fft(data, crossover_f=curr_cutoff_f, win_size_a = curr_win_s_a, win_size_b = curr_win_s_b, n_fft=n_fft, fs=fs)
-    
-#     data_smooth_c = data
-    
-#     # Make symmetric (mirror below Nyquist into upper half)
-#     data_smooth_c[nyq_freq+1:] = data_smooth_c[1:nyq_freq][::-1]
-#     return data_smooth_c
 
 
 
@@ -2810,61 +2750,7 @@ def mag_to_min_fir(data, n_fft=CN.N_FFT, out_win_size=4096, crop=1):
         return data_out[0:out_win_size]
     else:
         return data_out
-    
-# def build_min_phase_filter(smoothed_mag, fs=CN.FS, n_fft=CN.N_FFT, truncate_len=4096, f_min=20, f_max=20000, band_limit=False):
-#     """
-#     Build a minimum-phase FIR filter from a smoothed magnitude response,
-#     band-limited between f_min and f_max, truncated to truncate_len samples,
-#     and applying a fade-out window on the tail.
-
-#     Parameters:
-#     - smoothed_mag: array, magnitude response to convert
-#     - fs: int, sampling frequency (Hz)
-#     - n_fft: int, FFT size used for frequency domain
-#     - truncate_len: int, length of time domain impulse response after truncation
-#     - f_min: float, minimum frequency (Hz) for band-limiting compensation
-#     - f_max: float, maximum frequency (Hz) for band-limiting compensation
-#     - band_limit: bool, if True apply band-limiting to the magnitude response.
-
-#     Returns:
-#     - impulse: truncated minimum-phase impulse response with fade-out applied
-#     """
-#     freqs = np.fft.rfftfreq(n_fft, 1/fs)
-
-#     # Create mask to band-limit the magnitude response within [f_min, f_max]
-#     if band_limit:
-#         # Apply band-limiting to magnitude response
-#         band_mask = (freqs >= f_min) & (freqs <= f_max)
-#         band_mag = np.zeros_like(smoothed_mag)
-#         band_mag[band_mask] = smoothed_mag[band_mask]
-#     else:
-#         # Use full magnitude response
-#         band_mag = smoothed_mag.copy()
-
-#     # Log magnitude (avoid log(0))
-#     log_mag = np.log(np.maximum(band_mag, 1e-8))
-
-#     # Compute real cepstrum by inverse FFT of log magnitude
-#     cepstrum = np.fft.irfft(log_mag, n=n_fft)
-
-#     # Enforce minimum phase symmetry by doubling cepstral coefficients (except 0th)
-#     cepstrum[1:n_fft//2] *= 2
-#     cepstrum[n_fft//2+1:] = 0  # zero out upper half for causality
-
-#     # Reconstruct minimum phase spectrum by FFT of cepstrum, then exponentiate
-#     min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
-
-#     # Transform back to time domain: impulse response of minimum phase filter
-#     impulse = np.fft.irfft(min_phase_spec, n=n_fft)
-
-#     # Truncate impulse response to desired length
-#     impulse = impulse[:truncate_len]
-
-#     # Apply fade-out window to tail: smoothly taper from 1 to 0
-#     fade_out = np.hanning(2 * truncate_len)[truncate_len:]
-#     impulse *= fade_out
-
-#     return impulse    
+     
     
 def build_min_phase_filter(
     smoothed_mag,
@@ -2930,53 +2816,6 @@ def build_min_phase_filter(
 
 
     
-#modify spectrum to have flat mag response at low and high ends
-# def level_spectrum_ends(data, low_freq=20, high_freq=20000, n_fft=CN.N_FFT, fs=CN.FS, smooth_win=67):
-#     """
-#     Function to modify spectrum to have flat mag response at low and high ends (efficient version)
-#     :param data: numpy array, magnitude response of a signal (length n_fft)
-#     :param low_freq: int, frequency in Hz below which will become flat
-#     :param high_freq: int, frequency in Hz above which will become flat
-#     :param n_fft: int, fft size
-#     :param fs: int, sample frequency in Hz
-#     :param smooth_win: int, smoothing window size in Hz to be applied after leveling ends
-#     :return: numpy array, spectrum with smooth ends (length n_fft)
-#     """
-#     smooth_win_samples = int(round(smooth_win * (n_fft / fs)))
-
-#     data_mod = data.copy()
-#     low_freq_bin = int(low_freq * n_fft / fs)
-#     high_freq_bin = int(high_freq * n_fft / fs)
-
-#     # Level the low and high ends using array slicing
-#     if low_freq_bin > 0:
-#         data_mod[:low_freq_bin] = data[low_freq_bin]
-#     if high_freq_bin < n_fft:
-#         data_mod[high_freq_bin:] = data[high_freq_bin -1] # Use the value at the boundary
-
-#     # Apply slight smoothing
-#     if smooth_win_samples > 0:
-#         data_smooth = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
-#     else:
-#         data_smooth = data_mod
-
-#     # Make conjugate symmetric (assuming the input 'data' represents the positive frequency spectrum)
-#     n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
-#     if len(data_smooth) == n_fft:
-#         positive_spectrum = data_smooth[:n_unique_pts].copy()
-#         negative_spectrum = positive_spectrum[1:-1][::-1]  # Reverse and exclude DC and Nyquist
-#         data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
-#     elif len(data_smooth) == n_unique_pts -1: # handle case where input was only positive spectrum
-#         positive_spectrum = data_smooth.copy()
-#         negative_spectrum = positive_spectrum[1:][::-1]
-#         data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
-#     elif len(data_smooth) == n_unique_pts:
-#         positive_spectrum = data_smooth[:-1].copy()
-#         negative_spectrum = positive_spectrum[1:][::-1]
-#         data_smooth = np.concatenate((positive_spectrum, negative_spectrum))
-
-
-#     return data_smooth
 
 def level_spectrum_ends(
     data,
@@ -3933,3 +3772,27 @@ def plot_sample_value_distribution(data: np.ndarray, bins: int = 100):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+    
+def remove_leading_singletons(arr):
+    """
+    Removes leading singleton dimensions from a NumPy array.
+
+    Parameters:
+        arr (np.ndarray): An N-dimensional NumPy array.
+
+    Returns:
+        np.ndarray: A reshaped array with leading singleton dimensions removed.
+    """
+    shape = arr.shape
+    first_non_singleton = 0
+
+    # Find the index of the first non-singleton dimension
+    for i, dim in enumerate(shape):
+        if dim != 1:
+            break
+        first_non_singleton += 1
+
+    # Slice off leading singleton dimensions
+    if first_non_singleton > 0:
+        return arr.reshape(shape[first_non_singleton:])
+    return arr

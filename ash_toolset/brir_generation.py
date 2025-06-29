@@ -116,6 +116,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         fade_start = CN.extract_column(data=reverb_data, column='fade_start', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
         est_rt60 = CN.extract_column(data=reverb_data, column='est_rt60', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
         as_folder = CN.extract_column(data=reverb_data, column='folder', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
+        as_file_name = CN.extract_column(data=reverb_data, column='file_name', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
         
         #filters
         if f_crossover_var < CN.FILTFILT_THRESH_F:
@@ -171,20 +172,14 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
 
         #
         # load room target filter (FIR)
-        # if room_target > 0:
-        #     npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
-        #     room_target_arr = hf.load_convert_npy_to_float64(npy_fname)
-        #     room_target_fir = room_target_arr[room_target]
-        # else:
-        #     room_target_fir = np.copy(impulse[0:512])
+  
 
         room_target_fir = CN.ROOM_TARGETS_DICT[room_target_name]["impulse_response"]
             
         #
         # load pinna comp filter (FIR)
         #
-        # npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_pinna_comp_fir.npy')
-        # pinna_comp_fir = hf.load_convert_npy_to_float64(npy_fname)
+
 
         npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
         ear_comp_fir_dataset = hf.load_convert_npy_to_float64(npy_fname)
@@ -212,13 +207,21 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         # load sub bass BRIR (FIR)
         #
 
-        file_name = get_sub_f_name(sub_response=sub_response, gui_logger=gui_logger)
-        npy_fname = pjoin(CN.DATA_DIR_SUB, file_name+'.npy')
-        
+        sub_data=CN.sub_data
+        sub_file_name = CN.extract_column(data=sub_data, column='file_name', condition_key='name_gui', condition_value=sub_response, return_all_matches=False)
+        sub_folder = CN.extract_column(data=sub_data, column='folder', condition_key='name_gui', condition_value=sub_response, return_all_matches=False)
+        #file_name = get_sub_f_name(sub_response=sub_response, gui_logger=gui_logger)
+        if sub_folder == 'sub' or sub_folder == 'lf_brir':#default sub responses
+            npy_fname = pjoin(CN.DATA_DIR_SUB, sub_file_name+'.npy')
+        else:#user sub response
+            file_folder = pjoin(CN.DATA_DIR_AS_USER,sub_response)
+            npy_fname = pjoin(file_folder, sub_file_name+'.npy')
         sub_brir_npy = hf.load_convert_npy_to_float64(npy_fname)
         sub_brir_ir = np.zeros((2,n_fft))
-        sub_brir_ir[0,0:CN.N_FFT] = sub_brir_npy[0][0:CN.N_FFT]
-        sub_brir_ir[1,0:CN.N_FFT] = sub_brir_npy[1][0:CN.N_FFT]
+        # Use only available samples in each channel (up to CN.N_FFT)
+        available_samples = min(CN.N_FFT, sub_brir_npy.shape[-1])
+        sub_brir_ir[0, :available_samples] = sub_brir_npy[0, :available_samples]
+        sub_brir_ir[1, :available_samples] = sub_brir_npy[1, :available_samples]
         
         
 
@@ -229,7 +232,8 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             brir_rev_folder = pjoin(CN.DATA_DIR_AS_USER,acoustic_space)
         else:
             brir_rev_folder = pjoin(CN.DATA_DIR_INT, 'reverberation', as_folder)
-        npy_file_name =  'reverberation_dataset_' +acoustic_space+'.npy'
+        #npy_file_name =  'reverberation_dataset_' +acoustic_space+'.npy'
+        npy_file_name =  as_file_name+'.npy'
         npy_file_path = pjoin(brir_rev_folder,npy_file_name) 
         try:
             brir_reverberation = hf.load_convert_npy_to_float64(npy_file_path)

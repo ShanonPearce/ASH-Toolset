@@ -250,7 +250,7 @@ def main():
     sofa_exp_conv_default=CN.SOFA_OUTPUT_CONV[0]
     crossover_f_mode_default=CN.SUB_FC_SETTING_LIST[0]
     crossover_f_default=CN.SUB_FC_DEFAULT
-    sub_response_default = (CN.SUB_RESPONSE_LIST_GUI[1] if len(CN.SUB_RESPONSE_LIST_GUI) > 1 else CN.SUB_RESPONSE_LIST_GUI[0] if CN.SUB_RESPONSE_LIST_GUI else None)#use index 1 if available
+    sub_response_default = (CN.SUB_RESPONSE_LIST_GUI[3] if len(CN.SUB_RESPONSE_LIST_GUI) > 3 else CN.SUB_RESPONSE_LIST_GUI[0] if CN.SUB_RESPONSE_LIST_GUI else None)#use index 1 if available
     hp_rolloff_comp_default=False
     fb_filtering_default=False
     default_qc_brir_settings = {
@@ -1173,10 +1173,10 @@ def main():
                                             with dpg.tooltip("qc_brir_hrtf_title"):
                                                 dpg.add_text("This will influence the externalisation and localisation of sounds around the listener")
                                                 
-                                with dpg.tab(label="Low Frequency Extension",tag='qc_lfe_tab', parent="qc_brir_tab_bar"): 
+                                with dpg.tab(label="Low-frequency Extension",tag='qc_lfe_tab', parent="qc_brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
-                                            dpg.add_text("Subwoofer Crossover Frequency", tag='qc_crossover_f_title')
+                                            dpg.add_text("Integration Crossover Frequency", tag='qc_crossover_f_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_combo(CN.SUB_FC_SETTING_LIST, default_value=qc_crossover_f_mode_loaded, width=130, callback=cb.qc_update_crossover_f, tag='qc_crossover_f_mode')
                                             with dpg.tooltip("qc_crossover_f_mode"):
@@ -1184,14 +1184,14 @@ def main():
                                             dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='qc_crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=qc_crossover_f_loaded,min_clamped=True, max_clamped=True, callback=cb.qc_update_crossover_f)
                                             with dpg.tooltip("qc_crossover_f"):
                                                 dpg.add_text("Crossover Frequency can be adjusted to a value between 20Hz and 150Hz")
-                                                dpg.add_text("This can be used to tune the integration of the cleaner subwoofer response and original room response")
+                                                dpg.add_text("This can be used to tune the integration of the cleaner LF response and original room response")
                                                 dpg.add_text("Higher values may result in a smoother bass response")
                                             dpg.add_separator()
-                                            dpg.add_text("Subwoofer Response", tag='qc_sub_response_title')
+                                            dpg.add_text("Response for Low-frequency Extension", tag='qc_sub_response_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=qc_sub_response_loaded, num_items=4, width=240, callback=cb.qc_select_sub_brir, tag='qc_sub_response')
+                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=qc_sub_response_loaded, num_items=7, width=240, callback=cb.qc_select_sub_brir, tag='qc_sub_response')
                                             with dpg.tooltip("qc_sub_response_title"):
-                                                dpg.add_text("Refer to supporting information tab for comparison")
+                                                dpg.add_text("Refer to supporting information tab and filter preview for comparison")
                                             dpg.add_separator()
                                             dpg.add_text("Additonal EQ", tag='qc_hp_rolloff_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -1205,10 +1205,14 @@ def main():
                                                     dpg.add_text("This will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases")
                                             
                                             dpg.add_separator()
-                                            dpg.add_text("Analysis", tag='qc_analysis_title')
-                                            dpg.add_checkbox(label="Plot Integrated Response in Analysis Tab", default_value = qc_hp_rolloff_comp_loaded,  tag='qc_lf_analysis_toggle', callback=cb.qc_lf_analyse_toggle)
-                                            dpg.add_text("Plot Type", tag='qc_analysis_type_title')
-                                            dpg.add_radio_button(CN.SUB_PLOT_LIST, horizontal=True, default_value=CN.SUB_PLOT_LIST[0],   callback=cb.qc_lf_analyse_change_type, tag='qc_lf_analysis_type')
+                                            with dpg.group(horizontal=True):
+                                                with dpg.group():
+                                                    dpg.add_text("Analysis", tag='qc_analysis_title')
+                                                    dpg.add_checkbox(label="Plot Integrated Response in Analysis Tab", default_value = qc_hp_rolloff_comp_loaded,  tag='qc_lf_analysis_toggle', callback=cb.qc_lf_analyse_toggle)
+                                                dpg.add_text("          ")
+                                                with dpg.group():
+                                                    dpg.add_text("Plot Type", tag='qc_analysis_type_title')
+                                                    dpg.add_radio_button(CN.SUB_PLOT_LIST, horizontal=True, default_value=CN.SUB_PLOT_LIST[0],   callback=cb.qc_lf_analyse_change_type, tag='qc_lf_analysis_type')
                                             
                                             
                                                 
@@ -1524,13 +1528,13 @@ def main():
                                             #initial plot
                                             hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=2)
                                     
-                                    with dpg.tab(label="Low Frequency Analysis", parent="qc_inner_tab_bar",tag='qc_lfa_tab'):
+                                    with dpg.tab(label="Low-frequency Analysis", parent="qc_inner_tab_bar",tag='qc_lfa_tab'):
                                         #plotting
                                         #dpg.add_separator()
-                                        dpg.add_text("Enable in low frequency extension tab. Plot will be automatically updated after parameters are applied")
+                                        dpg.add_text("Enable in Low-frequency extension tab. Plot will be automatically updated after parameters are applied")
                                  
                                         # create plot
-                                        with dpg.plot(label="Low Frequency Analysis", height=350, width=580):
+                                        with dpg.plot(label="Low-frequency Analysis", height=350, width=580):
                                             # optionally create legend
                                             dpg.add_plot_legend(tag="lfa_legend_tag")
                                             
@@ -1744,10 +1748,10 @@ def main():
                                             with dpg.tooltip("brir_hrtf_title"):
                                                 dpg.add_text("This will influence the externalisation and localisation of sounds around the listener")
                                         
-                                with dpg.tab(label="Low Frequency Extension",tag='lfe_tab', parent="brir_tab_bar"): 
+                                with dpg.tab(label="Low-frequency Extension",tag='lfe_tab', parent="brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
-                                            dpg.add_text("Subwoofer Crossover Frequency", tag='crossover_f_title')
+                                            dpg.add_text("Integration Crossover Frequency", tag='crossover_f_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_combo(CN.SUB_FC_SETTING_LIST, default_value=crossover_f_mode_loaded, width=130, callback=cb.update_crossover_f, tag='crossover_f_mode')
                                             with dpg.tooltip("crossover_f_mode"):
@@ -1756,14 +1760,14 @@ def main():
                                             dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=crossover_f_loaded,min_clamped=True, max_clamped=True, callback=cb.update_crossover_f)
                                             with dpg.tooltip("crossover_f"):
                                                 dpg.add_text("Crossover Frequency can be adjusted to a value between 20Hz and 150Hz")
-                                                dpg.add_text("This can be used to tune the integration of the cleaner subwoofer response and original room response")
+                                                dpg.add_text("This can be used to tune the integration of the cleaner LF response and original room response")
                                                 dpg.add_text("Higher values may result in a smoother bass response")
                                             dpg.add_separator()
-                                            dpg.add_text("Subwoofer Response", tag='sub_response_title')
+                                            dpg.add_text("Response for Low-frequency Extension", tag='sub_response_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=sub_response_loaded, num_items=4, width=240, callback=cb.select_sub_brir, tag='sub_response')
+                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=sub_response_loaded, num_items=9, width=240, callback=cb.select_sub_brir, tag='sub_response')
                                             with dpg.tooltip("sub_response_title"):
-                                                dpg.add_text("Refer to supporting information tab for comparison")
+                                                dpg.add_text("Refer to supporting information tab and filter preview for comparison")
                                             dpg.add_separator()
                                             dpg.add_text("Additonal EQ", tag='hp_rolloff_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2011,10 +2015,10 @@ def main():
                                 dpg.add_text("Set Parameters")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_separator()
-                                
-                                dpg.add_text("IR Folder")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 with dpg.group(horizontal=True):
+                                    dpg.add_text("IR Folder")
+                                    dpg.bind_item_font(dpg.last_item(), bold_font)
+                                    dpg.add_text("             ")
                                     dpg.add_button(label="Refresh Folder List", callback=cb.update_ir_folder_list, tag="refresh_folders_btn")
                                     with dpg.tooltip("refresh_folders_btn"):
                                         dpg.add_text("Click to reload the list of available IR folders")
@@ -2024,7 +2028,8 @@ def main():
                                         dpg.add_text("Click to open in explorer the folder where the user IRs are stored")
                                         dpg.add_text("IRs should be stored toether in a single subfolder, for example: 'Room A'")
                                         dpg.add_text("Supported file types: wav, sofa, mat, npy, hdf5")
-                                dpg.add_listbox(items=[], label="", tag="ir_folder_list", callback=cb.folder_selected_callback, width=300, num_items=4)
+                                        dpg.add_text("Files can have any number of channels and samples and any bit depth and sample rate")
+                                dpg.add_listbox(items=[], label="", tag="ir_folder_list", callback=cb.folder_selected_callback, width=330, num_items=4)
                                 with dpg.tooltip("ir_folder_list"):
                                     dpg.add_text("Choose an IR folder from the list")
                     
@@ -2048,6 +2053,12 @@ def main():
                                         with dpg.tooltip("long_tail_mode"):
                                             dpg.add_text("Only enable if the IRs have long decay tails (> 1.5 seconds).")
                                             dpg.add_text("This will increase processing time")
+                                        dpg.add_text("Low-frequency Mode")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_checkbox(label="Enable", tag="as_subwoofer_mode")
+                                        with dpg.tooltip("as_subwoofer_mode"):
+                                            dpg.add_text("Enable if the IRs are low frequency measurements")
+                                            dpg.add_text("This will make the result available under Low-frequency responses")
                                     
                                     
                                     dpg.add_text("                    ")
@@ -2057,6 +2068,12 @@ def main():
                                         dpg.add_checkbox(label="Enable", tag="noise_reduction_mode")
                                         with dpg.tooltip("noise_reduction_mode"):
                                             dpg.add_text("Enable if the IRs have high noise floor")
+                                        dpg.add_text("Rise Time (ms)")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_input_float(label="", tag="as_rise_time", width=120,default_value=5.0, min_value=0.0, max_value=20.0, format="%.2f",min_clamped=True, max_clamped=True)
+                                        with dpg.tooltip("as_rise_time"):
+                                            dpg.add_text("This will apply a fade in window of specified duration")
+                                            dpg.add_text("Min: 0, Max: 20")
                                 with dpg.group(horizontal=True):
                                     with dpg.group():
                                         dpg.add_text("Desired Directions")
@@ -2098,12 +2115,7 @@ def main():
                                         with dpg.tooltip("pitch_shift_comp"):
                                             dpg.add_text("Enable to correct pitch of new directions after expanding dataset")
                                             dpg.add_text("This may introduce artefacts")
-                                        dpg.add_text("Rise Time (ms)")
-                                        dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_input_float(label="", tag="as_rise_time", width=120,default_value=5.0, min_value=0.0, max_value=20.0, format="%.2f",min_clamped=True, max_clamped=True)
-                                        with dpg.tooltip("as_rise_time"):
-                                            dpg.add_text("This will apply a fade in window of specified duration")
-                                            dpg.add_text("Min: 0, Max: 20")
+                                        
                     
                                 
                     
@@ -2176,9 +2188,9 @@ def main():
                                        row_background=True):
                         
                                     #dpg.add_table_column(label="")  # Selectable column (no header)
-                                    dpg.add_table_column(label="Name", init_width_or_weight=100)
-                                    dpg.add_table_column(label="RT60 (ms)", init_width_or_weight=30)
-                                    dpg.add_table_column(label="Description", init_width_or_weight=270)
+                                    dpg.add_table_column(label="Name", init_width_or_weight=60)
+                                    dpg.add_table_column(label="RT60 (ms)", init_width_or_weight=20)
+                                    dpg.add_table_column(label="Description", init_width_or_weight=330)
                     
                             # Panel 3 - Right (Logger)
                             with dpg.child_window(width=1285, height=296, tag="import_console_window"):
@@ -2412,7 +2424,7 @@ def main():
                                             dpg.add_text(CN.SPATIAL_RES_AZIM_RNG[i])
                                         elif j == 4:#Azimuth Steps
                                             dpg.add_text(CN.SPATIAL_RES_AZIM_STP[i])
-                with dpg.collapsing_header(label="Subwoofer Responses", default_open=True):  
+                with dpg.collapsing_header(label="Low-frequency Responses", default_open=True):  
                     #Section to show sub brir information
                     with dpg.child_window(auto_resize_x=True, auto_resize_y=True):
                         #dpg.add_text("Subwoofer Responses")
@@ -2427,6 +2439,9 @@ def main():
                             dpg.add_table_column(label="Frequency Range")
                             dpg.add_table_column(label="Tolerance")
                             dpg.add_table_column(label="Comments")
+                            dpg.add_table_column(label="Source Type")
+                            dpg.add_table_column(label="Listener Type")
+                            dpg.add_table_column(label="Source Dataset")
                             for i in range(len(CN.SUB_RESPONSE_LIST_GUI)):
                                 with dpg.table_row():
                                     dpg.add_text(CN.SUB_RESPONSE_LIST_GUI[i])
@@ -2435,6 +2450,9 @@ def main():
                                     dpg.add_text(CN.SUB_RESPONSE_LIST_RANGE[i])
                                     dpg.add_text(CN.SUB_RESPONSE_LIST_TOL[i])
                                     dpg.add_text(CN.SUB_RESPONSE_LIST_COMM[i])
+                                    dpg.add_text(CN.SUB_RESPONSE_LIST_SOURCE[i])
+                                    dpg.add_text(CN.SUB_RESPONSE_LIST_LISTENER[i])
+                                    dpg.add_text(CN.SUB_RESPONSE_LIST_DATASET[i])
                              
                 with dpg.collapsing_header(label="Supported SOFA Conventions", default_open=True):
                     with dpg.child_window(auto_resize_x=True, auto_resize_y=True):               

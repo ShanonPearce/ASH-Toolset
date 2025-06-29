@@ -65,42 +65,75 @@ def load_csv_as_dicts(csv_dir, csv_name):
 
     return data_list
 
-def load_user_reverb_csvs_recursive(directory, filename_key):
+
+
+def load_user_reverb_csvs_recursive(directory, filename_key=None, filter_mode="include", match_mode="contains"):
     """
-    Recursively searches a directory for CSV files with names containing the filename_key,
-    loads them as dicts, and returns a list of parsed rows.
-    
+    Recursively searches a directory for CSV files and loads them as dicts,
+    optionally including or excluding files based on a string match.
+
     Parameters:
         directory (str): Base directory to search in.
-        filename_key (str): Substring that must appear in CSV file names.
+        filename_key (str, optional): Substring to filter filenames. If None, all CSVs are included.
+        filter_mode (str): 'include' to load only matching files, 'exclude' to skip matching files.
+        match_mode (str): One of 'contains', 'startswith', or 'endswith'.
 
     Returns:
         List[dict]: Parsed rows from all matching CSVs.
     """
+    if match_mode not in {"contains", "startswith", "endswith"}:
+        raise ValueError("match_mode must be 'contains', 'startswith', or 'endswith'")
+
     found_rows = []
+    primary_key=METADATA_CSV_KEY
 
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(".csv") and filename_key in file:
-                path = os.path.join(root, file)
-                try:
-                    with open(path, encoding='utf-8-sig', newline='') as csvfile:
-                        reader = csv.DictReader(csvfile)
-                        for row in reader:
-                            parsed_row = {}
-                            for key, value in row.items():
-                                value = value.strip()
+            if not file.endswith(".csv"):
+                continue
+            
+            #check if file contains primary keyword
+            match = True
+            if primary_key is not None:
+                match = primary_key in file
+            if not match:
+                continue
+            
+            #check if file matches secondary keyword
+            match = True
+            if filename_key is not None:
+                if match_mode == "contains":
+                    match = filename_key in file
+                elif match_mode == "startswith":
+                    match = file.startswith(filename_key)
+                elif match_mode == "endswith":
+                    match = file.endswith(filename_key)
+
+                if filter_mode == "exclude":
+                    match = not match
+
+            if not match:
+                continue
+
+            path = os.path.join(root, file)
+            try:
+                with open(path, encoding='utf-8-sig', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        parsed_row = {}
+                        for key, value in row.items():
+                            value = value.strip()
+                            try:
+                                parsed_row[key] = int(value) if '.' not in value else float(value)
+                            except ValueError:
                                 try:
-                                    parsed_row[key] = int(value) if '.' not in value else float(value)
+                                    float_value = float(value)
+                                    parsed_row[key] = int(float_value) if float_value.is_integer() else float_value
                                 except ValueError:
-                                    try:
-                                        float_value = float(value)
-                                        parsed_row[key] = int(float_value) if float_value.is_integer() else float_value
-                                    except ValueError:
-                                        parsed_row[key] = value
-                            found_rows.append(parsed_row)
-                except Exception as e:
-                    print(f"Failed to load user CSV {path}: {e}")
+                                    parsed_row[key] = value
+                        found_rows.append(parsed_row)
+            except Exception as e:
+                print(f"Failed to load user CSV {path}: {e}")
 
     return found_rows
 
@@ -182,7 +215,7 @@ def refresh_acoustic_space_metadata():
     # Load user metadata
     user_csv_dir = DATA_DIR_AS_USER
     #USER_CSV_KEY = "_metadata"#already global
-    user_data = load_user_reverb_csvs_recursive(user_csv_dir, USER_CSV_KEY)
+    user_data = load_user_reverb_csvs_recursive(user_csv_dir, filename_key=USER_CSV_KEY, filter_mode="include", match_mode="contains")
 
     # Deduplicate based on 'file_name'
     existing_keys = set(row.get("file_name") for row in internal_data if "file_name" in row)
@@ -318,6 +351,53 @@ def refresh_room_targets():
     ROOM_TARGET_INDEX_MAP = {name: idx for idx, name in enumerate(ROOM_TARGET_LIST)}
 
 
+
+
+
+
+def refresh_sub_responses():
+    """
+    Reloads sub response arrays from internal and user sources.
+    Rebuilds the global SUB_RESPONSE_* structures.
+    """
+    global sub_data, SUB_RESPONSE_LIST_GUI, SUB_RESPONSE_LIST_SHORT, SUB_RESPONSE_LIST_AS,SUB_RESPONSE_LIST_R60
+    global SUB_RESPONSE_LIST_COMM, SUB_RESPONSE_LIST_RANGE, SUB_RESPONSE_LIST_TOL, SUB_RESPONSE_LIST_DATASET, SUB_RESPONSE_LIST_SOURCE, SUB_RESPONSE_LIST_LISTENER
+    
+
+    #new: load as dict lists
+    csv_directory = DATA_DIR_SUB
+    internal_data = load_csv_as_dicts(csv_directory,'lf_brir_metadata.csv')
+
+    # Load user metadata
+    user_csv_dir = DATA_DIR_AS_USER
+    user_data = load_user_reverb_csvs_recursive(user_csv_dir, filename_key=SUB_USER_CSV_KEY, filter_mode="include", match_mode="contains")
+
+    # Deduplicate based on 'file_name'
+    existing_keys = set(row.get("file_name") for row in internal_data if "file_name" in row)
+    unique_user_data = [row for row in user_data if row.get("file_name") not in existing_keys]
+
+    # Merge and sort
+    sub_data = internal_data + unique_user_data
+    sub_data = sort_dict_list(sub_data, sort_key='name_src', reverse=False)
+ 
+    SUB_RESPONSE_LIST_GUI = extract_column(data=sub_data, column='name_gui') 
+    SUB_RESPONSE_LIST_SHORT = extract_column(data=sub_data, column='name_short') 
+    SUB_RESPONSE_LIST_AS = extract_column(data=sub_data, column='acoustic_space') 
+    SUB_RESPONSE_LIST_R60 = extract_column(data=sub_data, column='est_rt60') 
+    SUB_RESPONSE_LIST_COMM = extract_column(data=sub_data, column='comments') 
+    SUB_RESPONSE_LIST_RANGE = extract_column(data=sub_data, column='frequency_range') 
+    SUB_RESPONSE_LIST_TOL = extract_column(data=sub_data, column='tolerance')
+    SUB_RESPONSE_LIST_DATASET = extract_column(data=sub_data, column='dataset')
+    SUB_RESPONSE_LIST_SOURCE = extract_column(data=sub_data, column='source_type')
+    SUB_RESPONSE_LIST_LISTENER = extract_column(data=sub_data, column='listener_type')
+
+    
+    
+    
+    
+    
+
+
 ################################ 
 #Constants
 
@@ -340,6 +420,7 @@ PROCESS_BRIRS_RUNNING = False
 SHOW_DEV_TOOLS=False#False
 STOP_THREAD_FLAG = False
 SHOW_AS_TAB = True
+EXPORT_WAVS_DEFAULT=False#False
 
 #control level of direct sound
 DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
@@ -403,7 +484,7 @@ DELAY_WIN_MAX_H = 150
 DELAY_WIN_HOPS_H = int((DELAY_WIN_MAX_H-DELAY_WIN_MIN_H)/DELAY_WIN_HOP_SIZE)
 
 #AIR alignment
-CUTOFF_ALIGNMENT_AIR = 100#110,100
+CUTOFF_ALIGNMENT_AIR = 110#110,100
 CUTOFF_ALIGNMENT_TR_AIR = CUTOFF_ALIGNMENT_AIR#transformation applied cases, 140, 130, 120
 PEAK_TO_PEAK_WINDOW_AIR = int(np.divide(SAMP_FREQ,CUTOFF_ALIGNMENT_AIR)*0.95) 
 MIN_T_SHIFT_A = -1000#-1000
@@ -459,7 +540,7 @@ BASE_DIR_PATH = Path(__file__).resolve().parents[1] #using Pathlib
 SCRIPT_DIR_PATH = Path(__file__).resolve().parent #using Pathlib
 SCRIPT_DIRECTORY = path.dirname(path.abspath(sys.argv[0]))#old method using os.path
 DATA_DIR_INT = pjoin(BASE_DIR_OS, 'data','interim')
-DATA_DIR_SUB = pjoin(BASE_DIR_OS, 'data','interim','sub')
+DATA_DIR_SUB = pjoin(BASE_DIR_OS, 'data','interim','lf_brir')#sub
 DATA_DIR_HRIR_NPY = pjoin(BASE_DIR_OS, 'data','interim','hrir')
 DATA_DIR_HRIR_NPY_DH = pjoin(BASE_DIR_OS, 'data','interim','hrir','dh')
 DATA_DIR_HRIR_NPY_DH_V = pjoin(BASE_DIR_OS, 'data','interim','hrir','dh','h','VIKING')
@@ -731,44 +812,14 @@ AC_SPACE_LIST_HIRT60 = []
 AC_SPACE_LIST_COMP = []
 AC_SPACE_LIST_MAX_SRC = []
 AC_SPACE_LIST_ID_SRC = []
-USER_CSV_KEY = "_metadata"
 
+METADATA_CSV_KEY = "metadata"
+USER_CSV_KEY = "_metadata"
+ASI_USER_CSV_KEY = "_asi-metadata"
+SUB_USER_CSV_KEY = "_sub-metadata"
 #section to load dict lists containing acoustic space metadata
 #new: load as dict lists
 refresh_acoustic_space_metadata()
-
-# # Load internal metadata
-# csv_directory = pjoin(DATA_DIR_INT, 'reverberation')
-# reverb_data = load_csv_as_dicts(csv_directory, 'reverberation_metadata.csv')
-# # Load additional user metadata
-# user_csv_dir = DATA_DIR_AS_USER
-# USER_CSV_KEY = "_metadata"
-# user_reverb_data = load_user_reverb_csvs_recursive(user_csv_dir, USER_CSV_KEY)
-# # Build a set of existing file_name values for duplicate detection
-# existing_keys = set(row.get("file_name") for row in reverb_data if "file_name" in row)
-# # Filter out duplicates from user data
-# unique_user_reverb_data = [row for row in user_reverb_data if row.get("file_name") not in existing_keys]
-# # Merge filtered user data into internal data
-# reverb_data.extend(unique_user_reverb_data)
-# #sort by name
-# reverb_data = sort_dict_list(reverb_data, sort_key='name_src', reverse=False)
-# #grab individual lists
-# AC_SPACE_LIST_GUI = extract_column(data=reverb_data, column='name_gui')  
-# AC_SPACE_LIST_SHORT = extract_column(data=reverb_data, column='name_short') 
-# AC_SPACE_LIST_SRC = extract_column(data=reverb_data, column='name_src')                       #
-# AC_SPACE_EST_R60 = extract_column(data=reverb_data, column='est_rt60')                      #
-# AC_SPACE_MEAS_R60 = extract_column(data=reverb_data, column='meas_rt60')                      #
-# AC_SPACE_FADE_START = extract_column(data=reverb_data, column='fade_start')                   #
-# AC_SPACE_GAINS = extract_column(data=reverb_data, column='gain')                              #
-# AC_SPACE_DESCR = extract_column(data=reverb_data, column='description')   
-# AC_SPACE_DATASET = extract_column(data=reverb_data, column='source_dataset')   
-# AC_SPACE_LIST_NR = extract_column(data=reverb_data, column='name_src', condition_key='noise_reduce', condition_value='Yes', return_all_matches=True)
-# AC_SPACE_LIST_LOWRT60 = extract_column(data=reverb_data, column='name_src', condition_key='low_rt60', condition_value='Yes', return_all_matches=True)
-# AC_SPACE_LIST_HIRT60 = extract_column(data=reverb_data, column='name_src', condition_key='low_rt60', condition_value='No', return_all_matches=True)
-# AC_SPACE_LIST_COMP = extract_column(data=reverb_data, column='name_src', condition_key='folder', condition_value='comp_bin', return_all_matches=True)
-# AC_SPACE_LIST_MAX_SRC = extract_column(data=reverb_data, column='name_src', condition_key='source_hrtf_dataset', condition_value='max', return_all_matches=True)
-# AC_SPACE_LIST_ID_SRC = extract_column(data=reverb_data, column='source_hrtf_id')
-
 
 
 # ## Accessing data example
@@ -843,17 +894,42 @@ SUB_FC_MIN=20
 SUB_FC_MAX=150
 SUB_FC_DEFAULT=120
 
-#new: load as dict lists
-csv_directory = pjoin(DATA_DIR_INT, 'sub')
-sub_data = load_csv_as_dicts(csv_directory,'sub_brir_metadata.csv')
-SUB_RESPONSE_LIST_GUI = extract_column(data=sub_data, column='name_gui') 
-SUB_RESPONSE_LIST_SHORT = extract_column(data=sub_data, column='name_short') 
-SUB_RESPONSE_LIST_AS = extract_column(data=sub_data, column='acoustic_space') 
-SUB_RESPONSE_LIST_R60 = extract_column(data=sub_data, column='est_rt60') 
-SUB_RESPONSE_LIST_COMM = extract_column(data=sub_data, column='comments') 
-SUB_RESPONSE_LIST_RANGE = extract_column(data=sub_data, column='frequency_range') 
-SUB_RESPONSE_LIST_TOL = extract_column(data=sub_data, column='tolerance') 
+# #new: load as dict lists
+# csv_directory = pjoin(DATA_DIR_INT, 'sub')
+# sub_data = load_csv_as_dicts(csv_directory,'sub_brir_metadata.csv')
+# SUB_RESPONSE_LIST_GUI = extract_column(data=sub_data, column='name_gui') 
+# SUB_RESPONSE_LIST_SHORT = extract_column(data=sub_data, column='name_short') 
+# SUB_RESPONSE_LIST_AS = extract_column(data=sub_data, column='acoustic_space') 
+# SUB_RESPONSE_LIST_R60 = extract_column(data=sub_data, column='est_rt60') 
+# SUB_RESPONSE_LIST_COMM = extract_column(data=sub_data, column='comments') 
+# SUB_RESPONSE_LIST_RANGE = extract_column(data=sub_data, column='frequency_range') 
+# SUB_RESPONSE_LIST_TOL = extract_column(data=sub_data, column='tolerance') 
+
+# Global variable declarations for clarity
+sub_data=[]
+SUB_RESPONSE_LIST_GUI=[]
+SUB_RESPONSE_LIST_SHORT=[]
+SUB_RESPONSE_LIST_AS=[]
+SUB_RESPONSE_LIST_R60=[]
+SUB_RESPONSE_LIST_COMM=[]
+SUB_RESPONSE_LIST_RANGE=[]
+SUB_RESPONSE_LIST_TOL=[]
+SUB_RESPONSE_LIST_DATASET=[]
+SUB_RESPONSE_LIST_SOURCE = []
+SUB_RESPONSE_LIST_LISTENER = []
+
 SUB_PLOT_LIST = ['Magnitude', 'Group Delay']
+SUB_FIELD_NAMES = [
+    'file_name', 'name_gui', 'name_short', 'acoustic_space', 'est_rt60', 'comments', 'frequency_range',
+    'tolerance', 'folder','dataset'
+]
+
+
+
+refresh_sub_responses()
+
+
+
 
 #plotting
 IMPULSE=np.zeros(N_FFT)

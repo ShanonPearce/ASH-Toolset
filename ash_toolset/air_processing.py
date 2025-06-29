@@ -518,7 +518,7 @@ def etl_airs(
     noise_reduction=False,
     noise_tail_ratio=0.2,
     max_measurements=CN.MAX_IRS,
-    max_samples=CN.N_FFT
+    max_samples=CN.N_FFT, cancel_event=None
 ):
     """
     Loads and standardizes impulse responses from a folder (including subfolders) into a 2D array.
@@ -550,11 +550,17 @@ def etl_airs(
     ir_list = []
     max_samples_in_data = 0
     total_measurements = 0
+    status=1
+    air_data=np.array([])
 
     # Iterate over each file found
     for path in all_files:
         ext = os.path.splitext(path)[1].lower()
         ftype = file_type if file_type else ext.strip('.')
+        
+        if cancel_event and cancel_event.is_set():
+            gui_logger.log_warning("Operation cancelled by user.")
+            return air_data, 2
 
         try:
             samplerate = project_samplerate  # default sample rate unless overridden
@@ -676,7 +682,8 @@ def etl_airs(
     air_data = np.concatenate(padded_list, axis=0)
     hf.log_with_timestamp(f"Final air_data shape: {air_data.shape}", gui_logger)
 
-    return air_data
+    status=0#success if reached this far
+    return air_data,status
 
 
 
@@ -689,7 +696,7 @@ def prepare_air_dataset(
     save_npy=False,
     desired_measurements=3000, noise_reduction_mode=False,
     pitch_range=(0, 12),
-    long_mode=False, report_progress=0, cancel_event=None, f_alignment = 0, pitch_shift_comp=True, ignore_ms=CN.IGNORE_MS
+    long_mode=False, report_progress=0, cancel_event=None, f_alignment = 0, pitch_shift_comp=True, ignore_ms=CN.IGNORE_MS, subwoofer_mode=False
 ):
     """
     Loads and processes individual IR files from a dataset folder, extracting the impulse responses
@@ -784,7 +791,7 @@ def prepare_air_dataset(
         hf.log_with_timestamp(log_string_a, gui_logger)
         
         #run etl function to load IRs
-        air_data= etl_airs(
+        air_data,status_code= etl_airs(
             folder_path=ir_data_folder,
             file_type=None,
             gui_logger=gui_logger,
@@ -793,8 +800,10 @@ def prepare_air_dataset(
             noise_reduction=noise_reduction,
             noise_tail_ratio=0.2,
             max_measurements=CN.MAX_IRS,  # Limit on the number of measurements (rows)
-            max_samples=n_fft  # Limit on the number of samples (columns)
+            max_samples=n_fft,cancel_event=cancel_event  # Limit on the number of samples (columns)
         )
+        if status_code > 0:#failure or cancelled
+            return air_data, status_code
         
         if cancel_event and cancel_event.is_set():
             gui_logger.log_warning("Operation cancelled by user.")
@@ -818,7 +827,7 @@ def prepare_air_dataset(
         #section to expand dataset in cases where few input IRs are available
         #if total IRs below threshold
         apply_transform=0
-        if total_measurements < ir_min_threshold:
+        if total_measurements < ir_min_threshold and subwoofer_mode==False:
             log_string_a = 'Expanding dataset'
             align_start_time = time.time()
             hf.log_with_timestamp(log_string_a, gui_logger)
@@ -949,8 +958,17 @@ def prepare_air_dataset(
         #set each AIR to 0 level again after removing direct portion
         log_string_a = 'Adjusting Levels'
         hf.log_with_timestamp(log_string_a, gui_logger)
-        fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
-        fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
+        # fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
+        # fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
+        if subwoofer_mode == True:
+            f_norm_start = 30#normalise at low frequencies
+            f_norm_end = 140
+        else:
+            f_norm_start = CN.SPECT_SNAP_F0#use mid frequencies
+            f_norm_end = CN.SPECT_SNAP_F1
+        # Convert target frequency range to rfft bins
+        fb_start = int(f_norm_start * n_fft / samp_freq_ash)
+        fb_end = int(f_norm_end * n_fft / samp_freq_ash)
         for idx in range(total_measurements):
             data_fft = np.fft.rfft(air_data[idx, :])
             mag_fft = np.abs(data_fft)
@@ -1077,8 +1095,8 @@ def convert_airs_to_brirs(
     air_dataset=np.array([]),
     gui_logger=None,
     use_user_folder=False,
-    wav_export=False,
-    long_mode=False, report_progress=0, cancel_event=None, distr_mode=0, rise_time=5.1
+    wav_export=CN.EXPORT_WAVS_DEFAULT,
+    long_mode=False, report_progress=0, cancel_event=None, distr_mode=0, rise_time=5.1, subwoofer_mode=False
 ):
     """
     Converts a dataset of Ambisonic Impulse Responses (AIRs) into Binaural Room Impulse Responses (BRIRs)
@@ -1224,6 +1242,8 @@ def convert_airs_to_brirs(
             num_brir_sources=5#fewer sources if long reverb tail
         if total_measurements < CN.IR_MIN_THRESHOLD_FULLSET:
             num_brir_sources=5
+        if subwoofer_mode == True:#only 1 set required if subwoofer response
+            num_brir_sources=1
    
         log_string_a = 'num_brir_sources: ' + str(num_brir_sources)
         hf.log_with_timestamp(log_string_a)
@@ -1312,10 +1332,12 @@ def convert_airs_to_brirs(
         l_fade_out_win[fade_start:] = win_l_fade_out
         brir_reverberation[0, :, :, :] *= l_fade_out_win  # broadcasted multiply
         
-        # Normalize each direction to average magnitude between fb_start and fb_end
+        # Normalize each direction to average magnitude between fb_start and fb_end       
+        f_norm_start = CN.SPECT_SNAP_F0
+        f_norm_end = CN.SPECT_SNAP_F1
         # Convert target frequency range to rfft bins
-        fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
-        fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
+        fb_start = int(f_norm_start * n_fft / samp_freq_ash)
+        fb_end = int(f_norm_end * n_fft / samp_freq_ash)
         # # Vectorized FFT over all directions and both channels
         # Convert to rfft domain (half spectrum)
         fft_data = np.fft.rfft(brir_reverberation[0, :, :, :CN.N_FFT], axis=-1)
@@ -1331,15 +1353,18 @@ def convert_airs_to_brirs(
         #
         if mag_comp:
             hf.log_with_timestamp("Compensating BRIRs", gui_logger)
+            
+            comp_win_size = 7 if subwoofer_mode == True else 7
         
             # Level ends of spectrum
-            high_freq = 12000 if ir_set in CN.AC_SPACE_LIST_SUB else 15000
-            low_freq_in = 125 if ir_set in CN.AC_SPACE_LIST_SUB else 40
+            high_freq = 12000 if ir_set in CN.AC_SPACE_LIST_SUB or subwoofer_mode == True else 15000
+            low_freq_in = 20 if ir_set in CN.AC_SPACE_LIST_SUB or subwoofer_mode == True else 30
+            low_freq_in_target = 150 if subwoofer_mode == True else low_freq_in#make level in sub frequencies
         
             # Load target
             target_path = pjoin(CN.DATA_DIR_INT, 'reverberation', 'reverb_target_mag_response.npy')
             brir_fft_target_mag = np.load(target_path)
-            brir_fft_target_mag = hf.level_spectrum_ends(brir_fft_target_mag, low_freq_in, high_freq, smooth_win=20)
+            brir_fft_target_mag = hf.level_spectrum_ends(brir_fft_target_mag, low_freq_in_target, high_freq, smooth_win=10)#20
         
             for direc in range(num_brir_sources):
                 if cancel_event and cancel_event.is_set():
@@ -1357,12 +1382,12 @@ def convert_airs_to_brirs(
         
                 # Convert back to magnitude, level ends, and smooth
                 brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-                brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, low_freq_in, high_freq, smooth_win=7)
-                brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag)
+                brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, low_freq_in, high_freq, smooth_win=comp_win_size)#6
+                brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, win_size_base = comp_win_size)
         
                 # Compensation filter (smoothed)
                 comp_mag = hf.db2mag(hf.mag2db(brir_fft_target_mag) - hf.mag2db(brir_fft_avg_mag_sm))
-                comp_mag = hf.smooth_fft_octaves(comp_mag, win_size_base = 7)
+                #comp_mag = hf.smooth_fft_octaves(comp_mag, win_size_base = 7)
                 #comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
                 comp_eq_fir = hf.build_min_phase_filter(comp_mag)
         
@@ -1382,11 +1407,16 @@ def convert_airs_to_brirs(
         #
         #set each direction to 0 level again
         #
-        # Normalize each direction to average magnitude between fb_start and fb_end
+        # Normalize each direction to average magnitude between fb_start and fb_end    
+        if subwoofer_mode == True:
+            f_norm_start = 30#normalise at low frequencies
+            f_norm_end = 140
+        else:
+            f_norm_start = CN.SPECT_SNAP_F0#use mid frequencies
+            f_norm_end = CN.SPECT_SNAP_F1
         # Convert target frequency range to rfft bins
-        fb_start = int(CN.SPECT_SNAP_F0 * CN.N_FFT / samp_freq_ash)
-        fb_end = int(CN.SPECT_SNAP_F1 * CN.N_FFT / samp_freq_ash)
-        
+        fb_start = int(f_norm_start * n_fft / samp_freq_ash)
+        fb_end = int(f_norm_end * n_fft / samp_freq_ash)
         # # Vectorized FFT over all directions and both channels
         # Convert to rfft domain (half spectrum)
         fft_data = np.fft.rfft(brir_reverberation[0, :, :, :CN.N_FFT], axis=-1)
@@ -1427,6 +1457,9 @@ def convert_airs_to_brirs(
         
         if brir_reverberation.dtype == np.float64:
             brir_reverberation = brir_reverberation.astype(np.float32)
+            
+        if subwoofer_mode == True:#only 2 dimensions required if subwoofer response
+            brir_reverberation=hf.remove_leading_singletons(brir_reverberation)
         
         #
         #save numpy array for later use in BRIR generation functions
@@ -1487,7 +1520,7 @@ def trim_brir_samples(brir_array, relative_threshold=0.000005, ignore_last=2000)
     
     return brir_array_trimmed
 
-def write_as_metadata_csv(ir_set, data_rows, gui_logger=None):
+def write_as_metadata_csv(ir_set, data_rows, sub_mode=False, gui_logger=None):
     """
     Writes a metadata CSV file with predefined columns. Missing values are left blank.
     
@@ -1495,14 +1528,20 @@ def write_as_metadata_csv(ir_set, data_rows, gui_logger=None):
     :param data_rows: list of dicts, where each dict represents a row with keys matching the column headers.
     :param gui_logger: optional logger for GUI display.
     """
+    
+    if sub_mode == False:
+        metadata_key=CN.USER_CSV_KEY#_metadata
+    else:
+        metadata_key=CN.ASI_USER_CSV_KEY#_asi-metadata
+    
     fieldnames = CN.AC_SPACE_FIELD_NAMES
-    brir_out_folder = pjoin(CN.DATA_DIR_AS_USER,ir_set)
-    filename = ir_set + CN.USER_CSV_KEY +'.csv'
-    file_path = pjoin(brir_out_folder,filename)
+    file_folder = pjoin(CN.DATA_DIR_AS_USER,ir_set)
+    filename = ir_set + metadata_key +'.csv'
+    file_path = pjoin(file_folder,filename)
 
     try:
         # Ensure the output directory exists
-        os.makedirs(brir_out_folder, exist_ok=True)
+        os.makedirs(file_folder, exist_ok=True)
         
         with open(file_path, mode='w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -1524,6 +1563,43 @@ def write_as_metadata_csv(ir_set, data_rows, gui_logger=None):
         else:
             print(error_message)
 
+
+def write_sub_metadata_csv(ir_set, data_rows, gui_logger=None):
+    """
+    Writes a metadata CSV file with predefined columns. Missing values are left blank.
+    
+    :param file_path: str, full path to the CSV file to write.
+    :param data_rows: list of dicts, where each dict represents a row with keys matching the column headers.
+    :param gui_logger: optional logger for GUI display.
+    """
+    fieldnames = CN.SUB_FIELD_NAMES
+    file_folder = pjoin(CN.DATA_DIR_AS_USER,ir_set)
+    filename = ir_set + CN.SUB_USER_CSV_KEY +'.csv'
+    file_path = pjoin(file_folder,filename)
+
+    try:
+        # Ensure the output directory exists
+        os.makedirs(file_folder, exist_ok=True)
+        
+        with open(file_path, mode='w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in data_rows:
+                complete_row = {key: row.get(key, "") for key in fieldnames}
+                writer.writerow(complete_row)
+
+        log_string = 'Exported metadata CSV to: ' + file_path
+        if gui_logger:
+            hf.log_with_timestamp(log_string, gui_logger)
+        else:
+            print(log_string)
+
+    except Exception as e:
+        error_message = f"Failed to write metadata CSV to {file_path}: {str(e)}"
+        if gui_logger:
+            hf.log_with_timestamp(error_message, gui_logger)
+        else:
+            print(error_message)
 
     
  
