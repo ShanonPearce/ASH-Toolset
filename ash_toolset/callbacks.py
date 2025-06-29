@@ -3570,7 +3570,7 @@ def start_processing_callback():
         #notes = f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str}"
         notes = (
             f"Created with ASH Toolset {__version__} on {timestamp_str} | "
-            f"subwoofer_mode={as_subwoofer_mode}, "
+            f"low-frequency_mode={as_subwoofer_mode}, "
             f"noise_reduction_mode={noise_reduction_mode}, "
             f"rise_time={rise_time}ms, "
             f"pitch_range=({pitch_low}, {pitch_high}), "
