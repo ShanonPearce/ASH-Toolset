@@ -403,7 +403,7 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 | Concert Hall C     | 1493                 | Office B         | 496                  | Tunnel         | 1354                 |
 | Concert Hall D     | 1417                 | Outdoors A       | 1935                 |                |                      |
 
-### Subwoofer Responses
+### Low-frequency Responses
 
 | Name                     | Acoustic space   | Estimated rt60 | Comments                        | Frequency Range | Tolerance           | Measurement Dataset                      | Source Type | Listener Type |
 |--------------------------|------------------|----------------|---------------------------------|-----------------|---------------------|------------------------------------------|-------------|---------------|
