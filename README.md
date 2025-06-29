@@ -337,7 +337,7 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 **Binaural Room Impulse Responses**
 - Binaural room impulse responses are saved within the ASH-Outputs\BRIRs folder.
 - A folder is created for each set of WAV BRIRs and is named as per the selected parameters.
-    - The naming convention for the folder is `(Listener)_(Acoustic_Space)_(Direct_Sound_Gain)_(Room_Target)_(Headphone_Type)`.
+    - The naming convention for the folder is `(Listener)_(Acoustic_Space)_(Direct_Sound_Gain)_(Room_Target)_(Low-Freq_Response)_(Headphone_Type)`.
 - A WAV file is created for a range of source directions around the listener. Each WAV file corresponds to a unique direction.
     - The naming convention for the BRIR WAV files is `BRIR_E(Elevation)_A(Azimuth).wav`.
     - Positive elevation angles correspond to points above the listener while negative angles correspond to points below the listener. An elevation of 0 corresponds to a point at the same level as the listener.
