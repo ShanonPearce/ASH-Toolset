@@ -145,8 +145,8 @@ In the 'Quick Configuration’ tab, this tool is used to apply customised binaur
    - User SOFA Input
 6. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
 7. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`. Additional SOFA files can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files).
-8. **(optional) Select Subwoofer Crossover Frequency** between 40Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner subwoofer response and original room response. Higher values may result in a smoother bass response. 
-9. **Select Subwoofer Response** from available options. A comparison of responses are available in the supporting information section below.
+8. **(optional) Select Low-frequency Integration Crossover Frequency** between 20Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner Low-frequency response and original room response. Higher values may result in a smoother bass response. 
+9. **Select Low-frequency Response for Extension** from available options. A comparison of responses are available in the supporting information section below.
 10. **(optional) Enable Additional EQ**. Compensate Headphone Roll-off option will compensate the typical reduction in bass response below 100Hz in many headphones. This filter will result in a gain of approximately 4dB at 20Hz. Forward-Backward Filtering option will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases.
 11. **Select Sample Rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated WAV files should match the sample rate of the sound device.
 12. **Select Bit Depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
@@ -177,8 +177,8 @@ In the ‘Filter & Dataset export’ tab, this is used to export a customised bi
    - User SOFA Input
 7. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
 8. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`. Additional SOFA files can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files).
-9.  **(optional) Select Subwoofer Crossover Frequency** between 40Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner subwoofer response and original room response. Higher values may result in a smoother bass response. 
-10. **Select Subwoofer Response** from available options. A comparison of responses are available in the supporting information section below.
+9.  **(optional) Select Low-frequency Integration Crossover Frequency** between 20Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner Low-frequency response and original room response. Higher values may result in a smoother bass response. 
+10. **Select Low-frequency Response for Extension** from available options. A comparison of responses are available in the supporting information section below.
 11. **(optional) Enable Additional EQ**. Compensate Headphone Roll-off option will compensate the typical reduction in bass response below 100Hz in many headphones. This filter will result in a gain of approximately 4dB at 20Hz. Forward-Backward Filtering option will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases.
 12. **Select Sample Rate** for the WAV or SOFA files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated WAV files should match the sample rate of the sound device.
 13. **Select Bit Depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
@@ -263,6 +263,8 @@ This tab can be used to generate new acoustic spaces from reverberant impulse re
   Enable if IRs have long decay tails (over 1.5 seconds). This increases processing time.
 - **Noise Reduction:**  
   Enable if IRs contain a high noise floor.
+- **Low-frequency Mode:**  
+  Enable if the IRs are low frequency measurements such as subwoofer measurements. This will make the result available under Low-frequency responses.
 - **Rise Time (ms):**  
   Select the duration of the fade in window applied to the response.
 
@@ -403,12 +405,18 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 
 ### Subwoofer Responses
 
-| Name                 | Acoustic space | Estimated rt60 | Frequency Range | Tolerance           | Comments                             |
-|----------------------|----------------|----------------|-----------------|---------------------|--------------------------------------|
-| Subwoofer Response A | Audio Lab      | 320            | 3Hz-150Hz       | 20Hz-120Hz +/-0.8dB | Primary response used in v3.1.2      |
-| Subwoofer Response B | Audio Lab      | 340            | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Newly added in v3.2.0                |
-| Subwoofer Response C | Listening Room | 350            | 5Hz-150Hz       | 20Hz-120Hz +/-1.4dB | Previously used in ASH-Listening-Set |
-| Subwoofer Response D | Studio         | 240            | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Newly added in v3.2.0                |
+| Name                     | Acoustic space   | Estimated rt60 | Comments                        | Frequency Range | Tolerance           | Measurement Dataset                      | Source Type | Listener Type |
+|--------------------------|------------------|----------------|---------------------------------|-----------------|---------------------|------------------------------------------|-------------|---------------|
+| Low-frequency Response A | Audio Lab        | 320            | Primary response used in v3.1.2 | 3Hz-150Hz       | 20Hz-120Hz +/-0.8dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
+| Low-frequency Response B | Audio Lab        | 340            | Newly added in v3.2.0           | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
+| Low-frequency Response C | Listening Room   | 350            | Newly added in v3.2.0           | 5Hz-150Hz       | 20Hz-120Hz +/-1.4dB | ASH-Listening-Set                        | Subwoofer   | Binaural      |
+| Low-frequency Response D | Studio           | 240            | Newly added in v3.2.0           | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
+| Low-frequency Response E | Audio Lab        | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
+| Low-frequency Response F | Studio live room | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-2.0dB | BBC Maida Vale Impulse Response Dataset  | Loudspeaker | Binaural      |
+| Low-frequency Response G | Listening Room   | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
+| Low-frequency Response H | Listening Room   | 600            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-4.0dB | The ISOBEL Sound Field Dataset           | Subwoofer   | Binaural      |
+| Low-frequency Response I | Recording Studio | 700            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-2.0dB | RSoANU: RIR Dataset                      | Loudspeaker | Binaural      |
+| Low-frequency Response J | Listening Room   | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | The ISOBEL Sound Field Dataset           | Subwoofer   | Binaural      |
 
 ---
 ## License <a name="License"></a> 
