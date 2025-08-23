@@ -335,13 +335,20 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 ---
 ## Changelog <a name="Changelog"></a> 
 
+Version 3.5.0:
+- Added favourites selection to listener selection tab. ‘Add favourite’ button has been added below listener list to add selected listener to favourites list.
+- Added new acoustic spaces: Lecture Room B, Meeting Room, Stairway
+- Removed duplicated spaces (Small Room B,D,F & Large Room B). Renamed Small Room C -> B, E -> C
+- Added 112 new headphone correction filters
+- Added option to manually reverse the polarity of the direct sound. Polarity is auto adjusted by default. The option can be found under Misc. Settings in Additional tools & settings tab.
+
 Version 3.4.0:
 *It is recommended to uninstall the previous version before installing this new version*
--Low frequency responses can now be generated from acoustic space import tab. When "Low-frequency Mode" is toggled, the result will be available under Low-frequency responses list.
--Fixed bug causing WAV BRIR exports in Filter & Dataset Export tab to fail
--Included new low frequency responses (E-J) for low frequency extension
--Installer now correctly installs app to 64 bit folder. The previous version should be uninstalled before installing this version. Alternatively the previous folder can be manually deleted after installation: C:\Program Files (x86)\ASH Toolset.
--Minor GUI changes
+- Low frequency responses can now be generated from acoustic space import tab. When "Low-frequency Mode" is toggled, the result will be available under Low-frequency responses list.
+- Fixed bug causing WAV BRIR exports in Filter & Dataset Export tab to fail
+- Included new low frequency responses (E-J) for low frequency extension
+- Installer now correctly installs app to 64 bit folder. The previous version should be uninstalled before installing this version. Alternatively the previous folder can be manually deleted after installation: C:\Program Files (x86)\ASH Toolset.
+- Minor GUI changes
 
 Version 3.3.1:
 - Improved support for loading of .mat files in acoustic space import tab
