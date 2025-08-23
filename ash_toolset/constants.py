@@ -855,9 +855,9 @@ SOFA_OUTPUT_CONVERS = extract_column(data=sofa_data, column='SOFAConventionsVers
 #HRTF related - individual datasets
 HRTF_A_GAIN_ADDIT = 2.5#
 #Strings
-HRTF_TYPE_LIST = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input']
-HRTF_TYPE_LIST_FULL = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input','Dummy Head - Max Resolution']
-
+HRTF_TYPE_LIST = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input', 'Favourites']
+HRTF_TYPE_LIST_FULL = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 'User SOFA Input','Dummy Head - Max Resolution', 'Favourites']
+HRTF_BASE_LIST_FAV = ['No favourites found']
 #new: load as dict lists
 csv_directory = DATA_DIR_HRIR_NPY
 hrtf_data = load_csv_as_dicts(csv_directory,'hrir_metadata.csv')
@@ -878,15 +878,15 @@ HRTF_DATASET_LIST_DUMMY_MAX = list(set(HRTF_DATASET_LIST_DUMMY_MAX))
 # Sort the list alphabetically
 HRTF_DATASET_LIST_DUMMY.sort()
 HRTF_DATASET_LIST_DUMMY_MAX.sort()
-
 #create a dictionary
 HRTF_TYPE_DATASET_DICT = {
     HRTF_TYPE_LIST_FULL[0]: HRTF_DATASET_LIST_DUMMY,
     HRTF_TYPE_LIST_FULL[1]: HRTF_DATASET_LIST_INDV,
     HRTF_TYPE_LIST_FULL[2]: HRTF_DATASET_LIST_CUSTOM,
-    HRTF_TYPE_LIST_FULL[3]: HRTF_DATASET_LIST_DUMMY_MAX
+    HRTF_TYPE_LIST_FULL[3]: HRTF_DATASET_LIST_DUMMY_MAX,
+    HRTF_TYPE_LIST_FULL[4]: HRTF_DATASET_LIST_CUSTOM
 }
-
+HRTF_POLARITY_LIST = ['Auto Select','Original','Reversed']
 
 #SUB Related
 SUB_FC_SETTING_LIST = ['Auto Select', 'Custom Value']

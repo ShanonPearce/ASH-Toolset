@@ -36,6 +36,7 @@ import shutil
 import scipy.signal as signal
 import platform
 import subprocess
+import json
 
 #
 ## GUI Functions - HPCFs
@@ -703,85 +704,7 @@ def select_spatial_resolution(sender, app_data):
     update_brir_param()
     
 
-# def select_room_target(sender, app_data):
-#     """ 
-#     GUI function to plot the selected room target and update progress bar
-#     """
 
-#     target_sel = app_data
-    
-#     #run plot
-#     try:
-
-#         # populate room target dictionary for plotting
-#         # load room target filters (FIR)
-#         npy_fname = pjoin(CN.DATA_DIR_INT, 'room_targets_firs.npy')
-#         room_target_mat = np.load(npy_fname)
-#         #create dictionary
-#         target_mag_dict = {} 
-#         for idx, target in enumerate(CN.ROOM_TARGET_LIST_SHORT):
-#             room_target_fir=np.zeros(CN.N_FFT)
-#             room_target_fir[0:4096] = room_target_mat[idx]
-#             data_fft = np.fft.fft(room_target_fir)
-#             room_target_mag=np.abs(data_fft)
-#             room_target_name=CN.ROOM_TARGET_LIST[idx]
-#             target_mag_dict.update({room_target_name: room_target_mag})
-    
-#         mag_response = target_mag_dict.get(target_sel)
-#         plot_tile = target_sel + ' frequency response'
-#         hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1,y_lim_a=-12, y_lim_b=12, save_plot=0, normalise=2, plot_type=1)
-
-#     except:
-#         pass
-
-#     #update progress bar
-#     update_brir_param()
-    
-# def select_room_target(sender, app_data): 
-#     """
-#     GUI function to plot the selected room target and update progress bar.
-#     Uses preloaded FIR data from CN.ROOM_TARGETS_DICT.
-#     """
-#     target_sel = app_data
-
-#     try:
-#         # Get the FIR from the dictionary
-#         target_data = CN.ROOM_TARGETS_DICT.get(target_sel)
-#         if not target_data:
-#             logging.warning(f"Room target '{target_sel}' not found in ROOM_TARGETS_DICT.")
-#             return
-
-#         fir = target_data["impulse_response"]
-
-#         # Zero-pad to desired FFT length
-#         room_target_fir = np.zeros(CN.N_FFT)
-#         room_target_fir[:len(fir)] = fir
-
-#         # Compute magnitude response
-#         data_fft = np.fft.fft(room_target_fir)
-#         room_target_mag = np.abs(data_fft)
-
-#         # Plot
-#         plot_title = f"{target_sel} frequency response"
-#         hf.plot_data(
-#             room_target_mag,
-#             title_name=plot_title,
-#             n_fft=CN.N_FFT,
-#             samp_freq=CN.SAMP_FREQ,
-#             y_lim_adjust=1,
-#             y_lim_a=-12,
-#             y_lim_b=12,
-#             save_plot=0,
-#             normalise=2,
-#             plot_type=1
-#         )
-
-#     except Exception as e:
-#         logging.error(f"Failed to plot room target '{target_sel}': {e}")
-
-#     # Update progress bar or GUI state
-#     update_brir_param()
- 
 def select_hrtf(sender=None, app_data=None):
     """ 
     GUI function to update brir based on input
@@ -795,6 +718,18 @@ def select_hrtf(sender=None, app_data=None):
     brir_hrtf = brir_dict.get('brir_hrtf')
     brir_hrtf_short=brir_dict.get('brir_hrtf_short')
     try:
+        
+        #section to convert from favourite to actual dataset
+        if brir_hrtf_type == 'Favourites':
+            #lookup to get dataset and hrtf name and actual type
+            # Call the lookup function, use brir_hrtf since it stores the short name and brir_hrtf_short will be the same
+            hrtf_type, dataset, name_gui = hrir_processing.get_hrtf_info_from_name_short(name_short=brir_hrtf)
+            #replace existing metadata
+            brir_hrtf_type=hrtf_type
+            brir_hrtf_dataset=dataset
+            brir_hrtf_short=brir_hrtf
+            brir_hrtf=name_gui
+            
         #run plot
         spat_res_int=0
         if brir_hrtf_type == 'Human Listener':
@@ -991,6 +926,18 @@ def qc_select_hrtf(sender=None, app_data=None):
     brir_hrtf = brir_dict.get('qc_brir_hrtf')
     brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
     try:
+        
+        #section to convert from favourite to actual dataset
+        if brir_hrtf_type == 'Favourites':
+            #lookup to get dataset and hrtf name and actual type
+            # Call the lookup function, use brir_hrtf since it stores the short name and brir_hrtf_short will be the same
+            hrtf_type, dataset, name_gui = hrir_processing.get_hrtf_info_from_name_short(name_short=brir_hrtf)
+            #replace existing metadata
+            brir_hrtf_type=hrtf_type
+            brir_hrtf_dataset=dataset
+            brir_hrtf_short=brir_hrtf
+            brir_hrtf=name_gui
+    
         #run plot
         spat_res_int=0
         if brir_hrtf_type == 'Human Listener':
@@ -1411,6 +1358,17 @@ def update_hrtf_dataset_list(sender, app_data):
     """
     if app_data != None:
         brir_hrtf_type_new= app_data
+        
+        if brir_hrtf_type_new == 'Favourites':
+            dpg.configure_item('hrtf_add_favourite',show=False)
+            dpg.configure_item('hrtf_remove_favourite',show=True)
+        elif brir_hrtf_type_new == 'User SOFA Input':
+            dpg.configure_item('hrtf_add_favourite',show=False)
+            dpg.configure_item('hrtf_remove_favourite',show=False)
+        else:
+            dpg.configure_item('hrtf_add_favourite',show=True)
+            dpg.configure_item('hrtf_remove_favourite',show=False)
+            
         #update spatial res to valid list
         if brir_hrtf_type_new == CN.HRTF_TYPE_LIST[0]:
             dpg.configure_item('brir_spat_res',items=CN.SPATIAL_RES_LIST)
@@ -1460,7 +1418,10 @@ def update_hrtf_list(sender, app_data):
         else:
             hrtf_list_new = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_new, dataset_name=brir_hrtf_dataset_new)
         dpg.configure_item('brir_hrtf',items=hrtf_list_new)
-        brir_hrtf_new=hrtf_list_new[0]
+        if hrtf_list_new:
+            brir_hrtf_new = hrtf_list_new[0]
+        else:
+            brir_hrtf_new = 'No HRTFs Found'
         #reset dataset value to first dataset
         dpg.configure_item('brir_hrtf',show=False)
         dpg.configure_item('brir_hrtf',default_value=brir_hrtf_new)
@@ -1476,6 +1437,17 @@ def qc_update_hrtf_dataset_list(sender, app_data):
     """
     if app_data != None:
         qc_brir_hrtf_type_new= app_data
+        
+        if qc_brir_hrtf_type_new == 'Favourites':
+            dpg.configure_item('qc_hrtf_add_favourite',show=False)
+            dpg.configure_item('qc_hrtf_remove_favourite',show=True)
+        elif qc_brir_hrtf_type_new == 'User SOFA Input':
+            dpg.configure_item('qc_hrtf_add_favourite',show=False)
+            dpg.configure_item('qc_hrtf_remove_favourite',show=False)
+        else:
+            dpg.configure_item('qc_hrtf_add_favourite',show=True)
+            dpg.configure_item('qc_hrtf_remove_favourite',show=False)
+        
         qc_brir_hrtf_dataset_list_new = CN.HRTF_TYPE_DATASET_DICT.get(qc_brir_hrtf_type_new)
         #update dataset list with filtered type
         dpg.configure_item('qc_brir_hrtf_dataset',items=qc_brir_hrtf_dataset_list_new)
@@ -1489,7 +1461,7 @@ def qc_update_hrtf_dataset_list(sender, app_data):
         qc_hrtf_list_new = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_new, dataset_name=qc_brir_hrtf_dataset_new)
         dpg.configure_item('qc_brir_hrtf',items=qc_hrtf_list_new)
         qc_brir_hrtf_new=qc_hrtf_list_new[0]
-        #reset dataset value to first dataset
+        #reset value to first hrtf
         dpg.configure_item('qc_brir_hrtf',show=False)
         dpg.configure_item('qc_brir_hrtf',default_value=qc_brir_hrtf_new)
         dpg.configure_item('qc_brir_hrtf',show=True)
@@ -1509,7 +1481,10 @@ def qc_update_hrtf_list(sender, app_data):
         #qc hrtf list based on dataset and hrtf type
         qc_hrtf_list_new = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_new, dataset_name=qc_brir_hrtf_dataset_new)
         dpg.configure_item('qc_brir_hrtf',items=qc_hrtf_list_new)
-        qc_brir_hrtf_new=qc_hrtf_list_new[0]
+        if qc_hrtf_list_new:
+            qc_brir_hrtf_new = qc_hrtf_list_new[0]
+        else:
+            qc_brir_hrtf_new = 'No HRTFs Found'
         #reset dataset value to first dataset
         dpg.configure_item('qc_brir_hrtf',show=False)
         dpg.configure_item('qc_brir_hrtf',default_value=qc_brir_hrtf_new)
@@ -1572,19 +1547,11 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     brir_dict_params=get_brir_dict()
     
     #calculate name
-    # room_target = brir_dict_params.get("room_target")
-    # direct_gain_db = brir_dict_params.get("direct_gain_db")
-    # pinna_comp = brir_dict_params.get("pinna_comp")
-    # brir_hrtf_short=brir_dict_params.get('brir_hrtf_short')
-    # ac_space_short= brir_dict_params.get("ac_space_short")
-    # brir_name = brir_hrtf_short + '_'+ac_space_short + '_' + str(direct_gain_db) + 'dB_' + CN.ROOM_TARGET_LIST_SHORT[room_target] + '_' + CN.HP_COMP_LIST_SHORT[pinna_comp]
+
     #20250622: fix name related bug
     brir_name = calc_brir_set_name(full_name=False,tab=1)
     
 
-    
-    
-    
     """
     #Run BRIR integration
     """
@@ -1768,26 +1735,7 @@ def qc_process_brirs(use_dict_list=False):
     log_string = 'Processing: ' + brir_name
     hf.log_with_timestamp(log_string, logz)
     
-    # #contains previously processed brirs
-    # brir_dict_list=dpg.get_item_user_data("e_apo_brir_conv")
-    
-    # #which brir dict to use for output, only used to specify directons
-    # force_use_brir_dict=dpg.get_item_user_data("qc_e_apo_curr_brir_set")
-    # if use_dict_list == False and force_use_brir_dict == False:#grab relevant config data from gui elements
-    #     brir_dict_out=get_brir_dict()
-    # else:
-    #     brir_dict_out=dpg.get_item_user_data("qc_e_apo_sel_brir_set")#grab from previously stored values, in case of direction change where brirs dont exist
-    
 
-    # """
-    # #Run BRIR integration
-    # """
-    # if use_dict_list == False or not brir_dict_list:#run brir integration process if use dict list not flagged or dict list has no data
-    #     brir_gen, status = brir_generation.generate_integrated_brir(brir_name=out_dataset_name, spatial_res=spat_res_int, report_progress=1, gui_logger=logz, brir_dict=brir_dict_params)
-    # else:
-    #     brir_gen= np.array([])
-    #     status=0
-    
     #contains previously processed brirs
     brir_dict_list = dpg.get_item_user_data("e_apo_brir_conv") or []
     force_use_brir_dict = dpg.get_item_user_data("qc_e_apo_curr_brir_set") or False
@@ -1830,11 +1778,7 @@ def qc_process_brirs(use_dict_list=False):
         dpg.set_value("e_apo_brir_conv", True)
         #save dict list within gui element
         if brir_dict_list_new:#only update if not empty list
-            # old_data=dpg.get_item_user_data("e_apo_brir_conv")
-            # # Prevent memory leak by clearing old references
-            # if isinstance(old_data, list):
-            #     old_data.clear()
-            # dpg.configure_item('e_apo_brir_conv',user_data=brir_dict_list_new)#use later if changing directions
+
             
             # Prevent memory leak by clearing old references
             old_data = dpg.get_item_user_data("e_apo_brir_conv") or []
@@ -1899,9 +1843,9 @@ def calc_brir_set_name(full_name=True,tab=0):
     """ 
     GUI function to calculate brir set name from currently selected parameters
     """
-
+    brir_dict=get_brir_dict()
     if tab == 0:#quick config tab
-        brir_dict=get_brir_dict()
+        
         
         room_target_name = brir_dict.get("qc_room_target")
         target_name_short = CN.ROOM_TARGETS_DICT[room_target_name]["short_name"]
@@ -1920,15 +1864,15 @@ def calc_brir_set_name(full_name=True,tab=0):
         qc_sub_response_short=brir_dict.get('qc_sub_response_short')
         qc_hp_rolloff_comp=brir_dict.get('qc_hp_rolloff_comp')
         qc_fb_filtering=brir_dict.get('qc_fb_filtering')
+        hrtf_polarity = brir_dict.get("hrtf_polarity")
         
         if full_name==True:
-            brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + target_name_short + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(qc_crossover_f) + ' ' + str(qc_sub_response) + ' ' + str(qc_hp_rolloff_comp) + ' ' + str(qc_fb_filtering) 
+            brir_name = qc_brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + target_name_short + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(qc_crossover_f) + ' ' + str(qc_sub_response) + ' ' + str(qc_hp_rolloff_comp) + ' ' + str(qc_fb_filtering) + ' ' + hrtf_polarity 
         else:
             brir_name = qc_brir_hrtf_short + ', '+ac_space_short + ', ' + str(direct_gain_db) + 'dB, ' + target_name_short + ', ' + qc_sub_response_short+ '-' +str(qc_crossover_f) + ', ' + CN.HP_COMP_LIST_SHORT[pinna_comp] 
 
     else:#filter and dataset tab
-        brir_dict=get_brir_dict()
-        
+
         room_target_name = brir_dict.get("room_target")
         target_name_short = CN.ROOM_TARGETS_DICT[room_target_name]["short_name"]
         
@@ -2038,7 +1982,8 @@ def save_settings(update_hpcf_pars=False,update_brir_pars=False):
             config['DEFAULT'] = {}
 
         __version__ = dpg.get_item_user_data("log_text")  # contains version
-        
+        #config['DEFAULT']['hrtf_list_favs']  = str(dpg.get_item_user_data("hrtf_add_favourite"))#fails
+        config['DEFAULT']['hrtf_list_favs'] = json.dumps(dpg.get_item_user_data("hrtf_add_favourite") or [])
         config['DEFAULT']['path'] = dpg.get_value('selected_folder_base')    # update
         config['DEFAULT']['sampling_frequency'] = dpg.get_value('wav_sample_rate') 
         config['DEFAULT']['bit_depth'] = dpg.get_value('wav_bit_depth')    # update
@@ -2119,6 +2064,7 @@ def save_settings(update_hpcf_pars=False,update_brir_pars=False):
         config['DEFAULT']['sub_response'] = str(dpg.get_value('sub_response'))
         config['DEFAULT']['hp_rolloff_comp'] = str(dpg.get_value('hp_rolloff_comp'))
         config['DEFAULT']['fb_filtering_mode'] = str(dpg.get_value('fb_filtering'))
+        config['DEFAULT']['hrtf_polarity'] = str(dpg.get_value('hrtf_polarity_rev'))
         
         if update_hpcf_pars:
             # overwrite HPCF-related keys
@@ -2393,6 +2339,7 @@ def get_brir_dict():
     sub_response_short = CN.SUB_RESPONSE_LIST_SHORT[sub_response_int]
     hp_rolloff_comp = dpg.get_value('hp_rolloff_comp')
     fb_filtering = dpg.get_value('fb_filtering')
+    hrtf_polarity = dpg.get_value('hrtf_polarity_rev')
 
     brir_dict = {
         'enable_conv': enable_brir_selected, 'brir_set_folder': brir_set_folder, 
@@ -2452,7 +2399,7 @@ def get_brir_dict():
         # Additional variables
         'qc_crossover_f_mode': qc_crossover_f_mode, 'qc_crossover_f': qc_crossover_f, 'qc_sub_response': qc_sub_response, 'qc_sub_response_short': qc_sub_response_short, 'qc_hp_rolloff_comp': qc_hp_rolloff_comp,
         'qc_fb_filtering': qc_fb_filtering, 'crossover_f_mode': crossover_f_mode, 'crossover_f': crossover_f, 'sub_response': sub_response, 'sub_response_short': sub_response_short, 
-        'hp_rolloff_comp': hp_rolloff_comp, 'fb_filtering': fb_filtering
+        'hp_rolloff_comp': hp_rolloff_comp, 'fb_filtering': fb_filtering, 'hrtf_polarity': hrtf_polarity
     }
 
 
@@ -4184,3 +4131,88 @@ def open_sound_control_panel():
             logging.error(f"Exception occurred while trying to open Sound Control Panel: {e}")
     else:
         logging.info("Sound Control Panel is only available on Windows.")
+       
+        
+
+def add_hrtf_favourite_callback(sender, app_data):
+    """ 
+    GUI function to add hrtf to favourites list
+    """        
+    update_hrtf_favourite('Export', 'add')
+    
+def add_hrtf_favourite_qc_callback(sender, app_data):
+    """ 
+    GUI function to add hrtf to favourites list
+    """        
+    update_hrtf_favourite('QC', 'add')
+
+
+    
+def remove_hrtf_favourite_callback(sender, app_data):
+    """ 
+    GUI function to add hrtf to favourites list
+    """        
+    update_hrtf_favourite('Export', 'remove')
+    
+def remove_hrtf_favourite_qc_callback(sender, app_data):
+    """ 
+    GUI function to add hrtf to favourites list
+    """        
+    update_hrtf_favourite('QC', 'remove')
+   
+
+        
+def update_hrtf_favourite(tab, action): 
+    """ 
+    GUI function to add or remove an HRTF from the favourites list.
+
+    Args:
+        tab (str): 'QC' or other tab identifier.
+        action (str): 'add' or 'remove'.
+    """
+
+    # Get current list of favourites (string list)
+    current_fav_list = dpg.get_item_user_data("hrtf_add_favourite") or []
+
+    # Get current selected hrtf (string) from GUI element
+    brir_dict = get_brir_dict()
+    if tab == 'QC':
+        brir_hrtf_type = brir_dict.get('qc_brir_hrtf_type')
+        brir_hrtf_dataset = brir_dict.get('qc_brir_hrtf_dataset')
+        brir_hrtf = brir_dict.get('qc_brir_hrtf')
+        brir_hrtf_short = brir_dict.get('qc_brir_hrtf_short')
+    else:
+        brir_hrtf_type = brir_dict.get('brir_hrtf_type')
+        brir_hrtf_dataset = brir_dict.get('brir_hrtf_dataset')
+        brir_hrtf = brir_dict.get('brir_hrtf')
+        brir_hrtf_short = brir_dict.get('brir_hrtf_short')
+    
+    if brir_hrtf_type in ('Dummy Head / Head & Torso Simulator', 'Human Listener', 'Favourites'):
+        # Modify list based on action
+        if action == "add":
+            # Remove 'No favourites found' if it's present before adding new favourites
+            updated_fav_list = [f for f in current_fav_list if f != 'No favourites found']
+            if brir_hrtf_short and brir_hrtf_short not in updated_fav_list:
+                updated_fav_list.append(brir_hrtf_short)
+    
+        elif action == "remove":
+            updated_fav_list = [item for item in current_fav_list if item != brir_hrtf_short]
+    
+        else:
+            updated_fav_list = current_fav_list
+
+        # If updated list is empty, replace with placeholder
+        if not updated_fav_list:
+            updated_fav_list = ['No favourites found']
+
+        # Replace user data
+        dpg.configure_item('hrtf_add_favourite', user_data=updated_fav_list)
+        
+        # Also refresh list
+        if brir_dict.get('brir_hrtf_type') == 'Favourites':
+            update_hrtf_list(sender=None, app_data=brir_dict.get('brir_hrtf_dataset'))
+        if brir_dict.get('qc_brir_hrtf_type') == 'Favourites':
+            qc_update_hrtf_list(sender=None, app_data=brir_dict.get('qc_brir_hrtf_dataset'))
+    
+        # Save settings so that changes are saved to file
+        save_settings()

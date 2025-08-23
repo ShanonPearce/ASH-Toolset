@@ -89,8 +89,21 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             
             hrtf_symmetry = brir_dict.get("hrtf_symmetry")
             early_refl_delay_ms = brir_dict.get("er_delay_time")
+            hrtf_polarity = brir_dict.get("hrtf_polarity")
         else:
             raise ValueError('brir_dict not populated')
+            
+        #section to convert from favourite to actual dataset
+        if brir_hrtf_type == 'Favourites':
+            #lookup to get dataset and hrtf name and actual type
+            # Call the lookup function, use brir_hrtf since it stores the short name and brir_hrtf_short will be the same
+            hrtf_type, dataset, name_gui = hrir_processing.get_hrtf_info_from_name_short(name_short=brir_hrtf)
+            #replace existing metadata
+            brir_hrtf_type=hrtf_type
+            brir_hrtf_dataset=dataset
+            brir_hrtf_short=brir_hrtf
+            brir_hrtf=name_gui
+            
         
         #exit if stop thread flag is true
         stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
@@ -204,7 +217,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
         
         #
-        # load sub bass BRIR (FIR)
+        # load low frequency BRIR (FIR)
         #
 
         sub_data=CN.sub_data
@@ -363,7 +376,14 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         hrir_selected *= direct_gain#Use Vectorized NumPy Operations
         
         #flip polarity if flagged
-        flip_polarity = hrir_processing.get_polarity(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=gui_logger)
+        if hrtf_polarity == 'Recommended' or hrtf_polarity == 'Auto Select':
+            flip_polarity = hrir_processing.get_polarity(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=gui_logger)
+        elif hrtf_polarity == 'Original':
+            flip_polarity='no'
+        elif hrtf_polarity == 'Reversed':
+            flip_polarity='yes'
+        else:
+            flip_polarity='no'   
         if flip_polarity == 'yes':
             hrir_selected *= -1
      
@@ -2254,7 +2274,7 @@ def process_mono_cues_v3(gui_logger=None):
   
     
         #average the estimates with weighting to get good approximate
-        weightings = [0.70,0.30]#[0.75,0.25] [0.70,0.30] [0.67,0.33]
+        weightings = [0.67,0.33]#[0.75,0.25] [0.70,0.30] [0.67,0.33]
         hp_est_a_db_fft = hf.mag2db(pinna_comp_pos)
         hp_est_b_db_fft = hf.mag2db(hp_cue_overear_diff_mean_mag)
         hp_est_avg_db = fr_flat_db.copy()
@@ -2303,6 +2323,8 @@ def process_mono_cues_v3(gui_logger=None):
         #invert so that no longer inverse
         db_response = np.multiply(db_response,-1)
         in_ear_high_db = np.add(fr_flat_db,db_response)
+        #20250815: also apply df compensation
+        in_ear_high_db = np.add(in_ear_high_db,np.multiply(in_ear_eq_db,-0.5))
         
         
         #20250602: new high strength EQ for over ear

@@ -18,7 +18,11 @@ from math import sqrt
 from pathlib import Path
 import threading
 import scipy as sp
+import dearpygui.dearpygui as dpg
+import logging
 
+logger = logging.getLogger(__name__)
+log_info=1
 
 def get_listener_list(listener_type="", dataset_name="", max_res_only=False, gui_logger=None):
     """
@@ -69,6 +73,16 @@ def get_listener_list(listener_type="", dataset_name="", max_res_only=False, gui
             
             listener_list=listener_list_filtered
             
+        elif listener_type == 'Favourites':
+            if dpg.does_item_exist("hrtf_add_favourite"):
+                try:
+                    listener_list = dpg.get_item_user_data("hrtf_add_favourite")
+                    if not listener_list:
+                        listener_list = CN.HRTF_BASE_LIST_FAV
+                except Exception:
+                    listener_list = CN.HRTF_BASE_LIST_FAV
+            else:
+                listener_list = CN.HRTF_BASE_LIST_FAV
             
         else:
             listener_list=get_listener_list_user()
@@ -160,7 +174,7 @@ def get_name_short(listener_type="", dataset_name="", name_gui="", gui_logger=No
                 pass
    
         else:
-            name_short = name_gui #case for user SOFA, use same as GUI name (file name)
+            name_short = name_gui #case for user SOFA or favourite, use same as GUI name (file name)
             
     except Exception as ex:
         log_string=f"Error occurred: {ex}"
@@ -168,6 +182,48 @@ def get_name_short(listener_type="", dataset_name="", name_gui="", gui_logger=No
    
         
     return name_short
+
+def get_hrtf_info_from_name_short(name_short: str = "", gui_logger=None) -> tuple[str, str, str]:
+    """
+    Retrieves HRTF type, dataset, and GUI name for a given name_short.
+
+    Args:
+        name_short (str, optional): The unique short name to look up. Defaults to "".
+        gui_logger (object, optional): A logger object for GUI-related logging. Defaults to None.
+
+    Returns:
+        tuple[str, str, str]: (hrtf_type, dataset, name_gui) if found, otherwise ("", "", "").
+    """
+    hrtf_type = ""
+    dataset = ""
+    name_gui = ""
+
+    try:
+        if name_short:
+            try:
+                # directories
+                csv_directory = CN.DATA_DIR_HRIR_NPY
+                metadata_file_name = "hrir_metadata.csv"
+                metadata_file = pjoin(csv_directory, metadata_file_name)
+
+                with open(metadata_file, encoding="utf-8-sig", newline="") as inputfile:
+                    reader = DictReader(inputfile)
+                    for row in reader:
+                        if row.get("name_short") == name_short:
+                            hrtf_type = row.get("hrtf_type", "")
+                            dataset = row.get("dataset", "")
+                            name_gui = row.get("name_gui", "")
+                            break  # name_short is unique, so stop here
+
+            except Exception as e:
+                log_string = f"Error loading HRTF info for name_short='{name_short}': {e}"
+                hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type=2, exception=e)
+
+    except Exception as ex:
+        log_string = f"Error occurred: {ex}"
+        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type=2, exception=ex)
+
+    return hrtf_type, dataset, name_gui
 
 
 def get_sofa_url(listener_type="", dataset_name="", name_gui="", gui_logger=None):

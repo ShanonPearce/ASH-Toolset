@@ -142,49 +142,77 @@ def main():
             logging.error(f"Failed to migrate settings file: {e}")
 
     
-    def safe_get(config, key, expected_type, default): 
-        """Safely get a value from config with fallback and type casting."""
+    def safe_get(config, key, expected_type, default):
+        """Safely get a value from config with fallback and type casting.
+        Supports bool, list, dict, tuple via automatic parsing from JSON or Python literals.
+        """
         try:
             val = config['DEFAULT'].get(key, default)
-    
-            # Special handling for boolean (string to bool via literal_eval)
-            if expected_type == bool:
-                return ast.literal_eval(str(val))
-            # Handle common literal types like list, dict, tuple, etc.
-            elif expected_type == ast.literal_eval or expected_type in [list, dict, tuple]:
-                return ast.literal_eval(val)
-            # Safely cast if it's a callable (int, float, str, etc.)
-            elif callable(expected_type):
-                return expected_type(val)
-            # Fallback if type is unknown or not callable
-            else:
-                logging.info(f"safe_get: Expected type for key '{key}' is not callable. Using raw value.")
+            
+            # If the value already matches the expected type (and expected_type is a type), return it
+            if isinstance(expected_type, type) and isinstance(val, expected_type):
                 return val
+    
+            if expected_type == bool:
+                if isinstance(val, str):
+                    lowered = val.strip().lower()
+                    if lowered in ('true', 'false'):
+                        return lowered == 'true'
+                return bool(ast.literal_eval(str(val)))
+    
+            if expected_type in (list, dict, tuple):
+                if isinstance(val, str):
+                    try:
+                        parsed = json.loads(val)
+                    except (json.JSONDecodeError, TypeError):
+                        parsed = ast.literal_eval(val)
+                    return parsed if isinstance(parsed, expected_type) else default
+                elif isinstance(val, expected_type):
+                    return val
+                else:
+                    return default
+    
+            # Special case for ast.literal_eval as expected_type
+            if expected_type == ast.literal_eval:
+                if val is None or (isinstance(val, str) and val.strip() == ''):
+                    return default
+                return ast.literal_eval(val)
+    
+            # For other types (int, float, str, etc.), cast
+            if callable(expected_type):
+                return expected_type(val)
+    
+            # Fallback for unexpected expected_type
+            logging.info(f"safe_get: Expected type for key '{key}' is not callable. Using raw value.")
+            return val
     
         except Exception as e:
             logging.info(f"safe_get: Failed to load key '{key}' – {e}. Using default: {default}")
             return default
         
+ 
+        
     def validate_choice(loaded_value, valid_list):
         """
         Ensure the loaded_value is present in valid_list.
         If not, return the first item in the list and log a fallback message.
-    
-        Args:
-            loaded_value: The value to validate.
-            valid_list (list): The list of valid options.
-    
-        Returns:
-            A valid value from the list (either the loaded one or a fallback).
         """
+        # Ensure valid_list is iterable
+        if not valid_list:
+            logging.warning(f"validate_choice: No valid list provided. Cannot validate '{loaded_value}'.")
+            return "Not Found"
+    
         if loaded_value in valid_list:
             return loaded_value
         else:
-            fallback = valid_list[0] if valid_list else None
+            fallback = valid_list[0]
             logging.info(f"validate_choice: '{loaded_value}' is not valid. Falling back to '{fallback}'.")
             return fallback
     
+    
+    #
     #default values
+    #
     sample_freq_default=CN.SAMPLE_RATE_LIST[0]
     bit_depth_default=CN.BIT_DEPTH_LIST[0]
     brir_hp_type_default=CN.HP_COMP_LIST[2]
@@ -231,7 +259,7 @@ def main():
     e_apo_brir_sel_default=''
     tab_selected_default=0
     hrtf_symmetry_default=CN.HRTF_SYM_LIST[0]
-    er_rise_default=0
+    er_rise_default=0.5#0
     qc_brir_hp_type_default=CN.HP_COMP_LIST[2]
     qc_room_target_default=CN.ROOM_TARGET_LIST[1]
     qc_direct_gain_default=2.0
@@ -246,10 +274,12 @@ def main():
     brir_hrtf_dataset_list_default=CN.HRTF_TYPE_DATASET_DICT.get(brir_hrtf_type_default)
     brir_hrtf_dataset_default=CN.HRTF_DATASET_DEFAULT
     hrtf_list_default=hrir_processing.get_listener_list(listener_type=brir_hrtf_type_default, dataset_name=brir_hrtf_dataset_default)
+    hrtf_list_favs_default=CN.HRTF_BASE_LIST_FAV
     hrtf_default=CN.HRTF_LISTENER_DEFAULT
     sofa_exp_conv_default=CN.SOFA_OUTPUT_CONV[0]
     crossover_f_mode_default=CN.SUB_FC_SETTING_LIST[0]
     crossover_f_default=CN.SUB_FC_DEFAULT
+    hrtf_polarity_default=CN.HRTF_POLARITY_LIST[0]
     sub_response_default = (CN.SUB_RESPONSE_LIST_GUI[3] if len(CN.SUB_RESPONSE_LIST_GUI) > 3 else CN.SUB_RESPONSE_LIST_GUI[0] if CN.SUB_RESPONSE_LIST_GUI else None)#use index 1 if available
     hp_rolloff_comp_default=False
     fb_filtering_default=False
@@ -271,11 +301,14 @@ def main():
     'qc_fb_filtering_default': fb_filtering_default
     }#use in save settings function
     
+    #
     #loaded values - start with defaults
+    #
     sample_freq_loaded=sample_freq_default
     bit_depth_loaded=bit_depth_default
     brir_hp_type_loaded=brir_hp_type_default
     hrtf_loaded=hrtf_default
+    hrtf_list_favs_loaded=hrtf_list_favs_default
     spatial_res_loaded=spatial_res_default
     room_target_loaded=room_target_default
     direct_gain_loaded=direct_gain_default
@@ -363,6 +396,7 @@ def main():
     sub_response_loaded=sub_response_default
     hp_rolloff_comp_loaded=hp_rolloff_comp_default
     fb_filtering_loaded=fb_filtering_default
+    hrtf_polarity_loaded=hrtf_polarity_default
     
     #thread variables
     e_apo_conf_lock = threading.Lock()
@@ -384,6 +418,9 @@ def main():
         primary_path = 'C:\\Program Files\\EqualizerAPO\\config'
         primary_ash_path = 'C:\\Program Files\\EqualizerAPO\\config\\' + CN.PROJECT_FOLDER
     qc_primary_path=primary_path
+    
+    
+    
     #try reading from settings.ini to get path
     try:
         migrate_settings()
@@ -391,14 +428,16 @@ def main():
         #load settings
         config = configparser.ConfigParser()
         config.read(CN.SETTINGS_FILE)
-        version_loaded = config['DEFAULT']['version']
+        version_loaded = safe_get(config, 'version', str, __version__)
+        
+        
         
         if version_loaded != __version__ and CN.LOG_INFO:
             logging.info(f"Settings version mismatch: file version={version_loaded}, expected={__version__}. Loading available settings anyway.")
-            
+    
         primary_path = safe_get(config, 'path', str, primary_path)
         primary_ash_path=pjoin(primary_path, CN.PROJECT_FOLDER)
-
+ 
         sample_freq_loaded = safe_get(config, 'sampling_frequency', str, sample_freq_default)
         bit_depth_loaded = safe_get(config, 'bit_depth', str, bit_depth_default)
         brir_hp_type_loaded = safe_get(config, 'brir_headphone_type', str, brir_hp_type_default)
@@ -406,6 +445,7 @@ def main():
         spatial_res_loaded = safe_get(config, 'spatial_resolution', str, spatial_res_default)
         room_target_loaded = safe_get(config, 'brir_room_target', str, room_target_default)
         direct_gain_loaded = safe_get(config, 'brir_direct_gain', float, direct_gain_default)
+        hrtf_list_favs_loaded = safe_get(config, 'hrtf_list_favs', list, hrtf_list_favs_default)
         ac_space_loaded = safe_get(config, 'acoustic_space', str, ac_space_default)
         fir_hpcf_exp_loaded = safe_get(config, 'fir_hpcf_exp', ast.literal_eval, fir_hpcf_exp_default)
         fir_st_hpcf_exp_loaded = safe_get(config, 'fir_st_hpcf_exp', ast.literal_eval, fir_st_hpcf_exp_default)
@@ -487,14 +527,15 @@ def main():
         sub_response_loaded = safe_get(config, 'sub_response', str, sub_response_default)
         hp_rolloff_comp_loaded = safe_get(config, 'hp_rolloff_comp', bool, hp_rolloff_comp_default)
         fb_filtering_loaded = safe_get(config, 'fb_filtering_mode', bool, fb_filtering_default)
+        hrtf_polarity_loaded = safe_get(config, 'hrtf_polarity', str, hrtf_polarity_default)
         
-
         
     except Exception as e:
         logging.info(f"Error loading configuration: {e}")
         logging.info("Falling back to default values.")
         
-
+    
+    
     
     #set hesuvi path
     if 'EqualizerAPO' in primary_path:
@@ -502,9 +543,12 @@ def main():
     else:
         primary_hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
 
+    
+
     #hp and sample lists based on loaded brand and headphone
     qc_hp_list_loaded = hpcf_functions.get_headphone_list(conn, qc_brand_loaded)#
     qc_sample_list_loaded = hpcf_functions.get_samples_list(conn, qc_headphone_loaded)
+    
     
 
     #code to get gui width based on windows resolution
@@ -512,20 +556,21 @@ def main():
     gui_win_height_default=717
     gui_win_width_loaded=gui_win_width_default
     gui_win_height_loaded=gui_win_height_default
+
     try:
         screen_width = ctypes.windll.user32.GetSystemMetrics(0)
         screen_height = ctypes.windll.user32.GetSystemMetrics(1)
-        #print(str(screen_width))
-        #print(str(screen_height))
+        
         if screen_width < gui_win_width_default:
             gui_win_width_loaded=screen_width
         if screen_height < gui_win_height_default:
             gui_win_height_loaded=screen_height
-    except:
+    except Exception as e:
+        logging.error(f"Error getting screen size: {e}")
         gui_win_width_loaded=gui_win_width_default
         gui_win_height_loaded=gui_win_height_default
+        
 
-            
     #adjust hrtf list based on loaded spatial resolution
     #also adjust file export selection
     dir_brir_exp_show=True
@@ -538,12 +583,26 @@ def main():
     hesuvi_brir_tooltip_show=True
     eapo_brir_tooltip_show=True
     sofa_brir_tooltip_show=True
-    brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(brir_hrtf_type_loaded)
-    if spatial_res_loaded == 'Max':#reduced list
+    
+    add_fav_button_show=True
+    remove_fav_button_show=False
+    qc_add_fav_button_show=True
+    qc_remove_fav_button_show=False
+    
+    brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(brir_hrtf_type_loaded) or []
+    if brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
+        hrtf_list_loaded = hrtf_list_favs_loaded
+        add_fav_button_show=False
+        remove_fav_button_show=True
+    elif spatial_res_loaded == 'Max':#reduced list
         hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_loaded, dataset_name=brir_hrtf_dataset_loaded, max_res_only=True)
     else:
         hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_loaded, dataset_name=brir_hrtf_dataset_loaded)
-    
+        
+    if brir_hrtf_type_loaded == 'User SOFA Input':
+        add_fav_button_show=False
+        remove_fav_button_show=False
+        
     if spatial_res_loaded == 'Max':
         brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get('Dummy Head - Max Resolution')
         ts_brir_exp_loaded=False
@@ -563,11 +622,17 @@ def main():
     spatial_res_list_loaded=CN.SPATIAL_RES_LIST_LIM
     if brir_hrtf_type_loaded == CN.HRTF_TYPE_LIST[0]:
         spatial_res_list_loaded=CN.SPATIAL_RES_LIST
-    
+        
+
     #qc dataset list based on loaded hrtf type
-    qc_brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(qc_brir_hrtf_type_loaded)
+    qc_brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(qc_brir_hrtf_type_loaded) or []
     #qc hrtf list based on dataset and hrtf type
-    qc_hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_loaded, dataset_name=qc_brir_hrtf_dataset_loaded)
+    if qc_brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
+        qc_hrtf_list_loaded = hrtf_list_favs_loaded
+        qc_add_fav_button_show=False
+        qc_remove_fav_button_show=True
+    else:
+        qc_hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_loaded, dataset_name=qc_brir_hrtf_dataset_loaded)
 
 
     #validate that loaded strings are within associated lists
@@ -1157,7 +1222,7 @@ def main():
                                 with dpg.tab(label="Listener Selection",tag='qc_listener_tab', parent="qc_brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
-                                            dpg.add_text("Listener Type", tag='qc_brir_hrtf_type_title')
+                                            dpg.add_text("Category", tag='qc_brir_hrtf_type_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_radio_button(brir_hrtf_type_list_default, horizontal=False, tag= "qc_brir_hrtf_type", default_value=qc_brir_hrtf_type_loaded, callback=cb.qc_update_hrtf_dataset_list )
                                             with dpg.tooltip("qc_brir_hrtf_type_title"):
@@ -1165,13 +1230,18 @@ def main():
                                             dpg.add_separator()
                                             dpg.add_text("Dataset", tag='qc_brir_hrtf_dataset_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(qc_brir_hrtf_dataset_list_loaded, default_value=qc_brir_hrtf_dataset_loaded, num_items=11, width=255, callback=cb.qc_update_hrtf_list, tag='qc_brir_hrtf_dataset')
+                                            dpg.add_listbox(qc_brir_hrtf_dataset_list_loaded, default_value=qc_brir_hrtf_dataset_loaded, num_items=10, width=255, callback=cb.qc_update_hrtf_list, tag='qc_brir_hrtf_dataset')
                                         with dpg.group():
                                             dpg.add_text("Listener", tag='qc_brir_hrtf_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(qc_hrtf_list_loaded, default_value=qc_hrtf_loaded, num_items=17, width=240, callback=cb.qc_select_hrtf, tag='qc_brir_hrtf')
+                                            dpg.add_listbox(qc_hrtf_list_loaded, default_value=qc_hrtf_loaded, num_items=16, width=240, callback=cb.qc_select_hrtf, tag='qc_brir_hrtf')
                                             with dpg.tooltip("qc_brir_hrtf_title"):
                                                 dpg.add_text("This will influence the externalisation and localisation of sounds around the listener")
+                                            with dpg.group(horizontal=True):
+                                                dpg.add_text("  ")
+                                                dpg.add_button(label="Add Favourite", tag="qc_hrtf_add_favourite", callback=cb.add_hrtf_favourite_qc_callback,show=qc_add_fav_button_show)
+                                                #dpg.add_text("     ")
+                                                dpg.add_button(label="Remove Favourite", tag="qc_hrtf_remove_favourite", callback=cb.remove_hrtf_favourite_qc_callback,show=qc_remove_fav_button_show)
                                                 
                                 with dpg.tab(label="Low-frequency Extension",tag='qc_lfe_tab', parent="qc_brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
@@ -1731,7 +1801,7 @@ def main():
                                                 dpg.add_text("Increasing resolution will increase number of directions available but will also increase processing time and dataset size")
                                                 dpg.add_text("'Low' is recommended unless additional directions or SOFA export is required")
                                             dpg.add_separator()    
-                                            dpg.add_text("Listener Type", tag='brir_hrtf_type_title')
+                                            dpg.add_text("Category", tag='brir_hrtf_type_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_radio_button(brir_hrtf_type_list_default, horizontal=False, tag= "brir_hrtf_type", default_value=brir_hrtf_type_loaded, callback=cb.update_hrtf_dataset_list )
                                             with dpg.tooltip("brir_hrtf_type_title"):
@@ -1739,14 +1809,19 @@ def main():
                                             dpg.add_separator()
                                             dpg.add_text("Dataset", tag='brir_hrtf_dataset_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(brir_hrtf_dataset_list_loaded, default_value=brir_hrtf_dataset_loaded, num_items=9, width=255, callback=cb.update_hrtf_list, tag='brir_hrtf_dataset')
+                                            dpg.add_listbox(brir_hrtf_dataset_list_loaded, default_value=brir_hrtf_dataset_loaded, num_items=7, width=255, callback=cb.update_hrtf_list, tag='brir_hrtf_dataset')
                                         with dpg.group():
                                             
                                             dpg.add_text("Listener", tag='brir_hrtf_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(hrtf_list_loaded, default_value=hrtf_loaded, num_items=17, width=230, callback=cb.select_hrtf, tag='brir_hrtf')
+                                            dpg.add_listbox(hrtf_list_loaded, default_value=hrtf_loaded, num_items=16, width=230, callback=cb.select_hrtf, tag='brir_hrtf')
                                             with dpg.tooltip("brir_hrtf_title"):
                                                 dpg.add_text("This will influence the externalisation and localisation of sounds around the listener")
+                                            with dpg.group(horizontal=True):
+                                                dpg.add_text("  ")
+                                                dpg.add_button(label="Add Favourite", tag="hrtf_add_favourite", callback=cb.add_hrtf_favourite_callback,user_data=hrtf_list_favs_loaded,show=add_fav_button_show)
+                                                #dpg.add_text("     ")
+                                                dpg.add_button(label="Remove Favourite", tag="hrtf_remove_favourite", callback=cb.remove_hrtf_favourite_callback,show=remove_fav_button_show)
                                         
                                 with dpg.tab(label="Low-frequency Extension",tag='lfe_tab', parent="brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
@@ -2609,6 +2684,12 @@ def main():
                                         dpg.add_text("SOFA Export Convention")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
                                         dpg.add_combo(CN.SOFA_OUTPUT_CONV, default_value=sofa_exp_conv_loaded, width=150, callback=cb.save_settings, tag='sofa_exp_conv')
+                                        dpg.add_text("Direct Sound Polarity")
+                                        dpg.bind_item_font(dpg.last_item(), bold_font)
+                                        dpg.add_combo(CN.HRTF_POLARITY_LIST, default_value=hrtf_polarity_loaded, width=150, callback=cb.qc_update_brir_param, tag='hrtf_polarity_rev')
+                                        with dpg.tooltip("hrtf_polarity_rev"):
+                                            dpg.add_text("This can be used to manually reverse the polarity of the direct sound.") 
+                                            dpg.add_text("Reverberation is not modified") 
                                     
                 #section for logging
                 with dpg.child_window(width=1690, height=482, tag="console_window",user_data=None):

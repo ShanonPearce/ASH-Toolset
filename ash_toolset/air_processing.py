@@ -1256,7 +1256,7 @@ def convert_airs_to_brirs(
         
         # Sampling spatial coordinates with bias
         num_samples = total_measurements
-        biased_centers = np.array([45, 135, 225, 315])
+        biased_centers = np.array([40, 140, 220, 320])#45, 135, 225, 315
         strength = 51
         azimuths_distribution, elevations_distribution = hf.biased_spherical_coordinate_sampler(
             azim_src_set, elev_src_set, num_samples,
