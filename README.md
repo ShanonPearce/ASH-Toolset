@@ -74,8 +74,10 @@ Python libraries:
   ```
 Data files:
 
-HRIR, BRIR and filter datasets are required in the data folder for the app to run. Due to large file sizes the data files are stored in google drive.\
-[Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
+Various HRIR, BRIR and filter datasets are required in the data folder for the app to run. 
+- ~~Due to large file sizes the data files need to be retrieved from the google drive folder. 
+[Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link).~~ 
+- 28/10/2025 update: The required data files are now included in the repository by default. The files are also mirrored in the google drive folder.
 
 Optional:
 - [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), an audio processing object for windows featuring IR convolution and Graphic EQ capabilities.
@@ -84,10 +86,36 @@ Optional:
   
 ### Installation
 
-1. Clone the repo
-2. Download the data folder from google drive [(Link to data folder)](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
-3. Extract data folder to ASH-Toolset root folder. The folder hierarchy will be 'ASH-Toolset/data'.
-4. (optional) If using Equalizer APO for the first time, download [Equalizer APO](http://sourceforge.net/projects/equalizerapo) and follow the Equalizer APO [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial). 
+
+1. **Get the ASH Toolset code and data**
+    - Either **clone the repository**:
+    ```bash
+    git clone https://github.com/ShanonPearce/ASH-Toolset.git
+    ```
+    - Or **download it as a ZIP** from GitHub and extract it anywhere you like.
+
+2. **Install dependencies**
+
+   Run the following in the project root:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3. (Optional) **Equalizer APO Setup**
+
+   If you plan to use **Equalizer APO** for system-wide processing:
+    - Download it from [Equalizer APO on SourceForge](http://sourceforge.net/projects/equalizerapo).
+    - Follow the official [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial).
+
+4. (Optional) **Downlaod data files**
+    - The `data/` folder is now included in the repository by default.
+    - If any data files are **missing or corrupted**, you can download them from Google Drive:
+      [Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
+    - Extract the downloaded `data` folder into the project root so the structure looks like:
+      ```
+      ASH-Toolset/
+      └─ data/
+      ```
 
 ---
 ## Usage <a name="Usage"></a> 
