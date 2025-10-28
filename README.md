@@ -107,7 +107,7 @@ Optional:
     - Download it from [Equalizer APO on SourceForge](http://sourceforge.net/projects/equalizerapo).
     - Follow the official [installation tutorial](https://sourceforge.net/p/equalizerapo/wiki/Documentation/#installation-tutorial).
 
-4. (Optional) **Downlaod data files**
+4. (Optional) **Download data files**
     - The `data/` folder is now included in the repository by default.
     - If any data files are **missing or corrupted**, you can download them from Google Drive:
       [Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link)
