@@ -1,11 +1,12 @@
-file_name,name_gui,name_short,acoustic_space,est_rt60,comments,frequency_range,tolerance,folder,dataset,source_type,listener_type
-lf_brir_dataset_a,Low-frequency Response A,LFR-A,Audio Lab,320,Primary response used in v3.1.2,3Hz-150Hz,20Hz-120Hz +/-0.8dB,lf_brir,Derived from multiple RIR Datasets,Mixed,Binaural
-lf_brir_dataset_b,Low-frequency Response B,LFR-B,Audio Lab,340,Newly added in v3.2.0,0Hz-150Hz,20Hz-120Hz +/-1.0dB,lf_brir,Derived from multiple RIR Datasets,Mixed,Binaural
-lf_brir_dataset_c,Low-frequency Response C,LFR-C,Listening Room,350,"Newly added in v3.2.0, previously used in ASH-Listening-Set",5Hz-150Hz,20Hz-120Hz +/-1.4dB,lf_brir,ASH-Listening-Set,Subwoofer,Binaural
-lf_brir_dataset_d,Low-frequency Response D,LFR-D,Studio,240,Newly added in v3.2.0,0Hz-150Hz,20Hz-120Hz +/-1.0dB,lf_brir,Derived from multiple RIR Datasets,Mixed,Binaural
-lf_brir_dataset_e,Low-frequency Response E,LFR-E,Audio Lab,350,Newly added in v3.4.0,0Hz-150Hz,20Hz-120Hz +/-3.0dB,lf_brir,Derived from multiple RIR Datasets,Mixed,Binaural
-lf_brir_dataset_f,Low-frequency Response F,LFR-F,Studio live room,350,Newly added in v3.4.0,0Hz-150Hz,20Hz-120Hz +/-2.0dB,lf_brir,BBC Maida Vale Impulse Response Dataset ,Loudspeaker,Binaural
-lf_brir_dataset_g,Low-frequency Response G,LFR-G,Listening Room,350,Newly added in v3.4.0,0Hz-150Hz,20Hz-120Hz +/-3.0dB,lf_brir,Derived from multiple RIR Datasets,Mixed,Binaural
-lf_brir_dataset_h,Low-frequency Response H,LFR-H,Listening Room,600,Newly added in v3.4.0,0Hz-150Hz,20Hz-120Hz +/-4.0dB,lf_brir,The ISOBEL Sound Field Dataset,Subwoofer,Binaural
-lf_brir_dataset_i,Low-frequency Response I,LFR-I,Recording Studio,700,Newly added in v3.4.0,0Hz-150Hz,20Hz-120Hz +/-2.0dB,lf_brir,RSoANU: RIR Dataset ,Loudspeaker,Binaural
-lf_brir_dataset_j,Low-frequency Response J,LFR-J,Listening Room,350,Newly added in v3.4.0,0Hz-150Hz,20Hz-120Hz +/-3.0dB,lf_brir,The ISOBEL Sound Field Dataset,Subwoofer,Binaural
+"file_name","name_gui","name_short","acoustic_space","est_rt60","comments","frequency_range","tolerance","folder","dataset","source_type","listener_type"
+"lf_brir_dataset_a","Low-frequency Response A - Audio Lab, smooth","LFR-A","Audio Lab","320","Primary response used in v3.1.2","3Hz-150Hz","20Hz-120Hz +/-0.8dB","lf_brir","Derived from multiple RIR Datasets","Mixed","Binaural"
+"lf_brir_dataset_b","Low-frequency Response B - Audio Lab, smooth","LFR-B","Audio Lab","340","Newly added in v3.2.0","0Hz-150Hz","20Hz-120Hz +/-1.0dB","lf_brir","Derived from multiple RIR Datasets","Mixed","Binaural"
+"lf_brir_dataset_c","Low-frequency Response C - Listening Room, natural","LFR-C","Listening Room","350","Newly added in v3.2.0, previously used in ASH-Listening-Set","5Hz-150Hz","20Hz-120Hz +/-1.4dB","lf_brir","ASH-Listening-Set","Subwoofer","Binaural"
+"lf_brir_dataset_d","Low-frequency Response D - Studio, fast & smooth","LFR-D","Studio","240","Newly added in v3.2.0","0Hz-150Hz","20Hz-120Hz +/-1.0dB","lf_brir","Derived from multiple RIR Datasets","Mixed","Binaural"
+"lf_brir_dataset_e","Low-frequency Response E - Audio Lab, resonant","LFR-E","Audio Lab","350","Newly added in v3.4.0","0Hz-150Hz","20Hz-120Hz +/-3.0dB","lf_brir","Derived from multiple RIR Datasets","Mixed","Binaural"
+"lf_brir_dataset_f","Low-frequency Response F - Studio Live Room, natural","LFR-F","Studio live room","350","Newly added in v3.4.0","0Hz-150Hz","20Hz-120Hz +/-2.0dB","lf_brir","BBC Maida Vale Impulse Response Dataset ","Loudspeaker","Binaural"
+"lf_brir_dataset_g","Low-frequency Response G - Listening Room, slow","LFR-G","Listening Room","350","Newly added in v3.4.0","0Hz-150Hz","20Hz-120Hz +/-3.0dB","lf_brir","Derived from multiple RIR Datasets","Mixed","Binaural"
+"lf_brir_dataset_h","Low-frequency Response H - Listening Room, boomy","LFR-H","Listening Room","600","Newly added in v3.4.0","0Hz-150Hz","20Hz-120Hz +/-4.0dB","lf_brir","The ISOBEL Sound Field Dataset","Subwoofer","Binaural"
+"lf_brir_dataset_i","Low-frequency Response I - Recording Studio, slow","LFR-I","Recording Studio","700","Newly added in v3.4.0","0Hz-150Hz","20Hz-120Hz +/-2.0dB","lf_brir","RSoANU: RIR Dataset ","Loudspeaker","Binaural"
+"lf_brir_dataset_j","Low-frequency Response J - Listening Room, boomy","LFR-J","Listening Room","350","Newly added in v3.4.0","0Hz-150Hz","20Hz-120Hz +/-3.0dB","lf_brir","The ISOBEL Sound Field Dataset","Subwoofer","Binaural"
+"lf_brir_dataset_k","Low-frequency Response K - Studio, boomy","LFR-K","Studio","400","Newly added in v3.6.0","0Hz-150Hz","20Hz-120Hz +/-3.0dB","lf_brir","Derived from multiple RIR Datasets","Mixed","Binaural"
