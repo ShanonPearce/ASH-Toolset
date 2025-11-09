@@ -52,32 +52,36 @@ Tested on Windows 10 and Windows 11 with Equalizer APO 1.4 and Voicemeeter 1.1.1
 
 Python libraries:
   ```sh
-  pip install dearpygui==2.0.0
-  pip install dearpygui-ext==2.0.0
-  pip install dearpygui-extend==0.1.5
-  pip install mat73==0.63
-  pip install matplotlib==3.7.0
-  pip install numpy==2.2.4
-  pip install pandas==2.2.3
-  pip install pyfar==0.6.5
-  pip install scipy==1.11.4
-  pip install soundfile==0.12.1
-  pip install gdown==5.2.0
-  pip install librosa==0.10.2.post1
-  pip install thefuzz==0.22.1
-  pip install fuzzywuzzy==0.18.0
-  pip install SOFASonix==1.0.7
-  pip install sofar==1.2.1
-  pip install h5py==3.11.0
-  pip install noisereduce==3.0.2
-  pip install Requests==2.32.3
+pip install dearpygui==2.1.0
+pip install dearpygui-ext==2.0.0
+pip install dearpygui-extend==0.1.5
+pip install fuzzywuzzy==0.18.0
+pip install gdown==5.2.0
+pip install h5py==3.11.0
+pip install joblib==1.2.0
+pip install librosa==0.10.2.post1
+pip install mat73==0.63
+pip install matplotlib==3.7.0
+pip install noisereduce==3.0.2
+pip install numpy==2.3.4
+pip install pandas==2.2.3
+pip install platformdirs==4.5.0
+pip install protobuf==3.20.3
+pip install psutil==5.9.0
+pip install pyfar==0.6.5
+pip install Requests==2.32.5
+pip install scipy==1.11.4
+pip install sofar==1.1.3
+pip install SOFASonix==1.0.7
+pip install soundfile==0.12.1
+pip install thefuzz==0.22.1
   ```
 Data files:
 
 Various HRIR, BRIR and filter datasets are required in the data folder for the app to run. 
 - ~~Due to large file sizes the data files need to be retrieved from the google drive folder. 
 [Link to data folder](https://drive.google.com/drive/folders/1Yp3NQoxPji8y_DrR8azFvbteml8pTscJ?usp=drive_link).~~ 
-- 28/10/2025 update: The required data files are now included in the repository by default. The files are also mirrored in the google drive folder.
+- 28/10/2025 update: The required data files are now included in the repository by default. The files are also mirrored in the google drive folder as a backup.
 
 Optional:
 - [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), an audio processing object for windows featuring IR convolution and Graphic EQ capabilities.
