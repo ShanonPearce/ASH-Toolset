@@ -178,8 +178,10 @@ def main():
 
         hpcf_is_active=dpg.get_value('e_apo_hpcf_conv')
         brir_is_active=dpg.get_value('e_apo_brir_conv')
-        #show hpcf history
-        cb.qc_show_hpcf_history(app_data=dpg.get_value('qc_toggle_hpcf_history'))
+        #show hpcf history but only run function if enabled
+        hpcf_hist_toggled = dpg.get_value('qc_toggle_hpcf_history')
+        if hpcf_hist_toggled:
+            cb.qc_show_hpcf_history(app_data=hpcf_hist_toggled)
 
         cb.e_apo_toggle_hpcf_custom(activate=hpcf_is_active, aquire_config=False)
         cb.e_apo_toggle_brir_custom(activate=brir_is_active, aquire_config=False)
@@ -386,6 +388,7 @@ def main():
         qc_hp_list_loaded, loaded_values["qc_hpcf_headphone"] = hf.ensure_valid_selection(qc_hp_list_loaded, loaded_values.get("qc_hpcf_headphone", ""))
         qc_sample_list_loaded = hpcf_functions.get_samples_list(conn_comp, loaded_values["qc_hpcf_headphone"])
         qc_sample_list_loaded, loaded_values["qc_hpcf_sample"] = hf.ensure_valid_selection(qc_sample_list_loaded, loaded_values.get("qc_hpcf_sample", ""))
+ 
         
         fde_brands_list_loaded = hpcf_functions.get_brand_list(conn_comp)
         fde_brands_list_loaded, loaded_values["fde_hpcf_brand"] = hf.ensure_valid_selection( fde_brands_list_loaded, loaded_values.get("fde_hpcf_brand", ""))

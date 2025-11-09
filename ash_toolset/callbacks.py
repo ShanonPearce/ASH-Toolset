@@ -796,7 +796,7 @@ def qc_show_hpcf_history(sender=None, app_data=None):
         hpcf_database_sel = dpg.get_value('qc_hpcf_active_database')
         
         
-        #toggled on and there are saved filters
+        #toggled on and there are saved filters -> populate lists with saved filters
         if headphone_list_saved and headphone_list_saved != None and app_data == True:
             #if selected headphone is in history, set default to selected, otherwise pick first value
             default_headphone = headphone_selected if headphone_selected in headphone_list_saved else headphone_list_saved[0]
@@ -828,7 +828,16 @@ def qc_show_hpcf_history(sender=None, app_data=None):
             #reset sample list to Sample A
             dpg.set_value("qc_hpcf_sample", sample_new)
     
+        #toggled off -> populate list with previously applied filters
         else:
+            #validate lists in case of misalignment between applied filter and current DB, will reset
+            brands_list, brand_selected = hf.ensure_valid_selection( brands_list, brand_selected)
+            hp_list_selected = hpcf_functions.get_headphone_list(conn, brand_selected)#
+            hp_list_selected, headphone_selected = hf.ensure_valid_selection(hp_list_selected, headphone_selected)
+            sample_list_specific = hpcf_functions.get_samples_list(conn, headphone_selected)
+            sample_list_sorted = (sorted(sample_list_specific))
+            sample_list_sorted, sample_selected = hf.ensure_valid_selection(sample_list_sorted, sample_selected)
+        
             #reset brand list
             dpg.configure_item('qc_hpcf_brand',items=brands_list)
             #reset brand value to first brand
@@ -838,8 +847,7 @@ def qc_show_hpcf_history(sender=None, app_data=None):
             dpg.configure_item('qc_hpcf_headphone',items=hp_list_selected)
             dpg.set_value("qc_hpcf_headphone", headphone_selected)
             #also update sample list
-            sample_list_specific = hpcf_functions.get_samples_list(conn, headphone_selected)
-            sample_list_sorted = (sorted(sample_list_specific))
+
             dpg.configure_item('qc_hpcf_sample',items=sample_list_sorted)
             #also update plot
             hpcf_functions.hpcf_to_plot(conn, headphone_selected, sample_selected, plot_type=2)
