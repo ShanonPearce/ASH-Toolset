@@ -56,12 +56,17 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         
         log_string = 'Preparing BRIRs for export'
         hf.log_with_timestamp(log_string, gui_logger) 
+        
+        if not isinstance(brir_arr, np.ndarray) or brir_arr.ndim != 4:
+            raise ValueError("brir_arr must be a 4D NumPy array [elev, azim, channels, samples]")
     
-        if use_stored_brirs == False:
+        if use_stored_brirs == False:#standard mode
             total_samples_brir = len(brir_arr[0][0][0])    
             #gain adjustment
             max_amp = np.max(np.abs(brir_arr))
         else:
+            if not brir_dict_list:
+                raise ValueError("brir_dict_list is empty — expected at least one stored BRIR entry when use_stored_brirs=True.")
             sample_dict = brir_dict_list[0]
             sample_brir=sample_dict["out_wav_array"]
             total_samples_brir = len(sample_brir)    
@@ -210,7 +215,8 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                                 raise ValueError(f"Expected 2 channels, got {brir_chunk.shape[0]} at elev {elev}, azim {azim}")
                             
                             samples_to_use = min(out_wav_samples_44, brir_chunk.shape[1])
-                            out_wav_array[:] = 0  # clear
+                            #out_wav_array[:] = 0  # clear
+                            out_wav_array = np.zeros((out_wav_samples_44, 2), dtype=brir_arr.dtype)
                             out_wav_array[:samples_to_use, :] = brir_chunk[:, :samples_to_use].T * (reduction_gain/max_amp)
                             
                             
