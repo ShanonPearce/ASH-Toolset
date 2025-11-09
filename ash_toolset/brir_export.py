@@ -28,8 +28,9 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, 
-                 spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict={}, sofa_conv=None, use_dict_list=False, brir_dict_list=[]):
+def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, multichan_export=False, 
+                multichan_mapping=CN.PRESET_16CH_LABELS[0],
+                 spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict={}, sofa_conv=None, use_stored_brirs=False, brir_dict_list=[]):
     """
     Function to export a customised BRIR to WAV files
     :param brir_arr: numpy array, containing set of BRIRs. 4d array. d1 = elevations, d2 = azimuths, d3 = channels, d4 = samples
@@ -56,7 +57,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         log_string = 'Preparing BRIRs for export'
         hf.log_with_timestamp(log_string, gui_logger) 
     
-        if use_dict_list == False:
+        if use_stored_brirs == False:
             total_samples_brir = len(brir_arr[0][0][0])    
             #gain adjustment
             max_amp = np.max(np.abs(brir_arr))
@@ -75,27 +76,27 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         #get relevant information from dict
         if brir_dict:
             if brir_name == CN.FOLDER_BRIRS_LIVE: 
-                brir_hrtf_type=brir_dict.get('qc_brir_hrtf_type')
-                brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
-                brir_hrtf = brir_dict.get('qc_brir_hrtf')
-                brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
-                room_target = brir_dict.get("qc_room_target")
+                # brir_hrtf_type=brir_dict.get('qc_brir_hrtf_type')
+                # brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
+                # brir_hrtf = brir_dict.get('qc_brir_hrtf')
+                # brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
+                # room_target = brir_dict.get("qc_room_target")
                 direct_gain_db = brir_dict.get("qc_direct_gain_db")
-                acoustic_space= brir_dict.get("qc_ac_space_src")
-                pinna_comp = brir_dict.get("qc_pinna_comp")
+                # acoustic_space= brir_dict.get("qc_ac_space_src")
+                # pinna_comp = brir_dict.get("qc_pinna_comp")
                 samp_freq = brir_dict.get("qc_samp_freq_int")
                 bit_depth = brir_dict.get("qc_bit_depth")
             else:
-                brir_hrtf_type=brir_dict.get('brir_hrtf_type')
-                brir_hrtf_dataset=brir_dict.get('brir_hrtf_dataset')
-                brir_hrtf = brir_dict.get('brir_hrtf')
-                brir_hrtf_short=brir_dict.get('brir_hrtf_short')
-                room_target = brir_dict.get("room_target")
-                direct_gain_db = brir_dict.get("direct_gain_db")
-                acoustic_space= brir_dict.get("ac_space_src")
-                pinna_comp = brir_dict.get("pinna_comp")
-                samp_freq = brir_dict.get("samp_freq_int")
-                bit_depth = brir_dict.get("bit_depth")
+                # brir_hrtf_type=brir_dict.get('fde_brir_hrtf_type')
+                # brir_hrtf_dataset=brir_dict.get('fde_brir_hrtf_dataset')
+                # brir_hrtf = brir_dict.get('fde_brir_hrtf')
+                # brir_hrtf_short=brir_dict.get('fde_brir_hrtf_short')
+                # room_target = brir_dict.get("fde_room_target")
+                direct_gain_db = brir_dict.get("fde_direct_gain_db")
+                # acoustic_space= brir_dict.get("fde_ac_space_src")
+                # pinna_comp = brir_dict.get("fde_pinna_comp")
+                samp_freq = brir_dict.get("fde_samp_freq_int")
+                bit_depth = brir_dict.get("fde_bit_depth")
             
             
             hrtf_symmetry = brir_dict.get("hrtf_symmetry")
@@ -118,11 +119,11 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         out_wav_samples_48 = round(out_wav_samples_44 * float(48000) / 44100) 
             
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
             total_azim_brir = int(360/azim_nearest)#should be identical to above lengths
             total_elev_brir = int((elev_max-elev_min)/elev_nearest +1)#should be identical to above lengths
@@ -130,7 +131,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
             raise ValueError('Invalid spatial resolution')
         
         #
-        ## write set of WAVs
+        ## write set of directional WAVs
         #
    
         out_wav_array=np.zeros((out_wav_samples_44,2))
@@ -138,8 +139,13 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         #output directory - wav files
         brir_folder = brir_name
         out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS,brir_folder)
+        
  
         if brir_dir_export == True:
+            Path(out_file_dir_wav).mkdir(exist_ok=True, parents=True)#never need to call mkdir inside the loop
+            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                # Skip exporting or raise exception
+                return brir_data
             
             if reduce_dataset == True:
                 #case for reduced dataset
@@ -150,8 +156,8 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
             #also a matrix for storing select brirs
             direction_matrix_store = generate_direction_matrix(spatial_res=spatial_res, variant=1)
             
-            #full brir dataset not provided, using dictionary list
-            if use_dict_list == True:
+            #full brir dataset not provided, using dictionary list (previous output stored in memory)
+            if use_stored_brirs == True:
                 for elev in range(total_elev_brir):
                     elev_deg = int(elev_min + elev*elev_nearest)
                     elev_deg_wav=elev_deg
@@ -171,9 +177,9 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                                     
                                     out_file_path = pjoin(out_file_dir_wav,out_file_name)
                                     
-                                    #create dir if doesnt exist
-                                    output_file = Path(out_file_path)
-                                    output_file.parent.mkdir(exist_ok=True, parents=True)
+                                    # #create dir if doesnt exist
+                                    # output_file = Path(out_file_path)
+                                    # output_file.parent.mkdir(exist_ok=True, parents=True)
                                     
                                     #resample if samp_freq is not 44100
                                     if samp_freq != CN.SAMP_FREQ:
@@ -211,10 +217,15 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                         azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
                         
                         if direction_matrix_out[elev][azim][0][0] == 1 or direction_matrix_store[elev][azim][0][0] == 1: 
-                            out_wav_array=np.zeros((out_wav_samples_44,2))
-                            #grab BRIR
-                            out_wav_array[:,0] = np.copy(brir_arr[elev][azim][0][0:out_wav_samples_44])*reduction_gain/max_amp#L
-                            out_wav_array[:,1] = np.copy(brir_arr[elev][azim][1][0:out_wav_samples_44])*reduction_gain/max_amp#R
+           
+                            brir_chunk = brir_arr[elev][azim]
+                            if brir_chunk.shape[0] != 2:
+                                raise ValueError(f"Expected 2 channels, got {brir_chunk.shape[0]} at elev {elev}, azim {azim}")
+                            
+                            samples_to_use = min(out_wav_samples_44, brir_chunk.shape[1])
+                            out_wav_array[:] = 0  # clear
+                            out_wav_array[:samples_to_use, :] = brir_chunk[:, :samples_to_use].T * (reduction_gain/max_amp)
+                            
                             
                         if direction_matrix_store[elev][azim][0][0] == 1:  
                             # Create a dictionary with the required variables
@@ -233,9 +244,9 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                             
                             out_file_path = pjoin(out_file_dir_wav,out_file_name)
                             
-                            #create dir if doesnt exist
-                            output_file = Path(out_file_path)
-                            output_file.parent.mkdir(exist_ok=True, parents=True)
+                            # #create dir if doesnt exist
+                            # output_file = Path(out_file_path)
+                            # output_file.parent.mkdir(exist_ok=True, parents=True)
                             
                             #resample if samp_freq is not 44100
                             if samp_freq != CN.SAMP_FREQ:
@@ -243,17 +254,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                             
                             hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
                             
-                        
-    
-                # # Calculate the memory usage of the list of dictionaries
-                # memory_usage_bytes = 0
-                # for data_dict in brir_data:
-                #     memory_usage_bytes += sys.getsizeof(data_dict["elev_deg_wav"])
-                #     memory_usage_bytes += sys.getsizeof(data_dict["azim_deg_wav"])
-                #     memory_usage_bytes += data_dict["out_wav_array"].nbytes  # Get size of NumPy array
-                # memory_usage_mb = memory_usage_bytes / (1024 * 1024)  # Convert bytes to megabytes
-                # print(f"Memory usage of the dictionary list: {memory_usage_mb:.2f} MB")
-    
+  
             #finished
             log_string = 'BRIR WAV set saved to: ' + str(out_file_dir_wav)
             hf.log_with_timestamp(log_string, gui_logger) 
@@ -262,136 +263,115 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
 
   
         #
-        ## write set of HESUVI WAVs
+        ## write set of HESUVI WAVs or True stereo WAVs or 16 Channel WAVs
         #
+  
+        if (brir_ts_export or hesuvi_export or multichan_export) and not use_stored_brirs:
         
-        if (brir_ts_export == True or hesuvi_export == True) and use_dict_list == False:
-        
-            if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-                elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-                elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
-                azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            # Validate spatial resolution
+            if 0 <= spatial_res < CN.NUM_SPATIAL_RES:
+                elev_min = CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res]
+                elev_nearest = CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res]
+                azim_nearest = CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res]
             else:
                 raise ValueError('Invalid spatial resolution')
-            
-            #output directory - HESUVI wav files
-            out_file_dir_wav_44 = pjoin(hesuvi_path,'hrir','44')
-            out_file_dir_wav_48 = pjoin(hesuvi_path,'hrir')
-            
-                
-            brir_out_44_he=np.zeros((CN.NUM_OUT_CHANNELS_HE,out_wav_samples_44))
-            brir_out_48_he=np.zeros((CN.NUM_OUT_CHANNELS_HE,out_wav_samples_48))
-            brir_out_44_ts=np.zeros((CN.NUM_OUT_CHANNELS_TS,out_wav_samples_44))
-            
-            
-            
         
-            #load each input azimuth
-            for n in range(CN.NUM_SOURCE_AZIM):
-                selected_az=0
-                selected_elev=0
-                #change azimuth depending on source azim ID
-                if brir_dict: 
-                    if n == 0 :
-                        selected_elev=int(brir_dict.get('h_elev_c'))
-                        selected_az=int(brir_dict.get('h_azim_c'))
-                    elif n == 1:
-                        selected_elev=int(brir_dict.get('h_elev_fl'))
-                        selected_az=int(brir_dict.get('h_azim_fl'))
-                    elif n == 2:
-                        selected_elev=int(brir_dict.get('h_elev_fr'))
-                        selected_az=int(brir_dict.get('h_azim_fr'))
-                    elif n == 3:
-                        selected_elev=int(brir_dict.get('h_elev_sl'))
-                        selected_az=int(brir_dict.get('h_azim_sl'))
-                    elif n == 4:
-                        selected_elev=int(brir_dict.get('h_elev_sr'))
-                        selected_az=int(brir_dict.get('h_azim_sr'))
-                    elif n == 5:
-                        selected_elev=int(brir_dict.get('h_elev_rl'))
-                        selected_az=int(brir_dict.get('h_azim_rl'))
-                    elif n == 6:
-                        selected_elev=int(brir_dict.get('h_elev_rr'))
-                        selected_az=int(brir_dict.get('h_azim_rr'))
-                    #convert to range 0-360
+            # Output directories
+            out_file_dir_wav_44 = pjoin(hesuvi_path, 'hrir', '44')
+            out_file_dir_wav_48 = pjoin(hesuvi_path, 'hrir')
+        
+            # Base sources
+            SOURCES_DICT = [
+                {"name": "FC",  "dict_keys": ("h_elev_c", "h_azim_c"), "default_az": 0,  "he_channels": (6, 13)},
+                {"name": "FL",  "dict_keys": ("h_elev_fl", "h_azim_fl"), "default_az": 30, "he_channels": (0, 1), "ts_channels": (0, 1)},
+                {"name": "FR",  "dict_keys": ("h_elev_fr", "h_azim_fr"), "default_az": 330,"he_channels": (8, 7), "ts_channels": (2, 3)},
+                {"name": "SL",  "dict_keys": ("h_elev_sl", "h_azim_sl"), "default_az": 90, "he_channels": (2, 3)},
+                {"name": "SR",  "dict_keys": ("h_elev_sr", "h_azim_sr"), "default_az": 270,"he_channels": (10, 9)},
+                {"name": "BL",  "dict_keys": ("h_elev_rl", "h_azim_rl"), "default_az": 135,"he_channels": (4, 5)},
+                {"name": "BR",  "dict_keys": ("h_elev_rr", "h_azim_rr"), "default_az": 225,"he_channels": (12, 11)},
+            ]
+        
+            # Initialize arrays
+            brir_out_16ch   = np.zeros((CN.NUM_OUT_CHANNELS_MC, out_wav_samples_44))
+            brir_out_44_he  = np.zeros((CN.NUM_OUT_CHANNELS_HE, out_wav_samples_44))
+            brir_out_48_he  = np.zeros((CN.NUM_OUT_CHANNELS_HE, out_wav_samples_48))
+            brir_out_44_ts  = np.zeros((CN.NUM_OUT_CHANNELS_TS, out_wav_samples_44))
+        
+            # --- Dynamic 16-channel mapping ---
+            mapping_order = multichan_mapping.split("|")  # e.g., ['FL','FR','FC','LFE','SL','SR','BL','BR']
+            
+            # Identify LFE channels safely
+            lfe_channels = None
+            if "LFE" in mapping_order:
+                lfe_idx = mapping_order.index("LFE")
+                lfe_channels = (lfe_idx * 2, lfe_idx * 2 + 1)
+        
+            # Assign 16-channel indices dynamically for sources present
+            for src in SOURCES_DICT:
+                if src["name"] in mapping_order:
+                    idx = mapping_order.index(src["name"])
+                    src["ch16"] = (idx * 2, idx * 2 + 1)
+        
+            # --- Loop over sources ---
+            for src in SOURCES_DICT:
+        
+                # Elevation and azimuth from GUI dict or defaults
+                if brir_dict:
+                    selected_elev = int(brir_dict.get(src["dict_keys"][0], 0))
+                    selected_az   = int(brir_dict.get(src["dict_keys"][1], 0))
                     dezired_az= 0-selected_az if selected_az<=0 else 360-selected_az
                 else:
-                    selected_elev=0
-                    if n == 0 :
-                        dezired_az=0
-                    elif n == 1:
-                        dezired_az=30
-                    elif n == 2:
-                        dezired_az=330
-                    elif n == 3:
-                        dezired_az=90
-                    elif n == 4:
-                        dezired_az=270
-                    elif n == 5:
-                        dezired_az=135
-                    elif n == 6:
-                        dezired_az=225
+                    selected_elev = 0
+                    dezired_az = src["default_az"]
+        
+                # Convert to array indices
+                elev_id = int((selected_elev - elev_min) / elev_nearest)
+                azim_id = int(dezired_az / azim_nearest)
+        
+                # Load BRIR into zero-padded array
+                data_pad = np.zeros((out_wav_samples_44, 2))
+                data_pad[:, 0] = brir_arr[elev_id][azim_id][0, :out_wav_samples_44] * reduction_gain_he / max_amp
+                data_pad[:, 1] = brir_arr[elev_id][azim_id][1, :out_wav_samples_44] * reduction_gain_he / max_amp
+        
+                # Resample to 48 kHz
+                data_pad_48k = hf.resample_signal(data_pad, new_rate=48000)
+        
+                # Assign to HESUVI channels
+                ch_left, ch_right = src["he_channels"]
+                brir_out_44_he[ch_left, :] = data_pad[:, 0]
+                brir_out_44_he[ch_right, :] = data_pad[:, 1]
+                brir_out_48_he[ch_left, :] = data_pad_48k[:, 0]
+                brir_out_48_he[ch_right, :] = data_pad_48k[:, 1]
+        
+                # Assign to True Stereo if defined
+                if "ts_channels" in src:
+                    ts_left, ts_right = src["ts_channels"]
+                    brir_out_44_ts[ts_left, :] = data_pad[:, 0]
+                    brir_out_44_ts[ts_right, :] = data_pad[:, 1]
+        
+                # Assign to 16-channel array dynamically
+                if "ch16" in src:
+                    ch16_left, ch16_right = src["ch16"]
+                    brir_out_16ch[ch16_left, :] = data_pad[:, 0]
+                    brir_out_16ch[ch16_right, :] = data_pad[:, 1]
+        
+                # Copy FC data to LFE channels if both exist
+                if lfe_channels and src["name"] == "FC":
+                    brir_out_16ch[lfe_channels[0], :] = data_pad[:, 0]
+                    brir_out_16ch[lfe_channels[1], :] = data_pad[:, 1]
                         
-                elev_id=int((selected_elev-elev_min)/elev_nearest)
-                azim_id = int(dezired_az/azim_nearest)    
 
-                #load into zero pad array
-                data_pad=np.zeros((out_wav_samples_44,2))
-                data_pad[0:(out_wav_samples_44),0]=np.copy(brir_arr[elev_id][azim_id][0][0:out_wav_samples_44])*reduction_gain_he/max_amp#L
-                data_pad[0:(out_wav_samples_44),1]=np.copy(brir_arr[elev_id][azim_id][1][0:out_wav_samples_44])*reduction_gain_he/max_amp#R
+        
+        
+        
+        
+        
+        
       
-                #create a copy and resample to 48kHz
-                data_pad_48k=np.zeros((out_wav_samples_48,2))           
-                data_pad_48k = hf.resample_signal(data_pad, new_rate = 48000)
-      
-                #place each channel into output array as per HeSuVi channel mapping
-                if n == 0 :#C
-                    brir_out_44_he[6,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[13,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[6,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[13,:]=data_pad_48k[0:out_wav_samples_48,1]
-                elif n == 1:#FL
-                    brir_out_44_he[0,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[1,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[0,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[1,:]=data_pad_48k[0:out_wav_samples_48,1]
-                elif n == 2:#FR
-                    brir_out_44_he[8,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[7,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[8,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[7,:]=data_pad_48k[0:out_wav_samples_48,1]
-                elif n == 3:#SL
-                    brir_out_44_he[2,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[3,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[2,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[3,:]=data_pad_48k[0:out_wav_samples_48,1]
-                elif n == 4:#SR
-                    brir_out_44_he[10,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[9,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[10,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[9,:]=data_pad_48k[0:out_wav_samples_48,1]
-                elif n == 5:#BL
-                    brir_out_44_he[4,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[5,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[4,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[5,:]=data_pad_48k[0:out_wav_samples_48,1]
-                elif n == 6:#BR
-                    brir_out_44_he[12,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_he[11,:]=data_pad[0:out_wav_samples_44,1]
-                    brir_out_48_he[12,:]=data_pad_48k[0:out_wav_samples_48,0]
-                    brir_out_48_he[11,:]=data_pad_48k[0:out_wav_samples_48,1]
-     
-                
-                #place each channel into output array as per true stereo channel mapping
-                if n == 1:
-                    brir_out_44_ts[0,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_ts[1,:]=data_pad[0:out_wav_samples_44,1]
-                elif n == 2:
-                    brir_out_44_ts[2,:]=data_pad[0:out_wav_samples_44,0]
-                    brir_out_44_ts[3,:]=data_pad[0:out_wav_samples_44,1]
             
             
-        if brir_ts_export == True and use_dict_list == False:
+            
+        if brir_ts_export == True and use_stored_brirs == False:
             #
             #true stereo
             #
@@ -400,6 +380,9 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
             out_file_name = 'BRIR_True_Stereo.wav'
             
             out_file_path = pjoin(out_file_dir_wav,out_file_name)
+            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                # Skip exporting or raise exception
+                return brir_data
             
             #create dir if doesnt exist
             output_file = Path(out_file_path)
@@ -414,7 +397,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
             log_string = 'BRIR WAV True stereo saved to: ' + str(out_file_dir_wav)
             hf.log_with_timestamp(log_string, gui_logger) 
         
-        if hesuvi_export == True and use_dict_list == False:
+        if hesuvi_export == True and use_stored_brirs == False:
             
             #
             #hesuvi 44khz
@@ -424,7 +407,9 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
             out_file_name = '_'+brir_name + '.wav'
             
             out_file_path = pjoin(out_file_dir_wav_44, out_file_name)
-            
+            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                # Skip exporting or raise exception
+                return brir_data
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -450,11 +435,58 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
             log_string = 'BRIR HESUVI WAV saved to: ' + str(out_file_dir_wav_48)
             hf.log_with_timestamp(log_string, gui_logger) 
         
+        if multichan_export and not use_stored_brirs:
+            #
+            # 16-channel BRIR
+            #
+            output_wav_16ch = brir_out_16ch.transpose()  # shape (samples, channels)
+            out_file_name = 'BRIR_16ch_' + brir_name + '.wav'
+            out_file_path = pjoin(out_file_dir_wav, out_file_name)
+            
+            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                return brir_data
+            
+            # create dir if it doesn't exist
+            output_file = Path(out_file_path)
+            output_file.parent.mkdir(exist_ok=True, parents=True)
+        
+            # resample if samp_freq is not internal rate
+            if samp_freq != CN.SAMP_FREQ:
+                output_wav_16ch = hf.resample_signal(output_wav_16ch, new_rate=samp_freq)
+        
+            # Write 16-channel WAV
+            hf.write2wav(file_name=out_file_path, data=output_wav_16ch, bit_depth=bit_depth, samplerate=samp_freq)
+            hf.log_with_timestamp('BRIR WAV 16-channel saved to: ' + str(out_file_dir_wav), gui_logger)
+        
+            # --- Write channel mapping to text file ---
+            mapping_file_name = 'BRIR_16ch_channel_mapping.txt'
+            mapping_file_path = pjoin(out_file_dir_wav, mapping_file_name)
+        
+            mapping_lines = []
+            mapping_lines.append(f"Export order: {multichan_mapping}")
+            mapping_lines.append("\nAssigned channel indices:")
+        
+            for src in SOURCES_DICT:
+                if "ch16" in src:
+                    ch_left, ch_right = src["ch16"]
+                    mapping_lines.append(f"{src['name']}: left={ch_left}, right={ch_right}")
+            if lfe_channels:
+                mapping_lines.append(f"LFE: left={lfe_channels[0]}, right={lfe_channels[1]}")
+        
+            with open(mapping_file_path, "w") as f:
+                f.write("\n".join(mapping_lines))
+        
+            hf.log_with_timestamp('16-channel mapping saved to: ' + str(mapping_file_path), gui_logger)
+
+
+        
+        
+        
         #
         ## write SOFA file
         #
          
-        if sofa_export == True and use_dict_list == False:
+        if sofa_export == True and use_stored_brirs == False:
             export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
     
     
@@ -476,6 +508,9 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
     return brir_data#return dict list even if empty
         
 
+def ensure_dir(path):
+    Path(path).parent.mkdir(exist_ok=True, parents=True)
+
 def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
     """
     Function returns a numpy array containing a matrix of elevations and azimuths marked for export (variant) or processing
@@ -486,14 +521,14 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
     try:
  
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
+            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
             elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
             elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
             elev_nearest_out=CN.SPATIAL_RES_ELEV_NEAREST_OUT[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
             azim_nearest_out=CN.SPATIAL_RES_AZIM_NEAREST_OUT[spatial_res] 
         else:
@@ -568,13 +603,13 @@ def find_nearest_direction(target_elevation, target_azimuth, spatial_res=1):
         
         
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
+            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
             elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
             elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         else:
             raise ValueError('Invalid spatial resolution')
@@ -699,11 +734,12 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         if sofa_conv == None:
             sofa_conv='GeneralFIR'
         
+        #dynamic matrix structure, limits depend on spatial resolution
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             
             
         else:
@@ -722,7 +758,7 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
             output_samples = max(total_samples_brir-1000,4410)  
             
         #recalculate based on selected sample rate
-        output_samples_re = round(output_samples * float(samp_freq) / 44100) 
+        output_samples_re = round(output_samples * float(samp_freq) / CN.SAMP_FREQ) 
         
         source_pos_array=np.zeros((total_directions,3)) 
         data_ir_array=np.zeros((total_directions,total_chan_brir,output_samples_re)) 
@@ -762,9 +798,10 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         
         
         
-        with open(CN.METADATA_FILE) as fp:
-            _info = json.load(fp)
-        __version__ = _info['version']
+        # with open(CN.METADATA_FILE) as fp:
+        #     _info = json.load(fp)
+        # __version__ = _info['version']
+        app_version = CN.__version__
         
         # Create SOFAFile object with the latest SimpleFreeFieldHRIR convention
         sofa = SOFAFile(sofa_conv, sofaConventionsVersion=1.0, version=1.0)
@@ -783,7 +820,7 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         
         # ----- Mandatory attributes -----
         sofa.GLOBAL_ApplicationName = "ASH Toolset"
-        sofa.GLOBAL_ApplicationVersion = __version__
+        sofa.GLOBAL_ApplicationVersion = app_version
         sofa.GLOBAL_AuthorContact = "srpearce55@gmail.com"
         sofa.GLOBAL_Comment = "Generated by ASH Toolset"
         sofa.GLOBAL_History = "N/A"
@@ -859,7 +896,11 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         #sofa.view()
         
         #todo: specify directory or move to desired directory
+        project_dir_sofa = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS_SOFA)
         out_file_dir_sofa = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS_SOFA,brir_set_name)
+        if not hf.check_write_permissions(project_dir_sofa, gui_logger):
+            # Skip exporting or raise exception
+            return 
         
         #create parent dir if doesnt exist
         output_file = Path(out_file_dir_sofa)
@@ -878,3 +919,184 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
         log_string = 'Failed to export SOFA file: ' + brir_set_name 
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
+
+
+def export_sofa_ir(primary_path, ir_arr, ir_set_name, spatial_res=2, output_samples=CN.TOTAL_SAMPLES_HRIR, samp_freq=CN.SAMP_FREQ,
+                   sofa_conv=None, gui_logger=None, is_brir=None):
+    """
+    Export either an HRIR or BRIR dataset to a SOFA file (auto-detect type by sample length).
+
+    Parameters
+    ----------
+    primary_path : str
+        Root project directory.
+    ir_arr : np.ndarray
+        4D array [elev, azim, ch, samples], HRIR or BRIR dataset.
+    ir_set_name : str
+        Name for output SOFA file.
+    spatial_res : int
+        Spatial resolution index (0=low ... 3=full).
+    output_samples : int
+        Target number of samples (at 44.1kHz base).
+    samp_freq : int
+        Sampling rate (Hz).
+    sofa_conv : str, optional
+        SOFA convention (default auto-selected).
+    gui_logger : object, optional
+        GUI logger instance.
+    is_brir : bool, optional
+        True for BRIR, False for HRIR. If None, determined automatically by length.
+    """
+
+    now_datetime = datetime.now()
+
+    try:
+        # --- Handle 5D input with singleton first dimension ---
+        if ir_arr.ndim == 5 and ir_arr.shape[0] == 1:
+            ir_arr = ir_arr[0]  # strip singleton first dimension
+    
+        # Ensure the array is now 4D
+        if ir_arr.ndim != 4:
+            raise ValueError(f"Expected 4D array [elev, azim, ch, samples], got shape {ir_arr.shape}")
+    
+        total_elev, total_azim, total_chan, total_samples = ir_arr.shape
+
+        # --- 1. Auto-detect HRIR vs BRIR ---
+        if is_brir is None:
+            # Heuristic: HRIRs < ~2048 samples, BRIRs longer (contain room reverb)
+            is_brir = total_samples >= 2048
+            hf.log_with_timestamp(
+                f"Auto-detected input type: {'BRIR' if is_brir else 'HRIR'} "
+                f"(samples={total_samples})",
+                gui_logger
+            )
+
+        # --- 2. Select SOFA convention ---
+        if sofa_conv is None:
+            sofa_conv = 'GeneralFIR' if is_brir else 'SimpleFreeFieldHRIR'
+
+        # --- 3. Spatial Resolution ---
+        #dynamic matrix structure, limits depend on spatial resolution
+        if 0 <= spatial_res < CN.NUM_SPATIAL_RES:
+            elev_min = CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res]
+            elev_max = CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res]
+            elev_step = CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res]
+            azim_step = CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res]
+        else:
+            raise ValueError("Invalid spatial resolution index")
+
+        # --- 4. Adjust output length ---
+        if not is_brir:
+            # HRIRs are short, use full length
+            output_samples = total_samples
+        elif output_samples > total_samples:
+            # Clamp if BRIR shorter than target
+            output_samples = max(total_samples - 1000, 4410)
+
+        # --- 5. Resample according to sample rate ---
+        output_samples_re = round(output_samples * float(samp_freq) / CN.SAMP_FREQ)
+
+        hf.log_with_timestamp(
+            f"Preparing SOFA export for '{ir_set_name}' ({'BRIR' if is_brir else 'HRIR'})",
+            gui_logger
+        )
+        hf.log_with_timestamp(
+            f"Resolution: {total_elev}×{total_azim}, Channels: {total_chan}, "
+            f"Output samples: {output_samples_re}",
+            gui_logger
+        )
+
+        total_directions = total_elev * total_azim
+        source_pos_array = np.zeros((total_directions, 3))
+        data_ir_array = np.zeros((total_directions, total_chan, output_samples_re))
+
+        # --- 6. Fill IR data and position metadata ---
+        radius = 2.0 if is_brir else 1.0
+        src_idx = 0
+
+        for elev in range(total_elev):
+            elev_deg = int(elev_min + elev * elev_step)
+            for azim in range(total_azim):
+                azim_deg = int(azim * azim_step)
+                source_pos_array[src_idx] = [azim_deg, elev_deg, radius]
+
+                ir_pair = np.zeros((output_samples, total_chan))
+                for ch in range(total_chan):
+                    ir_pair[:, ch] = np.copy(ir_arr[elev, azim, ch, :output_samples])
+
+                if samp_freq != CN.SAMP_FREQ:
+                    ir_pair = hf.resample_signal(ir_pair, new_rate=samp_freq)
+
+                # Transpose from (samples, channels) → (channels, samples) for SOFA format
+                data_ir_array[src_idx, :, :output_samples_re] = ir_pair[:output_samples_re, :].T
+
+                src_idx += 1
+
+        # --- 7. Build SOFA File ---
+        app_version = CN.__version__
+        sofa = SOFAFile(sofa_conv, sofaConventionsVersion=1.0, version=1.0)
+        sofa._M = total_directions
+        sofa._N = total_samples
+        
+        # =============================== Attributes ====================================
+        sofa.GLOBAL_ApplicationName = "ASH Toolset"
+        sofa.GLOBAL_ApplicationVersion = app_version
+        sofa.GLOBAL_AuthorContact = "srpearce55@gmail.com"
+        #sofa.GLOBAL_Comment = "Generated by ASH Toolset (averaged HRTF export)"
+        sofa.GLOBAL_History = "Averaged across multiple listener datasets"
+        sofa.GLOBAL_License = "Creative Commons Attribution 4.0 International (CC-BY-4.0)"
+        sofa.GLOBAL_Organization = "Independent Researcher"
+        sofa.GLOBAL_References = "https://sourceforge.net/projects/ash-toolset/"
+        #sofa.GLOBAL_RoomType = "Free field"
+        sofa.GLOBAL_DateCreated = now_datetime
+        sofa.GLOBAL_DateModified = now_datetime
+        sofa.GLOBAL_Title = ir_set_name
+        sofa.GLOBAL_DatabaseName = "ASH Toolset"
+        sofa.GLOBAL_ListenerShortName = "Refer to title"
+        sofa.ListenerPosition_Type = "cartesian"
+        sofa.ListenerPosition_Units = "meter"
+        sofa.ReceiverPosition_Type = "cartesian"
+        sofa.ReceiverPosition_Units = "meter"
+        sofa.SourcePosition_Type = "spherical"
+        sofa.SourcePosition_Units = "degree, degree, meter"
+        sofa.EmitterPosition_Type = "cartesian"
+        sofa.EmitterPosition_Units = "meter"
+        sofa.Data_SamplingRate_Units = "hertz"
+
+        # --- 8. Metadata ---
+        sofa.GLOBAL_Comment = f"Generated by ASH Toolset ({'BRIR' if is_brir else 'HRIR'})"
+        sofa.GLOBAL_RoomType = "Reverberant" if is_brir else "Free field"
+ 
+
+        sofa.ListenerPosition = np.atleast_2d([0, 0, 0])
+        sofa.ReceiverPosition = np.atleast_3d([[0, 0.09, 0], [0, -0.09, 0]])
+        sofa.SourcePosition = source_pos_array
+        sofa.EmitterPosition = np.zeros((1, 3, 1))
+
+        if sofa_conv == 'SimpleFreeFieldHRIR':
+            sofa.ListenerUp = np.atleast_2d([0, 0, 1])
+            sofa.ListenerView = np.atleast_2d([1, 0, 0])
+
+        # --- 9. Audio Data ---
+        sofa.Data_IR = data_ir_array
+        sofa.Data_SamplingRate = [samp_freq]
+        sofa.Data_Delay = np.zeros((1, 2))
+
+        # --- 10. Export ---
+        subfolder = CN.PROJECT_FOLDER_BRIRS_SOFA if is_brir else CN.PROJECT_FOLDER_HRIRS_SOFA
+        export_dir = Path(pjoin(primary_path, subfolder))
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        output_file = pjoin(export_dir, ir_set_name)
+
+        if not hf.check_write_permissions(export_dir, gui_logger):
+            hf.log_with_timestamp("Write permission denied.", gui_logger)
+            return
+
+        sofa.export(output_file)
+        hf.log_with_timestamp(f"Exported SOFA file: {output_file}", gui_logger)
+
+    except Exception as ex:
+        msg = f"Failed to export SOFA file: {ir_set_name}"
+        hf.log_with_timestamp(msg, gui_logger, log_type=2, exception=ex)
+

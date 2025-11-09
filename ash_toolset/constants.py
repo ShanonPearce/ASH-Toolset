@@ -17,6 +17,7 @@ import csv
 import operator
 import os
 from platformdirs import user_config_dir
+import json
 
 #Few helper functions to load constants
 def load_csv_as_dicts(csv_dir, csv_name): 
@@ -196,12 +197,13 @@ def extract_column(data, column, condition_key=None, condition_value=None, condi
         result = [row.get(column) for row in data]
         return result if result else []
 
-def refresh_acoustic_space_metadata():
+
+def refresh_acoustic_space_metadata(): 
     """
     Reload and merge acoustic space metadata from internal and user sources,
     eliminate duplicates, sort, and populate global lists.
     """
-    global reverb_data
+    global reverb_data, REV_METADATA_FILE_NAME
     global AC_SPACE_LIST_GUI, AC_SPACE_LIST_SHORT, AC_SPACE_LIST_SRC
     global AC_SPACE_EST_R60, AC_SPACE_MEAS_R60, AC_SPACE_FADE_START
     global AC_SPACE_GAINS, AC_SPACE_DESCR, AC_SPACE_DATASET
@@ -210,12 +212,23 @@ def refresh_acoustic_space_metadata():
 
     # Load internal metadata
     csv_directory = pjoin(DATA_DIR_INT, 'reverberation')
-    internal_data = load_csv_as_dicts(csv_directory, 'reverberation_metadata.csv')
+    internal_data = load_csv_as_dicts(csv_directory, REV_METADATA_FILE_NAME)
 
     # Load user metadata
     user_csv_dir = DATA_DIR_AS_USER
-    #USER_CSV_KEY = "_metadata"#already global
-    user_data = load_user_reverb_csvs_recursive(user_csv_dir, filename_key=USER_CSV_KEY, filter_mode="include", match_mode="contains")
+    user_data = load_user_reverb_csvs_recursive(
+        user_csv_dir, filename_key=USER_CSV_KEY, filter_mode="include", match_mode="contains"
+    )
+
+    # --- Normalize missing columns between internal and user CSVs ---
+    all_keys = set()
+    for row in internal_data + user_data:
+        all_keys.update(row.keys())
+
+    for row in internal_data + user_data:
+        for key in all_keys:
+            row.setdefault(key, "")
+    # ---------------------------------------------------------------
 
     # Deduplicate based on 'file_name'
     existing_keys = set(row.get("file_name") for row in internal_data if "file_name" in row)
@@ -225,7 +238,6 @@ def refresh_acoustic_space_metadata():
     reverb_data = internal_data + unique_user_data
     reverb_data = sort_dict_list(reverb_data, sort_key='name_src', reverse=False)
     
-
     # Extract individual lists
     AC_SPACE_LIST_GUI = extract_column(reverb_data, 'name_gui')
     AC_SPACE_LIST_SHORT = extract_column(reverb_data, 'name_short')
@@ -247,6 +259,9 @@ def refresh_acoustic_space_metadata():
     AC_SPACE_LIST_MAX_SRC = extract_column(
         reverb_data, 'name_src', condition_key='source_hrtf_dataset', condition_value='max', return_all_matches=True)
     AC_SPACE_LIST_ID_SRC = extract_column(reverb_data, 'source_hrtf_id')
+
+
+
 
 def get_settings_path():
     """
@@ -391,22 +406,27 @@ def refresh_sub_responses():
     SUB_RESPONSE_LIST_SOURCE = extract_column(data=sub_data, column='source_type')
     SUB_RESPONSE_LIST_LISTENER = extract_column(data=sub_data, column='listener_type')
 
+ 
     
-    
-    
-    
-    
+def get_version(metadata_file_path):
+    try:
+        with open(metadata_file_path) as fp:
+            return json.load(fp).get("version", "0.0")
+    except Exception:
+        return "0.0"
+
 
 
 ################################ 
 #Constants
+
 
 #commonly used
 N_FFT = 65536
 N_FFT_L = int(65536*2)
 N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
 SAMP_FREQ = 44100#sample rate for ash toolset
-FS=SAMP_FREQ
+FS=SAMP_FREQ#keep for backwards compat
 THRESHOLD_CROP = 0.0000005#0.0000005 -120db with reference level of 0.5
 
 
@@ -457,16 +477,6 @@ MIN_T_SHIFT_P = -230#-230
 MAX_T_SHIFT_P = 50#50
 NUM_INTERVALS_P = int(np.abs((MAX_T_SHIFT_P-MIN_T_SHIFT_P)/T_SHIFT_INTERVAL_P))
 
-# #sub alignment with reverb - short window
-# T_SHIFT_INTERVAL_WS = 10#25
-# MIN_T_SHIFT_WS = -230#-220
-# MAX_T_SHIFT_WS = 50#100
-# NUM_INTERVALS_WS = int(np.abs((MAX_T_SHIFT_WS-MIN_T_SHIFT_WS)/T_SHIFT_INTERVAL_WS))
-# #sub alignment with reverb - larger window
-# T_SHIFT_INTERVAL_WL = 10#25
-# MIN_T_SHIFT_WL = -250#-220
-# MAX_T_SHIFT_WL = 100#100
-# NUM_INTERVALS_WL = int(np.abs((MAX_T_SHIFT_WL-MIN_T_SHIFT_WL)/T_SHIFT_INTERVAL_WL))
 
 #reverb alignment with hrir
 T_SHIFT_INTERVAL_R = 25
@@ -533,7 +543,7 @@ IGNORE_MS=0#50,100
 WINDOW_TYPE=2#1
 ALIGNMENT_METHOD = 5
 
-#directories
+#directories for app related data, relative to app directory
 BASE_DIR_OS= path.abspath(path.dirname(path.dirname(__file__)))#using os.path
 SCRIPT_DIR_OS = path.abspath(path.dirname(__file__))#using os.path
 BASE_DIR_PATH = Path(__file__).resolve().parents[1] #using Pathlib
@@ -546,6 +556,7 @@ DATA_DIR_HRIR_NPY_DH = pjoin(BASE_DIR_OS, 'data','interim','hrir','dh')
 DATA_DIR_HRIR_NPY_DH_V = pjoin(BASE_DIR_OS, 'data','interim','hrir','dh','h','VIKING')
 DATA_DIR_HRIR_NPY_HL = pjoin(BASE_DIR_OS, 'data','interim','hrir','hl')
 DATA_DIR_HRIR_NPY_USER = pjoin(BASE_DIR_OS, 'data','interim','hrir','user')
+DATA_DIR_HRIR_NPY_INTRP = pjoin(BASE_DIR_OS, 'data','interim','hrir','intrp')
 DATA_DIR_EXT = pjoin(BASE_DIR_OS, 'data','external')
 DATA_DIR_SOFA = pjoin(BASE_DIR_OS, 'data','external','SOFA')
 DATA_DIR_SOFA_USER = pjoin(BASE_DIR_OS, 'data','user','SOFA')
@@ -562,6 +573,7 @@ PROJECT_FOLDER_SSD = 'ASH-Custom-Set'
 PROJECT_FOLDER_BRIRS = pjoin(PROJECT_FOLDER, 'BRIRs')  
 PROJECT_FOLDER_BRIRS_SSD = pjoin(PROJECT_FOLDER_SSD, 'BRIRs')  
 PROJECT_FOLDER_BRIRS_SOFA = pjoin(PROJECT_FOLDER, 'BRIRs', 'SOFA')  
+PROJECT_FOLDER_HRIRS_SOFA = pjoin(PROJECT_FOLDER, 'HRIRs', 'SOFA')
 PROJECT_FOLDER_CONFIGS = pjoin(PROJECT_FOLDER, 'E-APO-Configs') 
 PROJECT_FOLDER_CONFIGS_BRIR = pjoin(PROJECT_FOLDER, 'E-APO-Configs','BRIR-Convolution') 
 PROJECT_FOLDER_CONFIGS_HPCF = pjoin(PROJECT_FOLDER, 'E-APO-Configs','HpCF-Convolution') 
@@ -574,7 +586,8 @@ SETTINGS_FILE_OLD = pjoin(BASE_DIR_OS, 'settings.ini')#prior to v3.3.0, was stor
 SETTINGS_FILE_NEW = get_settings_path()#3.3.0 onwards is stored in user directory
 # Initialize SETTINGS_FILE to None or new by default (you can override it in main)
 SETTINGS_FILE = SETTINGS_FILE_NEW
-
+SETTINGS_DIR = os.path.dirname(SETTINGS_FILE) 
+__version__ = get_version(metadata_file_path=METADATA_FILE)
 
 #constants for writing WAVs
 NEAREST_AZ_WAV = 15
@@ -600,10 +613,9 @@ PROGRESS_START_ALT=' Ready to Start'
 PROCESS_BUTTON_BRIR='Apply Parameters'
 PROCESS_BUTTON_HPCF='Apply Selection'
 
-#HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over-Ear Headphones - High Strength','Over-Ear Headphones - Low Strength','On-Ear Headphones - High Strength','On-Ear Headphones - Low Strength']
-#HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over-Ear-High','Over-Ear-Low','On-Ear-High','On-Ear-Low']
-HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength']
-HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low']
+
+HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength','None']
+HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low','Hp-Comp-None']
 
 
 
@@ -620,9 +632,25 @@ refresh_room_targets()
 
 #BRIR writing
 #number of directions to grab to built HESUVI IR
-NUM_SOURCE_AZIM = 7
-NUM_OUT_CHANNELS_HE = NUM_SOURCE_AZIM*2
+NUM_SOURCE_AZIM_HE = 7
+NUM_OUT_CHANNELS_HE = NUM_SOURCE_AZIM_HE*2
 NUM_OUT_CHANNELS_TS = 4
+NUM_OUT_CHANNELS_MC = 16
+
+PRESET_16CH_LABELS = [
+    # Standard home 7.1 front-back layout
+    "FL|FR|FC|LFE|SL|SR|BL|BR",
+    # Back channels swapped (common in some software stacks)
+    "FL|FR|FC|LFE|BL|BR|SL|SR",
+    # Cinema / Dolby-style front-heavy
+    "FC|LFE|FL|FR|SL|SR|BL|BR",
+    # Wider surround / side-priority
+    "FL|FR|SL|SR|FC|LFE|BL|BR",
+    # LFE between surrounds
+    "FL|FR|FC|SL|SR|LFE|BL|BR",
+    # Experimental / gaming style
+    "FL|FR|BL|BR|FC|LFE|SL|SR"
+]
 
 #Equalizer APO constants
 BRIR_EXPORT_ENABLE = True
@@ -654,10 +682,10 @@ AZ_ANGLES_RL_WAV.reverse()
 AZ_ANGLES_RR_WAV.reverse()
 AZIM_HORIZ_RANGE = {5,20,25,35,40,355,340,335,325,320}
 AZIM_EXTRA_RANGE = {25,30,35,335,330,325}
-EAPO_MUTE_GAIN=-60.0
+EAPO_MUTE_GAIN=-70.0
 
 #spatial resolution
-SPATIAL_RES_LIST = ['Low','Medium','High','Max']#0=low,1=med,2=high,3=max
+SPATIAL_RES_LIST = ['Low','Medium','High']#0=low,1=med,2=high,3=max v3.6 was ['Low','Medium','High','Max']
 SPATIAL_RES_LIST_LIM = ['Low','Medium','High']
 SPATIAL_RES_ELEV_DESC = ['-30 to 30 degrees in 15 degree steps.','-45 to 45 degrees in 15 degree steps.',
                          '-50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps.','-40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps.']
@@ -672,12 +700,12 @@ SPATIAL_RES_ELEV_STP = ['15° steps','15° steps',
 SPATIAL_RES_AZIM_STP = ['varying','varying',
                          '5° steps','2° steps']
 NUM_SPATIAL_RES = len(SPATIAL_RES_LIST)
-SPATIAL_RES_ELEV_MIN=[-60, -60, -60, -40 ]#as per hrir dataset
-SPATIAL_RES_ELEV_MAX=[60, 60, 60, 60 ]#as per hrir dataset
+SPATIAL_RES_ELEV_MIN_IN=[-60, -60, -60, -40 ]#as per hrir dataset
+SPATIAL_RES_ELEV_MAX_IN=[60, 60, 60, 60 ]#as per hrir dataset
 SPATIAL_RES_ELEV_MIN_OUT=[-30, -45, -50, -40 ]#reduced set
 SPATIAL_RES_ELEV_MAX_OUT=[30, 45, 50, 40 ]#reduced set
-SPATIAL_RES_ELEV_NEAREST=[5, 5, 5, 2]#as per hrir dataset
-SPATIAL_RES_AZIM_NEAREST=[5, 5, 5, 2]#as per hrir dataset
+SPATIAL_RES_ELEV_NEAREST_IN=[5, 5, 5, 2]#as per hrir dataset
+SPATIAL_RES_AZIM_NEAREST_IN=[5, 5, 5, 2]#as per hrir dataset
 SPATIAL_RES_ELEV_NEAREST_PR=[15, 15, 5, 2]#3.1.0 increased processing resolution from [15, 15, 5, 2]
 SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#
 # SPATIAL_RES_ELEV_NEAREST_PR_R=[15, 15, 5, 2]#
@@ -696,7 +724,20 @@ FREQ_CUTOFF_GEQ = 29000
 EAPO_GAIN_ADJUST = 0.9*1.1*1.1*1.1
 EAPO_QF_ADJUST = 0.5*0.8
 HPCF_FIR_LENGTH = 384#was 1024, then 512
-
+HPCF_SAMPLE_DEFAULT = 'Sample A'
+HPCF_DATABASE_LIST = ['ASH Filters', 'Compilation']
+# mapping: new_schema_col -> old_schema_col
+HPCF_DB_SCHEMA_MAP = {
+    "type": "brand",
+    "headphone_name": "headphone",
+    "source": "sample",
+    "fir_json": "fir"
+}#"source": "brand","headphone_name": "headphone","type": "sample",
+# columns always expected by your app
+HPCF_DB_STANDARD_COLUMNS = [
+    "brand", "headphone", "sample", "sample_id",
+    "fir", "graphic_eq", "graphic_eq_31", "graphic_eq_103", "created_on"
+]
 
 #retrieve geq frequency list as an array - 127 bands
 GEQ_SET_F_127 = []
@@ -740,7 +781,7 @@ LIMIT_REBERB_DIRS=True
 MIN_REVERB_DIRS=1
 MAX_IRS=3500#2520
 MAX_IRS_TRANSFORM=2500#2520,1550,1050,2500 for combined
-IR_MIN_THRESHOLD=500#before this number of IRs, transform will be applied to expand dataset
+IR_MIN_THRESHOLD=800#before this number of IRs, transform will be applied to expand dataset
 IR_MIN_THRESHOLD_FULLSET=1600
 DIRECTION_MODE=3#0=one set of azimuths for each source, 1 = separate set of azimuths for left and right hem,2 = random using triangle distribution, 3 = biased_spherical_coordinate_sampler
 MAG_COMP=True#enables DF compensation in AIR processing   True
@@ -817,6 +858,7 @@ METADATA_CSV_KEY = "metadata"
 USER_CSV_KEY = "_metadata"
 ASI_USER_CSV_KEY = "_asi-metadata"
 SUB_USER_CSV_KEY = "_sub-metadata"
+REV_METADATA_FILE_NAME='reverberation_metadata_v2.csv'#was 'reverberation_metadata.csv' prior to 3.6
 #section to load dict lists containing acoustic space metadata
 #new: load as dict lists
 refresh_acoustic_space_metadata()
@@ -860,14 +902,17 @@ HRTF_TYPE_LIST_FULL = ['Dummy Head / Head & Torso Simulator', 'Human Listener', 
 HRTF_BASE_LIST_FAV = ['No favourites found']
 #new: load as dict lists
 csv_directory = DATA_DIR_HRIR_NPY
-hrtf_data = load_csv_as_dicts(csv_directory,'hrir_metadata.csv')
+HRIR_METADATA_NAME='hrir_metadata.csv'
+hrtf_data = load_csv_as_dicts(csv_directory,HRIR_METADATA_NAME)
 HRTF_DATASET_LIST_INDV = extract_column(data=hrtf_data, column= 'dataset', condition_key='hrtf_type', condition_value='Human Listener', return_all_matches=True)
 HRTF_DATASET_LIST_DUMMY = extract_column(data=hrtf_data, column='dataset', condition_key='hrtf_type', condition_value='Dummy Head / Head & Torso Simulator', return_all_matches=True)
 HRTF_DATASET_LIST_DUMMY_MAX = extract_column(data=hrtf_data, column='dataset', condition_key='hrtf_index_max', condition_value=0, condition_op='!=', return_all_matches=True)
 HRTF_TYPE_DEFAULT = extract_column(data=hrtf_data, column='hrtf_type', condition_key='default', condition_value='Yes', return_all_matches=False)
 HRTF_DATASET_DEFAULT = extract_column(data=hrtf_data, column='dataset', condition_key='default', condition_value='Yes', return_all_matches=False)
 HRTF_LISTENER_DEFAULT = extract_column(data=hrtf_data, column='name_gui', condition_key='default', condition_value='Yes', return_all_matches=False)
+
 HRTF_DATASET_LIST_CUSTOM = ['N/A']
+HRTF_DATASET_CUSTOM_DEFAULT = HRTF_DATASET_LIST_CUSTOM[0]
 # Remove duplicates by converting to a set and back to a list
 HRTF_DATASET_LIST_INDV = list(set(HRTF_DATASET_LIST_INDV))
 # Sort the list alphabetically
@@ -888,6 +933,13 @@ HRTF_TYPE_DATASET_DICT = {
 }
 HRTF_POLARITY_LIST = ['Auto Select','Original','Reversed']
 
+HRTF_DATASET_LIST_DEFAULT = HRTF_TYPE_DATASET_DICT.get(HRTF_TYPE_DEFAULT)
+HRTF_LISTENER_LIST_DEFAULT = extract_column(data=hrtf_data, column='name_gui', condition_key='dataset', condition_value=HRTF_DATASET_DEFAULT, return_all_matches=True)
+HRTF_AVERAGED_NAME_GUI = "Averaged HRTF"
+HRTF_AVERAGED_NAME_FILE = "hrir_favourites_averaged"
+HRTF_USER_SOFA_DEFAULT = 'No SOFA files found'
+HRTF_USER_SOFA_PREFIX = 'u-'
+
 #SUB Related
 SUB_FC_SETTING_LIST = ['Auto Select', 'Custom Value']
 SUB_FC_MIN=20
@@ -895,15 +947,6 @@ SUB_FC_MAX=150
 SUB_FC_DEFAULT=120
 
 # #new: load as dict lists
-# csv_directory = pjoin(DATA_DIR_INT, 'sub')
-# sub_data = load_csv_as_dicts(csv_directory,'sub_brir_metadata.csv')
-# SUB_RESPONSE_LIST_GUI = extract_column(data=sub_data, column='name_gui') 
-# SUB_RESPONSE_LIST_SHORT = extract_column(data=sub_data, column='name_short') 
-# SUB_RESPONSE_LIST_AS = extract_column(data=sub_data, column='acoustic_space') 
-# SUB_RESPONSE_LIST_R60 = extract_column(data=sub_data, column='est_rt60') 
-# SUB_RESPONSE_LIST_COMM = extract_column(data=sub_data, column='comments') 
-# SUB_RESPONSE_LIST_RANGE = extract_column(data=sub_data, column='frequency_range') 
-# SUB_RESPONSE_LIST_TOL = extract_column(data=sub_data, column='tolerance') 
 
 # Global variable declarations for clarity
 sub_data=[]
@@ -941,3 +984,428 @@ FR_FLAT_MAG = np.abs(np.fft.fft(IMPULSE))
 OCTAVE_BANDS = np.array([50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 
                          500, 630, 800, 1000, 1250, 1600, 2000, 2500, 
                          3150, 4000, 5000, 6300, 8000, 10000])
+
+
+# Global variable to track pending save
+_SAVE_DEBOUNCE_TIME = 0.1  # seconds
+
+#GUI Defaults
+
+
+
+# === GUI Defaults ===
+
+DEFAULTS = {
+    # === Not directly GUI related, don't remove ===
+    "path": "C:\\Program Files\\EqualizerAPO\\config",
+
+    # === GUI ===
+    "tab_bar": 0,
+    
+    # === Export tab HPCF ===
+    "fde_hpcf_brand": "",#hpcf_brand, not known until db loaded
+    "fde_hpcf_headphone": "",#hpcf_headphone, not known until db loaded
+    "fde_hpcf_sample": "",#hpcf_sample, not known until db loaded
+    "fir_hpcf_toggle": True,
+    "fir_st_hpcf_toggle": False,
+    "hesuvi_hpcf_toggle": False,
+    "geq_hpcf_toggle": False,
+    "geq_31_hpcf_toggle": False,
+    "fde_hpcf_active_database": HPCF_DATABASE_LIST[0],
+
+    # === Export tab HRTF / BRIR ===
+    "fde_brir_hp_type": HP_COMP_LIST[2],#brir_hp_type
+    "fde_hrtf_symmetry": HRTF_SYM_LIST[0],#hrtf_symmetry
+    "fde_room_target": ROOM_TARGET_LIST[1],#room_target
+    "fde_direct_gain": 2.0,#direct_gain
+    "fde_direct_gain_slider": 2.0,
+    "fde_acoustic_space": AC_SPACE_LIST_GUI[2],#acoustic_space
+    "fde_brir_hrtf_type": HRTF_TYPE_DEFAULT,#brir_hrtf_type
+    "fde_brir_hrtf_dataset": HRTF_DATASET_DEFAULT,#brir_hrtf_dataset
+    "fde_brir_hrtf": HRTF_LISTENER_DEFAULT,#brir_hrtf
+    "fde_brir_spat_res": SPATIAL_RES_LIST[0],#brir_spat_res
+    "fde_crossover_f_mode": SUB_FC_SETTING_LIST[0],#crossover_f_mode
+    "fde_crossover_f": SUB_FC_DEFAULT,#crossover_f
+    "fde_sub_response": SUB_RESPONSE_LIST_GUI[3] if len(SUB_RESPONSE_LIST_GUI) > 3 else SUB_RESPONSE_LIST_GUI[0],#sub_response
+    "fde_hp_rolloff_comp": False,#hp_rolloff_comp
+    "fde_fb_filtering": False,#fb_filtering
+    #"hrtf_default": HRTF_LISTENER_DEFAULT,
+    
+    "dir_brir_toggle": True,
+    "ts_brir_toggle": False,
+    "sofa_brir_toggle": False,
+    "hesuvi_brir_toggle": False,
+    "multi_chan_brir_toggle": False,
+    
+    "fde_wav_sample_rate": SAMPLE_RATE_LIST[0],#wav_sample_rate
+    "fde_wav_bit_depth": BIT_DEPTH_LIST[0],#wav_bit_depth
+    
+    #default lists - used for listboxes
+    "hrtf_list_favs": HRTF_BASE_LIST_FAV,
+    "brir_hrtf_dataset_list": HRTF_DATASET_LIST_DEFAULT,
+    "brir_hrtf_listener_list": HRTF_LISTENER_LIST_DEFAULT,
+    
+
+
+    # === QC Tab HPCF ===
+    "qc_toggle_hpcf_history": False,
+    "qc_hpcf_brand": "",#not known until db loaded
+    "qc_hpcf_headphone": "",#not known until db loaded
+    "qc_hpcf_sample": "",#not known until db loaded
+    "qc_e_apo_curr_hpcf": "",#nothing generated to start with
+    "qc_e_apo_sel_hpcf": "",#nothing generated to start with
+    "qc_auto_apply_hpcf_sel": False,
+    "e_apo_hpcf_conv": False,
+    "qc_hpcf_active_database": HPCF_DATABASE_LIST[0],
+    
+    # === QC Tab BRIR ===
+    "qc_brir_hp_type": HP_COMP_LIST[2],
+    "qc_room_target": ROOM_TARGET_LIST[1],
+    "qc_direct_gain": 2.0,
+    "qc_direct_gain_slider": 2.0,
+    "qc_acoustic_space": AC_SPACE_LIST_GUI[2],
+    "qc_brir_hrtf_type": HRTF_TYPE_DEFAULT,
+    "qc_brir_hrtf_dataset": HRTF_DATASET_DEFAULT,
+    "qc_brir_hrtf": HRTF_LISTENER_DEFAULT,
+    "qc_sub_response": SUB_RESPONSE_LIST_GUI[3] if len(SUB_RESPONSE_LIST_GUI) > 3 else SUB_RESPONSE_LIST_GUI[0],
+    "qc_crossover_f_mode": SUB_FC_SETTING_LIST[0],
+    "qc_crossover_f": SUB_FC_DEFAULT,
+    "qc_hp_rolloff_comp": False,
+    "qc_fb_filtering": False,
+    "qc_lf_analysis_toggle": False,
+    
+    "qc_wav_sample_rate": SAMPLE_RATE_LIST[0],
+    "qc_wav_bit_depth": BIT_DEPTH_LIST[0],
+    
+    "qc_e_apo_curr_brir_set": "",#nothing generated to start with
+    "qc_e_apo_sel_brir_set": "",#nothing generated to start with
+    "e_apo_brir_conv": False,
+    
+    
+    # === E-APO General ===
+    "e_apo_audio_channels": AUDIO_CHANNELS[0],
+    "e_apo_upmix_method": UPMIXING_METHODS[1],
+    "e_apo_side_delay": 0,
+    "e_apo_rear_delay": 10,
+    "e_apo_mute": False,
+    "e_apo_gain": 0.0,
+    "e_apo_elev_angle": 0,
+    "e_apo_az_angle_fl": -30,
+    "e_apo_az_angle_fr": 30,
+    "e_apo_az_angle_c": 0,
+    "e_apo_az_angle_sl": -90,
+    "e_apo_az_angle_sr": 90,
+    "e_apo_az_angle_rl": -135,
+    "e_apo_az_angle_rr": 135,
+    #"e_apo_enable_hpcf": False,
+    #"e_apo_enable_brir": False,
+    "e_apo_autoapply_hpcf": False,
+    "e_apo_prevent_clip": AUTO_GAIN_METHODS[1],
+
+
+    # === E-APO Per-Channel Config ===
+    # mute
+    "e_apo_mute_fl": False,
+    "e_apo_mute_fr": False,
+    "e_apo_mute_c": False,
+    "e_apo_mute_sl": False,
+    "e_apo_mute_sr": False,
+    "e_apo_mute_rl": False,
+    "e_apo_mute_rr": False,
+    # gain
+    "e_apo_gain_oa": 0.0,
+    "e_apo_gain_fl": 0.0,
+    "e_apo_gain_fr": 0.0,
+    "e_apo_gain_c": 0.0,
+    "e_apo_gain_sl": 0.0,
+    "e_apo_gain_sr": 0.0,
+    "e_apo_gain_rl": 0.0,
+    "e_apo_gain_rr": 0.0,
+    # elevation
+    "e_apo_elev_angle_fl": 0,
+    "e_apo_elev_angle_fr": 0,
+    "e_apo_elev_angle_c": 0,
+    "e_apo_elev_angle_sl": 0,
+    "e_apo_elev_angle_sr": 0,
+    "e_apo_elev_angle_rl": 0,
+    "e_apo_elev_angle_rr": 0,
+    # === Hesuvi Per-Channel Angles ===
+    "hesuvi_elev_angle_fl": 0,
+    "hesuvi_elev_angle_fr": 0,
+    "hesuvi_elev_angle_c": 0,
+    "hesuvi_elev_angle_sl": 0,
+    "hesuvi_elev_angle_sr": 0,
+    "hesuvi_elev_angle_rl": 0,
+    "hesuvi_elev_angle_rr": 0,
+    "hesuvi_az_angle_fl": -30,
+    "hesuvi_az_angle_fr": 30,
+    "hesuvi_az_angle_c": 0,
+    "hesuvi_az_angle_sl": -90,
+    "hesuvi_az_angle_sr": 90,
+    "hesuvi_az_angle_rl": -135,
+    "hesuvi_az_angle_rr": 135,
+
+
+    # === Misc ===
+    "sofa_exp_conv": SOFA_OUTPUT_CONV[0],
+    "check_updates_start_toggle": False,
+    "hrtf_polarity_rev": HRTF_POLARITY_LIST[0],
+    "force_hrtf_symmetry":HRTF_SYM_LIST[0],
+    "er_delay_time":0.5
+    
+
+}
+
+
+
+
+
+
+#mapping of ASH V3.5 settings keys to new keys (also new default keys)
+#It’s structured as:"old_key": "new_key",
+LEGACY_KEY_MAP = {
+    # === General Paths & System ===
+    "path": "path",
+    "sampling_frequency": "fde_wav_sample_rate",#wav_sample_rate
+    "bit_depth": "fde_wav_bit_depth",#wav_bit_depth
+    "qc_wav_sample_rate": "qc_wav_sample_rate",
+    "qc_wav_bit_depth": "qc_wav_bit_depth",
+
+    # === BRIR / Room Simulation Parameters ===
+    "brir_headphone_type": "fde_brir_hp_type",#brir_hp_type
+    "brir_hrtf": "fde_brir_hrtf",#brir_hrtf
+    "spatial_resolution": "fde_brir_spat_res",#brir_spat_res
+    "brir_room_target": "fde_room_target",#room_target
+    "brir_direct_gain": "fde_direct_gain",#direct_gain
+    "brir_direct_gain_slider": "fde_direct_gain_slider",#not originally saved
+    "acoustic_space": "fde_acoustic_space",#acoustic_space
+    "brir_hrtf_type": "fde_brir_hrtf_type",#brir_hrtf_type
+    "brir_hrtf_dataset": "fde_brir_hrtf_dataset",#brir_hrtf_dataset
+    "crossover_f_mode": "fde_crossover_f_mode",#crossover_f_mode
+    "crossover_f": "fde_crossover_f",#crossover_f
+    "sub_response": "fde_sub_response",#sub_response
+    "hp_rolloff_comp": "fde_hp_rolloff_comp",#hp_rolloff_comp
+    "fb_filtering_mode": "fde_fb_filtering",#fb_filtering
+    
+    "sofa_exp_conv": "sofa_exp_conv",
+    "hrtf_polarity": "hrtf_polarity_rev",
+
+    # === Export Toggles ===
+    "fir_hpcf_exp": "fir_hpcf_toggle",
+    "fir_st_hpcf_exp": "fir_st_hpcf_toggle",
+    "geq_hpcf_exp": "geq_hpcf_toggle",
+    "geq_31_exp": "geq_31_hpcf_toggle",
+    "hesuvi_hpcf_exp": "hesuvi_hpcf_toggle",
+    "dir_brir_exp": "dir_brir_toggle",
+    "ts_brir_exp": "ts_brir_toggle",
+    "hesuvi_brir_exp": "hesuvi_brir_toggle",
+    "multi_chan_brir_exp": "multi_chan_brir_toggle",
+    "sofa_brir_exp": "sofa_brir_toggle",
+
+    # === UI & Behavior ===
+    "auto_check_updates": "check_updates_start_toggle",
+    "force_hrtf_symmetry": "force_hrtf_symmetry",
+    "er_delay_time": "er_delay_time",
+    "show_hpcf_history": "qc_toggle_hpcf_history",
+    "tab_selected": "tab_bar",
+    "auto_apply_hpcf": "qc_auto_apply_hpcf_sel",
+    "enable_hpcf": "e_apo_hpcf_conv",
+    "enable_brir": "e_apo_brir_conv",
+    "prevent_clip": "e_apo_prevent_clip",
+
+    # === Current Selections ===
+    "hpcf_current": "qc_e_apo_curr_hpcf",
+    "hpcf_selected": "qc_e_apo_sel_hpcf",
+    "brir_set_current": "qc_e_apo_curr_brir_set",
+    "brir_set_selected": "qc_e_apo_sel_brir_set",
+
+    # === Headphone & Sample Selections ===
+    "qc_brand": "qc_hpcf_brand",
+    "qc_headphone": "qc_hpcf_headphone",
+    "qc_sample": "qc_hpcf_sample",
+
+    # === BRIR Quick Config ===
+    "qc_brir_headphone_type": "qc_brir_hp_type",
+    "qc_brir_room_target": "qc_room_target",
+    "qc_brir_direct_gain": "qc_direct_gain",
+    "qc_brir_direct_gain_slider": "qc_direct_gain_slider",#not originally saved
+    "qc_acoustic_space": "qc_acoustic_space",
+    "qc_brir_hrtf": "qc_brir_hrtf",
+    "qc_brir_hrtf_type": "qc_brir_hrtf_type",
+    "qc_brir_hrtf_dataset": "qc_brir_hrtf_dataset",
+    "qc_crossover_f_mode": "qc_crossover_f_mode",
+    "qc_crossover_f": "qc_crossover_f",
+    "qc_sub_response": "qc_sub_response",
+    "qc_hp_rolloff_comp": "qc_hp_rolloff_comp",
+    "qc_fb_filtering_mode": "qc_fb_filtering",
+
+    # === Gain & Mute Controls (Channel Config) ===
+    "mute_fl": "e_apo_mute_fl",
+    "mute_fr": "e_apo_mute_fr",
+    "mute_c": "e_apo_mute_c",
+    "mute_sl": "e_apo_mute_sl",
+    "mute_sr": "e_apo_mute_sr",
+    "mute_rl": "e_apo_mute_rl",
+    "mute_rr": "e_apo_mute_rr",
+
+    "gain_oa": "e_apo_gain_oa",
+    "gain_fl": "e_apo_gain_fl",
+    "gain_fr": "e_apo_gain_fr",
+    "gain_c": "e_apo_gain_c",
+    "gain_sl": "e_apo_gain_sl",
+    "gain_sr": "e_apo_gain_sr",
+    "gain_rl": "e_apo_gain_rl",
+    "gain_rr": "e_apo_gain_rr",
+
+    "elev_fl": "e_apo_elev_angle_fl",
+    "elev_fr": "e_apo_elev_angle_fr",
+    "elev_c": "e_apo_elev_angle_c",
+    "elev_sl": "e_apo_elev_angle_sl",
+    "elev_sr": "e_apo_elev_angle_sr",
+    "elev_rl": "e_apo_elev_angle_rl",
+    "elev_rr": "e_apo_elev_angle_rr",
+
+    "azim_fl": "e_apo_az_angle_fl",
+    "azim_fr": "e_apo_az_angle_fr",
+    "azim_c": "e_apo_az_angle_c",
+    "azim_sl": "e_apo_az_angle_sl",
+    "azim_sr": "e_apo_az_angle_sr",
+    "azim_rl": "e_apo_az_angle_rl",
+    "azim_rr": "e_apo_az_angle_rr",
+
+    # === Upmix & Delays ===
+    "upmix_method": "e_apo_upmix_method",
+    "side_delay": "e_apo_side_delay",
+    "rear_delay": "e_apo_rear_delay",
+    "channel_config": "e_apo_audio_channels",
+
+    # === HRTF Lists ===
+    "hrtf_list_favs": "hrtf_list_favs",
+}
+
+#mapping of ASH V3.5 GUI keys to new GUI keys (also new default keys)
+#It’s structured as:"old_key": "new_key",
+LEGACY_GUI_KEY_MAP = {
+    # === General Paths & System ===
+    "path": "path",
+    "wav_sample_rate": "fde_wav_sample_rate",#wav_sample_rate
+    "wav_bit_depth": "fde_wav_bit_depth",#wav_bit_depth
+    "qc_wav_sample_rate": "qc_wav_sample_rate",
+    "qc_wav_bit_depth": "qc_wav_bit_depth",
+
+    # === BRIR / Room Simulation Parameters ===
+    "brir_hp_type": "fde_brir_hp_type",#brir_hp_type
+    "brir_hrtf": "fde_brir_hrtf",#brir_hrtf
+    "brir_spat_res": "fde_brir_spat_res",#brir_spat_res
+    "rm_target_list": "fde_room_target",#room_target
+    "direct_gain": "fde_direct_gain",#direct_gain
+    "direct_gain_slider": "fde_direct_gain_slider",#direct_gain
+    "acoustic_space_combo": "fde_acoustic_space",#acoustic_space
+    "brir_hrtf_type": "fde_brir_hrtf_type",#brir_hrtf_type
+    "brir_hrtf_dataset": "fde_brir_hrtf_dataset",#brir_hrtf_dataset
+    "crossover_f_mode": "fde_crossover_f_mode",#crossover_f_mode
+    "crossover_f": "fde_crossover_f",#crossover_f
+    "sub_response": "fde_sub_response",#sub_response
+    "hp_rolloff_comp": "fde_hp_rolloff_comp",#hp_rolloff_comp
+    "fb_filtering_mode": "fde_fb_filtering",#fb_filtering
+    
+    "hrtf_polarity_rev": "hrtf_polarity_rev",
+    "sofa_exp_conv": "sofa_exp_conv",
+    
+    # === Headphone & Sample Selections ===
+    "brand_list": "fde_hpcf_brand",#hpcf_brand
+    "headphone_list": "fde_hpcf_headphone",#hpcf_headphone
+    "sample_list": "fde_hpcf_sample",#hpcf_sample
+
+    # === Export Toggles ===
+    "fir_hpcf_toggle": "fir_hpcf_toggle",
+    "fir_st_hpcf_toggle": "fir_st_hpcf_toggle",
+    "geq_hpcf_toggle": "geq_hpcf_toggle",
+    "geq_31_hpcf_toggle": "geq_31_hpcf_toggle",
+    "hesuvi_hpcf_toggle": "hesuvi_hpcf_toggle",
+    "dir_brir_toggle": "dir_brir_toggle",
+    "ts_brir_toggle": "ts_brir_toggle",
+    "hesuvi_brir_toggle": "hesuvi_brir_toggle",
+    "multi_chan_brir_toggle": "multi_chan_brir_toggle",
+    "sofa_brir_toggle": "sofa_brir_toggle",
+
+    # === UI & Behavior ===
+    "check_updates_start_tag": "check_updates_start_toggle",
+    "force_hrtf_symmetry": "force_hrtf_symmetry",
+    "er_delay_time_tag": "er_delay_time",
+    "qc_toggle_hpcf_history": "qc_toggle_hpcf_history",
+    "tab_bar": "tab_bar",
+    "auto_apply_hpcf": "qc_auto_apply_hpcf_sel",
+    "e_apo_hpcf_conv": "e_apo_hpcf_conv",
+    "e_apo_brir_conv": "e_apo_brir_conv",
+    "e_apo_prevent_clip": "e_apo_prevent_clip",
+
+    # === Current Selections ===
+    "qc_e_apo_curr_hpcf": "qc_e_apo_curr_hpcf",
+    "qc_e_apo_sel_hpcf": "qc_e_apo_sel_hpcf",
+    "qc_e_apo_curr_brir_set": "qc_e_apo_curr_brir_set",
+    "qc_e_apo_sel_brir_set": "qc_e_apo_sel_brir_set",
+
+    # === Headphone & Sample Selections ===
+    "qc_brand_list": "qc_hpcf_brand",
+    "qc_headphone_list": "qc_hpcf_headphone",
+    "qc_sample_list": "qc_hpcf_sample",
+
+    # === BRIR Quick Config ===
+    "qc_brir_hp_type": "qc_brir_hp_type",
+    "qc_rm_target_list": "qc_room_target",
+    "qc_direct_gain": "qc_direct_gain",
+    "qc_direct_gain_slider": "qc_direct_gain_slider",
+    "qc_acoustic_space_combo": "qc_acoustic_space",
+    "qc_brir_hrtf": "qc_brir_hrtf",
+    "qc_brir_hrtf_type": "qc_brir_hrtf_type",
+    "qc_brir_hrtf_dataset": "qc_brir_hrtf_dataset",
+    "qc_crossover_f_mode": "qc_crossover_f_mode",
+    "qc_crossover_f": "qc_crossover_f",
+    "qc_sub_response": "qc_sub_response",
+    "qc_hp_rolloff_comp": "qc_hp_rolloff_comp",
+    "qc_fb_filtering": "qc_fb_filtering",
+
+    # === Gain & Mute Controls (Channel Config) ===
+    "e_apo_mute_fl": "e_apo_mute_fl",
+    "e_apo_mute_fr": "e_apo_mute_fr",
+    "e_apo_mute_c": "e_apo_mute_c",
+    "e_apo_mute_sl": "e_apo_mute_sl",
+    "e_apo_mute_sr": "e_apo_mute_sr",
+    "e_apo_mute_rl": "e_apo_mute_rl",
+    "e_apo_mute_rr": "e_apo_mute_rr",
+
+    "e_apo_gain_oa": "e_apo_gain_oa",
+    "e_apo_gain_fl": "e_apo_gain_fl",
+    "e_apo_gain_fr": "e_apo_gain_fr",
+    "e_apo_gain_c": "e_apo_gain_c",
+    "e_apo_gain_sl": "e_apo_gain_sl",
+    "e_apo_gain_sr": "e_apo_gain_sr",
+    "e_apo_gain_rl": "e_apo_gain_rl",
+    "e_apo_gain_rr": "e_apo_gain_rr",
+
+    "e_apo_elev_angle_fl": "e_apo_elev_angle_fl",
+    "e_apo_elev_angle_fr": "e_apo_elev_angle_fr",
+    "e_apo_elev_angle_c": "e_apo_elev_angle_c",
+    "e_apo_elev_angle_sl": "e_apo_elev_angle_sl",
+    "e_apo_elev_angle_sr": "e_apo_elev_angle_sr",
+    "e_apo_elev_angle_rl": "e_apo_elev_angle_rl",
+    "e_apo_elev_angle_rr": "e_apo_elev_angle_rr",
+
+    "e_apo_az_angle_fl": "e_apo_az_angle_fl",
+    "e_apo_az_angle_fr": "e_apo_az_angle_fr",
+    "e_apo_az_angle_c": "e_apo_az_angle_c",
+    "e_apo_az_angle_sl": "e_apo_az_angle_sl",
+    "e_apo_az_angle_sr": "e_apo_az_angle_sr",
+    "e_apo_az_angle_rl": "e_apo_az_angle_rl",
+    "e_apo_az_angle_rr": "e_apo_az_angle_rr",
+
+    # === Upmix & Delays ===
+    "e_apo_upmix_method": "e_apo_upmix_method",
+    "e_apo_side_delay": "e_apo_side_delay",
+    "e_apo_rear_delay": "e_apo_rear_delay",
+    "audio_channels_combo": "e_apo_audio_channels",
+
+    # === HRTF Lists ===
+    "hrtf_list_favs": "hrtf_list_favs",
+}

@@ -40,34 +40,34 @@ logger = logging.getLogger(__name__)
 log_info=1
 
 
-def fetch_hpcf_data(conn):
-    """
-    Fetch brand, headphone, and sample columns from the hpcf_table,
-    sorted by brand, then headphone, then sample in ascending order.
+# def fetch_hpcf_data(conn):
+#     """
+#     Fetch brand, headphone, and sample columns from the hpcf_table,
+#     sorted by brand, then headphone, then sample in ascending order.
 
-    Args:
-        conn (sqlite3.Connection): Active SQLite connection.
+#     Args:
+#         conn (sqlite3.Connection): Active SQLite connection.
 
-    Returns:
-        List[Dict]: Sorted list of rows as dictionaries.
-    """
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT brand, headphone, sample
-            FROM hpcf_table
-            ORDER BY brand ASC, headphone ASC, sample ASC
-        """)
+#     Returns:
+#         List[Dict]: Sorted list of rows as dictionaries.
+#     """
+#     try:
+#         cursor = conn.cursor()
+#         cursor.execute("""
+#             SELECT brand, headphone, sample
+#             FROM hpcf_table
+#             ORDER BY brand ASC, headphone ASC, sample ASC
+#         """)
 
-        # Convert result to list of dictionaries
-        rows = cursor.fetchall()
-        results = [{"brand": r[0], "headphone": r[1], "sample": r[2]} for r in rows]
+#         # Convert result to list of dictionaries
+#         rows = cursor.fetchall()
+#         results = [{"brand": r[0], "headphone": r[1], "sample": r[2]} for r in rows]
 
-        return results
+#         return results
 
-    except sqlite3.Error as e:
-        print(f"Error fetching data from hpcf_table: {e}")
-        return []
+#     except sqlite3.Error as e:
+#         print(f"Error fetching data from hpcf_table: {e}")
+#         return []
 
 def create_connection(db_file):
     """ create a database connection to the SQLite database
@@ -85,6 +85,9 @@ def create_connection(db_file):
 
     return conn
 
+#
+##### database management
+#
 
 def create_table(conn, table_name, create_table_sql):
     """ create a table from the create_table_sql statement
@@ -138,279 +141,6 @@ def create_hpcf_row(conn, hpcf_data, brand, headphone, sample, gui_logger=None):
         logging.error("Error occurred", exc_info = e)
         return None   
 
-
-def get_all_headphone_list(conn):
-    """
-    Function retrieves list of headphones from database
-    """
-    try:
-        sql = 'select DISTINCT headphone from hpcf_table'
-        cur = conn.cursor()
-        cur.execute(sql)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return sorted(rows_list, key=str.casefold) #sort list before returning
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-
-
-def get_brand_list(conn):
-    """
-    Function retrieves list of brands from database
-    """
-    try:
-        sql = 'select DISTINCT brand from hpcf_table'
-        cur = conn.cursor()
-        cur.execute(sql)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return sorted(rows_list, key=str.casefold) #sort list before returning
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-    
-def search_brand_list(conn,search_str=None):
-    """
-    Function retrieves list of brands from database based on search string
-    """
-    try:
-        if search_str == None or not search_str:
-            return []
-        else:
-            brand_tuple = ('%'+search_str+'%',)
-            sql = "select DISTINCT brand from hpcf_table where brand like ?"
-            cur = conn.cursor()
-            cur.execute(sql, brand_tuple)
- 
-            rows = cur.fetchall()
-            cur.close()
-            if rows:
-                rows_list = [i[0] for i in rows]#convert from list of tuples to list
-                return sorted(rows_list, key=str.casefold) #sort list before returning
-            
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
- 
-def search_headphone_list(conn,search_str=None):
-    """
-    Function retrieves list of headphones from database based on search string
-    """
-    try:
-
-        if search_str == None or not search_str:
-            return []
-        else:
-            brand_tuple = ('%'+search_str+'%',)
-            sql = "select DISTINCT headphone from hpcf_table where headphone like ?"
-            cur = conn.cursor()
-            cur.execute(sql, brand_tuple)
- 
-            rows = cur.fetchall()
-            cur.close()
-            if rows:
-                rows_list = [i[0] for i in rows]#convert from list of tuples to list
-                return sorted(rows_list, key=str.casefold) #sort list before returning
- 
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-        
-def search_headphones_in_list(conn,search_list=None):
-    """
-    Function retrieves list of headphones from database based on list of search strings
-    """
-    try:
-
-        if search_list == None or not search_list:
-            return []
-        else:
-            sql = f"select DISTINCT headphone from hpcf_table where headphone in ({','.join(['?']*len(search_list))})"
-            cur = conn.cursor()
-            cur.execute(sql, search_list)
- 
-            rows = cur.fetchall()
-            cur.close()
-            if rows:
-                rows_list = [i[0] for i in rows]#convert from list of tuples to list
-                return sorted(rows_list, key=str.casefold) #sort list before returning
- 
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None            
-
-def get_headphone_list(conn, brand):
-    """
-    Function retrieves list of headphones from database for a specified brand
-    """ 
-    try:
-        brand_tuple = (brand,)
-        sql = 'select DISTINCT headphone from hpcf_table where brand =?'
-        cur = conn.cursor()
-        cur.execute(sql, brand_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return sorted(rows_list, key=str.casefold) #sort list before returning
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-    
-
-def get_brand(conn, headphone):
-    """
-    Function retrieves brand from database for a specified headphone
-    """
-    try:
-        headphone_tuple = (headphone,)
-        sql = 'select DISTINCT brand from hpcf_table where headphone =?'
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            rows_string = rows[0][0]#convert from tuple to string
-            return rows_string
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-    
-
-def get_samples_list(conn, headphone):
-    """
-    Function retrieves samples from database for a specified headphone
-    """
-    try:
-        headphone_tuple = (headphone,)
-        sql = 'select DISTINCT sample from hpcf_table where headphone =?'
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            rows_list = [i[0] for i in rows]#convert from list of tuples to list
-            return sorted(rows_list, key=str.casefold)
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-    
-
-
-def get_hpcf_samples(conn, headphone):
-    """
-    Function retrieves filter data (all samples) from database for a specified headphone 
-    """  
-    try:
-        headphone_tuple = (headphone,)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =?'
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            return rows
-        else:
-            return None
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-       
-
-def get_hpcf_samples_dicts(conn, headphone):
-    """
-    Function retrieves filter data (all samples) for a specified headphone from database 
-    Returns list of dict like objects
-    use conn.row_factory = sqlite3.Row, but the results are not directly dictionaries. One has to add an additional "cast" to dict
-    """
-        
-    try:
-        headphone_tuple = (headphone,)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =?'
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            return rows
-        else:
-            return None
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-        
-
-
-def get_hpcf_sample(conn, hpcf_id):
-    """
-    Function retrieves filter data from database for a specified hpcf
-    """ 
-    try:
-        headphone_tuple = (hpcf_id,)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where id =?'
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            return rows
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None     
-    
-    
-
-    
-def get_hpcf_headphone_sample_dict(conn, headphone, sample):
-    """
-    Function retrieves filter data for a specified headphone and sample from database 
-    Returns dict like object
-    use conn.row_factory = sqlite3.Row, but the results are not directly dictionaries. One has to add an additional "cast" to dict
-    """
-    try:
-        headphone_tuple = (headphone, sample)
-        sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =? AND sample =?'
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            return rows[0]
-        else:
-            return None
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None      
-    
-def get_hpcf_date_range_dicts(conn, date_str='2024-06-21'):
-    """
-    Function retrieves filter data for a specified headphone and sample from database 
-    Returns dict like object
-    use conn.row_factory = sqlite3.Row, but the results are not directly dictionaries. One has to add an additional "cast" to dict
-    """
-    try:
-        headphone_tuple = (date_str,)
-        sql = 'select brand,headphone,sample,created_on from hpcf_table where date(created_on) >= date(?)'
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(sql, headphone_tuple)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            return rows
-        else:
-            return None
-    except sqlite3.Error as e:
-        logging.error("Error occurred", exc_info = e)
-        return None      
-    
 
 def replace_hpcf_filter_data(conn, hpcf_data, headphone, sample, gui_logger=None):
     """
@@ -810,7 +540,645 @@ def renumber_headphone_samples(conn, gui_logger=None):
     hf.log_with_timestamp(log_string, gui_logger)
 
 
+def hpcf_wavs_to_database(conn, gui_logger=None):
+    """
+    Function reads HpCF WAV dataset and populates a new database
+    """
+    
+    # get the start time
+    st = time.time()
+    
+    
+    
+    try:
+        
+        current_list = get_all_headphone_list(conn)
+        if current_list == None:
+            raise ValueError('Unable to create new database table: hpcf_table. Table already exists. Delete existing table or database before proceeding.')
+    
+        #retrieve geq frequency list as an array - 127 bands
+        geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
+        #retrieve geq frequency list as an array - 31 bands
+        geq_set_f_31 = hpcf_retrieve_set_geq_freqs(f_set=2)
+        #retrieve geq frequency list as an array - 103 bands
+        geq_set_f_103 = hpcf_retrieve_set_geq_freqs(f_set=3)
+    
+        now_datetime = datetime.now()
+        # # create a database connection
 
+        table_name = 'hpcf_table'
+        sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS hpcf_table (
+                                    id integer PRIMARY KEY,
+                                    brand text,
+                                    headphone text,
+                                    sample text,
+                                    sample_id INT,
+                                    fir text,
+                                    graphic_eq text,
+                                    graphic_eq_31 text,
+                                    graphic_eq_103 text,
+                                    created_on text
+                                );"""
+    
+
+        # create tables
+        if conn is not None:
+
+            # create tasks table
+            create_table(conn, table_name=table_name, create_table_sql=sql_create_tasks_table)
+        else:
+            logging.error("Error! cannot create the database connection.")
+            return False
+            
+        #read hpcf WAVs one by one
+        #iterate over files in the input directory
+        
+        hpcf_input_path = pjoin(CN.DATA_DIR_INT, 'hpcf_wavs')
+        hpcf_summary_file_path = pjoin(CN.DATA_DIR_INT, 'hpcf_wav_summary.csv')
+        
+        for root, dirs, files in os.walk(hpcf_input_path):
+            for filename in files:
+                if '.wav' in filename:
+                    wav_fname = pjoin(root, filename)
+                    samplerate, data = hf.read_wav_file(wav_fname)
+                    fir_array = data
+                    #wav_length = data.shape[0]
+                    #length_time = data.shape[0] / samplerate
+        
+        
+                    #get metadata (brand, headphone name, sample name)
+                    metadata_dict = hpcf_retrieve_metadata(csv_location=hpcf_summary_file_path, wav_name=filename)
+                    brand_str = metadata_dict.get('Brand')
+                    headphone_str = metadata_dict.get('Name')
+                    sample_str = metadata_dict.get('Sample')
+                    sample_id = hpcf_sample_to_id(sample_str)
+                    
+                    ### get fir
+                    # convert from array to list
+                    fir_list = fir_array.tolist()
+                    # convert from list to Json
+                    fir_json_str = json.dumps(fir_list)
+                    
+
+                    #get graphic eq filter 127 band
+                    geq_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_127)
+                    
+                    #get graphic eq filter 31 band
+                    geq_31_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
+                    
+                    #obsolete
+                    ##get graphic eq 32 band filter
+                    #geq_32_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=1,sample_rate=samplerate)
+                    
+                    #get graphic eq 103 band filter
+                    geq_103_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
+                    
+                    
+
+                    #last modified text
+                    created_on = now_datetime
+     
+                    #create hpcf tuple for this hpcf
+                    # tasks
+                    hpcf_to_insert = (brand_str, headphone_str, sample_str, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
+                    
+                    # create entry
+                    create_hpcf_row(conn, hpcf_to_insert, brand_str, headphone_str, sample_str, gui_logger=gui_logger)
+            
+        conn.commit()
+    
+    
+        log_string = 'Database created'
+        hf.log_with_timestamp(log_string, gui_logger)
+                
+        
+    except Exception as ex:
+        logging.error("Error occurred", exc_info = ex)
+            
+    # get the end time
+    et = time.time()
+    
+    # get the execution time
+    elapsed_time = et - st
+    if CN.LOG_INFO == True:
+        logging.info('Execution time:' + str(elapsed_time) + ' seconds')
+        
+        
+
+
+    
+
+### unused
+
+# def get_hpcf_samples(conn, headphone):
+#     """
+#     Function retrieves filter data (all samples) from database for a specified headphone 
+#     """  
+#     try:
+#         headphone_tuple = (headphone,)
+#         sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =?'
+#         cur = conn.cursor()
+#         cur.execute(sql, headphone_tuple)
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return rows
+#         else:
+#             return None
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info = e)
+#         return None     
+
+# def get_hpcf_sample(conn, hpcf_id):
+#     """
+#     Function retrieves filter data from database for a specified hpcf
+#     """ 
+#     try:
+#         headphone_tuple = (hpcf_id,)
+#         sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where id =?'
+#         cur = conn.cursor()
+#         cur.execute(sql, headphone_tuple)
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return rows
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info = e)
+#         return None     
+        
+
+##### new retrieval functions, compatible with both DB schemas
+
+def detect_schema(conn):
+    """Detect whether we're using the new or old schema."""
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(hpcf_table)")
+    cols = [r[1] for r in cur.fetchall()]
+    cur.close()
+    return "source" in cols  # True if new schema
+
+def map_row_to_standard_dict(row, new_schema=False):
+    """Return a dict with guaranteed standard keys."""
+    d = dict(row)
+    if new_schema:
+        # rename keys per SCHEMA_MAP
+        mapped = {CN.HPCF_DB_SCHEMA_MAP.get(k, k): v for k, v in d.items()}
+    else:
+        mapped = d
+
+    # ensure all STANDARD_COLUMNS exist
+    for key in CN.HPCF_DB_STANDARD_COLUMNS:
+        if key not in mapped:
+            mapped[key] = None
+    return mapped
+
+# ---------------------------------
+# List retrieval functions using HPCF_DB_SCHEMA_MAP with schema detection
+# ---------------------------------
+
+# def get_all_headphone_list(conn):
+#     """Retrieve list of all headphones."""
+#     try:
+#         is_new = detect_schema(conn)
+#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+#         sql = f"SELECT DISTINCT {col} FROM hpcf_table"
+#         cur = conn.cursor()
+#         cur.execute(sql)
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def get_brand_list(conn):
+#     """Retrieve list of all brands or sources."""
+#     try:
+#         is_new = detect_schema(conn)
+#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+#         sql = f"SELECT DISTINCT {col} FROM hpcf_table"
+#         cur = conn.cursor()
+#         cur.execute(sql)
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def search_brand_list(conn, search_str=None):
+#     """Retrieve list of brands or sources matching a search string."""
+#     try:
+#         if not search_str:
+#             return []
+#         is_new = detect_schema(conn)
+#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+#         sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} LIKE ?"
+#         cur = conn.cursor()
+#         cur.execute(sql, ('%' + search_str + '%',))
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def search_headphone_list(conn, search_str=None):
+#     """Retrieve list of headphones matching a search string."""
+#     try:
+#         if not search_str:
+#             return []
+#         is_new = detect_schema(conn)
+#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+#         sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} LIKE ?"
+#         cur = conn.cursor()
+#         cur.execute(sql, ('%' + search_str + '%',))
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def search_headphones_in_list(conn, search_list=None):
+#     """Retrieve headphones from a given list."""
+#     try:
+#         if not search_list:
+#             return []
+#         is_new = detect_schema(conn)
+#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+#         placeholders = ','.join(['?'] * len(search_list))
+#         sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} IN ({placeholders})"
+#         cur = conn.cursor()
+#         cur.execute(sql, search_list)
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def get_headphone_list(conn, brand, sample=None):
+#     """Retrieve list of headphones for a given brand and optional sample/type."""
+#     try:
+#         is_new = detect_schema(conn)
+#         col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+#         col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+#         col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
+
+#         cur = conn.cursor()
+#         if sample:
+#             sql = f"SELECT DISTINCT {col_headphone} FROM hpcf_table WHERE {col_brand}=? AND {col_sample}=?"
+#             cur.execute(sql, (brand, sample))
+#         else:
+#             sql = f"SELECT DISTINCT {col_headphone} FROM hpcf_table WHERE {col_brand}=?"
+#             cur.execute(sql, (brand,))
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def get_brand(conn, headphone):
+#     """Retrieve brand for a specified headphone."""
+#     try:
+#         is_new = detect_schema(conn)
+#         col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+#         col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+#         sql = f"SELECT DISTINCT {col_brand} FROM hpcf_table WHERE {col_headphone}=?"
+#         cur = conn.cursor()
+#         cur.execute(sql, (headphone,))
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return rows[0][0]
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+
+# def get_samples_list(conn, headphone):
+#     """Retrieve samples for a specified headphone."""
+#     try:
+#         is_new = detect_schema(conn)
+#         col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+#         col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
+#         sql = f"SELECT DISTINCT {col_sample} FROM hpcf_table WHERE {col_headphone}=?"
+#         cur = conn.cursor()
+#         cur.execute(sql, (headphone,))
+#         rows = cur.fetchall()
+#         cur.close()
+#         if rows:
+#             return sorted([r[0] for r in rows], key=str.casefold)
+#     except sqlite3.Error as e:
+#         logging.error("Error occurred", exc_info=e)
+#     return None
+
+def get_all_headphone_list(conn):
+    """Retrieve list of all headphones."""
+    try:
+        is_new = detect_schema(conn)
+        col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+        sql = f"SELECT DISTINCT {col} FROM hpcf_table"
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+
+def get_brand_list(conn):
+    """Retrieve list of all brands or sources."""
+    try:
+        is_new = detect_schema(conn)
+        col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+        sql = f"SELECT DISTINCT {col} FROM hpcf_table"
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+
+def search_brand_list(conn, search_str=None):
+    """Retrieve list of brands or sources matching a search string."""
+    try:
+        if not search_str:
+            return []
+        is_new = detect_schema(conn)
+        col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+        sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} LIKE ?"
+        cur = conn.cursor()
+        cur.execute(sql, (f"%{search_str}%",))
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+
+def search_headphone_list(conn, search_str=None):
+    """Retrieve list of headphones matching a search string."""
+    try:
+        if not search_str:
+            return []
+        is_new = detect_schema(conn)
+        col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+        sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} LIKE ?"
+        cur = conn.cursor()
+        cur.execute(sql, (f"%{search_str}%",))
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+
+def search_headphones_in_list(conn, search_list=None):
+    """Retrieve headphones from a given list."""
+    try:
+        if not search_list:
+            return []
+        is_new = detect_schema(conn)
+        col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+        placeholders = ",".join(["?"] * len(search_list))
+        sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} IN ({placeholders})"
+        cur = conn.cursor()
+        cur.execute(sql, search_list)
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+
+def get_headphone_list(conn, brand, sample=None):
+    """Retrieve list of headphones for a given brand and optional sample/type."""
+    try:
+        is_new = detect_schema(conn)
+        col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+        col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+        col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
+
+        cur = conn.cursor()
+        if sample:
+            sql = f"SELECT DISTINCT {col_headphone} FROM hpcf_table WHERE {col_brand}=? AND {col_sample}=?"
+            cur.execute(sql, (brand, sample))
+        else:
+            sql = f"SELECT DISTINCT {col_headphone} FROM hpcf_table WHERE {col_brand}=?"
+            cur.execute(sql, (brand,))
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+
+def get_brand(conn, headphone):
+    """Retrieve brand for a specified headphone."""
+    try:
+        is_new = detect_schema(conn)
+        col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
+        col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+        sql = f"SELECT DISTINCT {col_brand} FROM hpcf_table WHERE {col_headphone}=?"
+        cur = conn.cursor()
+        cur.execute(sql, (headphone,))
+        rows = cur.fetchall()
+        cur.close()
+        return rows[0][0] if rows else ""
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return ""
+
+
+def get_samples_list(conn, headphone):
+    """Retrieve samples for a specified headphone."""
+    try:
+        is_new = detect_schema(conn)
+        col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
+        col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
+        sql = f"SELECT DISTINCT {col_sample} FROM hpcf_table WHERE {col_headphone}=?"
+        cur = conn.cursor()
+        cur.execute(sql, (headphone,))
+        rows = cur.fetchall()
+        cur.close()
+        return sorted([r[0] for r in rows], key=str.casefold) if rows else []
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info=e)
+        return []
+
+def get_all_samples_list(conn):
+    """Retrieve a distinct list of all samples from the database."""
+    try:
+        is_new = detect_schema(conn)
+        col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
+
+        sql = f"SELECT DISTINCT {col_sample} FROM hpcf_table"
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cur.close()
+
+        if rows:
+            return sorted([r[0] for r in rows if r[0] not in (None, "")], key=str.casefold)
+
+    except sqlite3.Error as e:
+        logging.error("Error retrieving sample list", exc_info=e)
+
+    return []
+
+# ---------------------------------
+# Filter data retrieval
+# ---------------------------------
+
+
+def get_hpcf_samples_dicts(conn, headphone, brand=None):
+    """
+    Retrieve all sample filters for a given headphone.
+    Optionally filter by brand/source to reduce duplicates.
+    Always returns a list (possibly empty).
+    """
+    try:
+        if not headphone:
+            return []
+
+        is_new = detect_schema(conn)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        if is_new:
+            col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0]
+            col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0]
+            col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0]
+            col_fir = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "fir"][0]
+
+            if brand:
+                sql = f"SELECT {col_brand}, {col_headphone}, {col_sample}, {col_fir} FROM hpcf_table WHERE {col_headphone}=? AND {col_brand}=?"
+                cur.execute(sql, (headphone, brand))
+            else:
+                sql = f"SELECT {col_brand}, {col_headphone}, {col_sample}, {col_fir} FROM hpcf_table WHERE {col_headphone}=?"
+                cur.execute(sql, (headphone,))
+        else:
+            if brand:
+                sql = "SELECT brand, headphone, sample, sample_id, fir, graphic_eq, graphic_eq_31, graphic_eq_103, created_on FROM hpcf_table WHERE headphone=? AND brand=?"
+                cur.execute(sql, (headphone, brand))
+            else:
+                sql = "SELECT brand, headphone, sample, sample_id, fir, graphic_eq, graphic_eq_31, graphic_eq_103, created_on FROM hpcf_table WHERE headphone=?"
+                cur.execute(sql, (headphone,))
+
+        rows = cur.fetchall()
+        cur.close()
+
+        if rows:
+            return [map_row_to_standard_dict(r, new_schema=is_new) for r in rows]
+
+    except sqlite3.Error as e:
+        logging.error("Error occurred in get_hpcf_samples_dicts", exc_info=e)
+
+    return []
+
+
+def get_hpcf_headphone_sample_dict(conn, headphone, sample, brand=None):
+    """
+    Retrieve filter data for a given headphone+sample pair.
+    Optionally filter by brand/source to reduce duplicates.
+    Always returns a dict (possibly empty).
+    """
+    try:
+        if not headphone or not sample:
+            return {}
+
+        is_new = detect_schema(conn)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        if is_new:
+            col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0]
+            col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0]
+            col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0]
+            col_fir = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "fir"][0]
+
+            if brand:
+                sql = f"SELECT {col_brand}, {col_headphone}, {col_sample}, {col_fir} FROM hpcf_table WHERE {col_headphone}=? AND {col_sample}=? AND {col_brand}=?"
+                cur.execute(sql, (headphone, sample, brand))
+            else:
+                sql = f"SELECT {col_brand}, {col_headphone}, {col_sample}, {col_fir} FROM hpcf_table WHERE {col_headphone}=? AND {col_sample}=?"
+                cur.execute(sql, (headphone, sample))
+        else:
+            if brand:
+                sql = "SELECT brand, headphone, sample, sample_id, fir, graphic_eq, graphic_eq_31, graphic_eq_103, created_on FROM hpcf_table WHERE headphone=? AND sample=? AND brand=?"
+                cur.execute(sql, (headphone, sample, brand))
+            else:
+                sql = "SELECT brand, headphone, sample, sample_id, fir, graphic_eq, graphic_eq_31, graphic_eq_103, created_on FROM hpcf_table WHERE headphone=? AND sample=?"
+                cur.execute(sql, (headphone, sample))
+
+        rows = cur.fetchall()
+        cur.close()
+
+        if rows:
+            return map_row_to_standard_dict(rows[0], new_schema=is_new)
+
+    except sqlite3.Error as e:
+        logging.error("Error occurred in get_hpcf_headphone_sample_dict", exc_info=e)
+
+    return {}
+
+
+
+
+
+
+    
+   
+    
+   
+    
+   
+def get_hpcf_date_range_dicts(conn, date_str='2024-06-21'):
+    """
+    Function retrieves filter data for a specified headphone and sample from database 
+    Returns dict like object
+    use conn.row_factory = sqlite3.Row, but the results are not directly dictionaries. One has to add an additional "cast" to dict
+    """
+    try:
+        headphone_tuple = (date_str,)
+        sql = 'select brand,headphone,sample,created_on from hpcf_table where date(created_on) >= date(?)'
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(sql, headphone_tuple)
+        rows = cur.fetchall()
+        cur.close()
+        if rows:
+            return rows
+        else:
+            return None
+    except sqlite3.Error as e:
+        logging.error("Error occurred", exc_info = e)
+        return None      
+##### misc functions     
 
 def hpcf_retrieve_metadata(csv_location, wav_name): 
     """
@@ -893,8 +1261,9 @@ def hpcf_sample_id_to_name(sample_id):
         
         
 
-    
-        
+#   
+## data transformations
+#        
 
 def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=CN.SAMP_FREQ, geq_freq_arr = np.array([]), output_string_type = 2):
     """
@@ -1165,135 +1534,11 @@ def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=CN.SAMP_FREQ, geq_freq_ar
 
 
 
-def hpcf_wavs_to_database(conn, gui_logger=None):
-    """
-    Function reads HpCF WAV dataset and populates a new database
-    """
-    
-    # get the start time
-    st = time.time()
-    
-    
-    
-    try:
-        
-        current_list = get_all_headphone_list(conn)
-        if current_list == None:
-            raise ValueError('Unable to create new database table: hpcf_table. Table already exists. Delete existing table or database before proceeding.')
-    
-        #retrieve geq frequency list as an array - 127 bands
-        geq_set_f_127 = hpcf_retrieve_set_geq_freqs(f_set=1)
-        #retrieve geq frequency list as an array - 31 bands
-        geq_set_f_31 = hpcf_retrieve_set_geq_freqs(f_set=2)
-        #retrieve geq frequency list as an array - 103 bands
-        geq_set_f_103 = hpcf_retrieve_set_geq_freqs(f_set=3)
-    
-        now_datetime = datetime.now()
-        # # create a database connection
-
-        table_name = 'hpcf_table'
-        sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS hpcf_table (
-                                    id integer PRIMARY KEY,
-                                    brand text,
-                                    headphone text,
-                                    sample text,
-                                    sample_id INT,
-                                    fir text,
-                                    graphic_eq text,
-                                    graphic_eq_31 text,
-                                    graphic_eq_103 text,
-                                    created_on text
-                                );"""
-    
-
-        # create tables
-        if conn is not None:
-
-            # create tasks table
-            create_table(conn, table_name=table_name, create_table_sql=sql_create_tasks_table)
-        else:
-            logging.error("Error! cannot create the database connection.")
-            return False
-            
-        #read hpcf WAVs one by one
-        #iterate over files in the input directory
-        
-        hpcf_input_path = pjoin(CN.DATA_DIR_INT, 'hpcf_wavs')
-        hpcf_summary_file_path = pjoin(CN.DATA_DIR_INT, 'hpcf_wav_summary.csv')
-        
-        for root, dirs, files in os.walk(hpcf_input_path):
-            for filename in files:
-                if '.wav' in filename:
-                    wav_fname = pjoin(root, filename)
-                    samplerate, data = wavfile.read(wav_fname)
-                    fir_array = data / (2.**31)
-                    #wav_length = data.shape[0]
-                    #length_time = data.shape[0] / samplerate
-        
-        
-                    #get metadata (brand, headphone name, sample name)
-                    metadata_dict = hpcf_retrieve_metadata(csv_location=hpcf_summary_file_path, wav_name=filename)
-                    brand_str = metadata_dict.get('Brand')
-                    headphone_str = metadata_dict.get('Name')
-                    sample_str = metadata_dict.get('Sample')
-                    sample_id = hpcf_sample_to_id(sample_str)
-                    
-                    ### get fir
-                    # convert from array to list
-                    fir_list = fir_array.tolist()
-                    # convert from list to Json
-                    fir_json_str = json.dumps(fir_list)
-                    
-
-                    #get graphic eq filter 127 band
-                    geq_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_127)
-                    
-                    #get graphic eq filter 31 band
-                    geq_31_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_31)
-                    
-                    #obsolete
-                    ##get graphic eq 32 band filter
-                    #geq_32_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=1,sample_rate=samplerate)
-                    
-                    #get graphic eq 103 band filter
-                    geq_103_str = hpcf_fir_to_geq(fir_array=fir_array,geq_mode=2,sample_rate=samplerate,geq_freq_arr=geq_set_f_103)
-                    
-                    
-
-                    #last modified text
-                    created_on = now_datetime
-     
-                    #create hpcf tuple for this hpcf
-                    # tasks
-                    hpcf_to_insert = (brand_str, headphone_str, sample_str, sample_id, fir_json_str, geq_str, geq_31_str, geq_103_str, created_on)
-                    
-                    # create entry
-                    create_hpcf_row(conn, hpcf_to_insert, brand_str, headphone_str, sample_str, gui_logger=gui_logger)
-            
-        conn.commit()
-    
-    
-        log_string = 'Database created'
-        hf.log_with_timestamp(log_string, gui_logger)
-                
-        
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
-            
-    # get the end time
-    et = time.time()
-    
-    # get the execution time
-    elapsed_time = et - st
-    if CN.LOG_INFO == True:
-        logging.info('Execution time:' + str(elapsed_time) + ' seconds')
-        
-        
 
 
 
 
-def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=True, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
+def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=False, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
     """
     Function exports filter to a wav or txt file
     To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 103 Band
@@ -1319,8 +1564,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')   
         
         #Directories
-        brand_folder = hpcf_dict.get('brand')
-        brand = brand_folder
+        brand = hpcf_dict.get('brand')
+        brand_folder = brand.replace(" ", "_")
+        
         headphone = hpcf_dict.get('headphone')
         sample = hpcf_dict.get('sample')
         
@@ -1354,6 +1600,10 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
         
         if fir_export == True:
+            
+            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                # Skip exporting or raise exception
+                return
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1366,9 +1616,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
                 hf.log_with_timestamp(log_string, gui_logger)
             
         
-        #also create E-APO config for this sample
-        if eapo_export == True:
-            e_apo_config_creation.write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path)
+
         
         #
         #save FIR to stereo WAV
@@ -1381,6 +1629,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         out_file_path = pjoin(out_file_dir_st_wav, hpcf_name_wav)
         
         if fir_stereo_export == True:
+            if not hf.check_write_permissions(out_file_dir_st_wav, gui_logger):
+                # Skip exporting or raise exception
+                return
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1399,6 +1650,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         out_file_path = pjoin(out_file_dir_geq, hpcf_name_geq)
         
         if geq_export == True:
+            if not hf.check_write_permissions(out_file_dir_geq, gui_logger):
+                # Skip exporting or raise exception
+                return
             #hpcf_geq = hpcf_dict.get('graphic_eq')
             #20250408: calculate instead of storing in database
             hpcf_geq = hpcf_fir_to_geq(fir_array=hpcf_fir,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=CN.GEQ_SET_F_127)
@@ -1436,6 +1690,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         out_file_path = pjoin(out_file_dir_geq_31, hpcf_name_geq)
         
         if geq_31_export == True:
+            if not hf.check_write_permissions(out_file_dir_geq_31, gui_logger):
+                # Skip exporting or raise exception
+                return
             #hpcf_geq_31 = hpcf_dict.get('graphic_eq_31')
             #20250408: calculate instead of storing in database
             hpcf_geq_31 = hpcf_fir_to_geq(fir_array=hpcf_fir,geq_mode=2,sample_rate=CN.SAMP_FREQ,geq_freq_arr=CN.GEQ_SET_F_31)
@@ -1476,6 +1733,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         out_file_path = pjoin(out_file_dir_geq_103, hpcf_name_geq)
         
         if geq_103_export == True:
+            if not hf.check_write_permissions(out_file_dir_geq_103, gui_logger):
+                # Skip exporting or raise exception
+                return
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1506,7 +1766,9 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         if hesuvi_export == True:
             out_file_folder = pjoin(hesuvi_path, 'eq','_HpCFs',brand_folder)
             out_file_path = pjoin(out_file_folder,hpcf_name_geq)
-            
+            if not hf.check_write_permissions(out_file_folder, gui_logger):
+                # Skip exporting or raise exception
+                return
             #create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
@@ -1538,7 +1800,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=True, report_progress=0, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=False, report_progress=0, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1752,48 +2014,68 @@ def hpcf_generate_averages(conn, gui_logger=None):
     
 
 
-def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_to_file=0, plot_type=0):
+
+        
+
+def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_to_file=0, plot_type=0, brand=None, gui_logger=None):
     """
-    Function returns a plot of freq response for a specified hpCF, also plot graphic eq and graphic eq 32 band filters
+    Function returns a plot of frequency response for a specified HpCF,
+    also plots graphic EQ and 32-band filters.
+
+    :param conn: SQLite connection
     :param headphone: string, name of headphone to plot
     :param sample: string, name of sample to plot
     :param primary_path: string, path to save plots to if save_to_file == 1
     :param save_to_file: int, 1 = save plot to a file
-    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 1 = dearpygui (series 2 - quick config)
+    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 2 = dearpygui (series 2 - quick config)
+    :param brand: optional string, filter by brand/source
+    :param gui_logger: optional GUI logger reference
     """
-    
     try:
-        
-        #get dictionary of hpcf data
-        hpcf_dict = dict(get_hpcf_headphone_sample_dict(conn, headphone, sample))
-        
-        #Directories
-        brand_folder = hpcf_dict.get('brand')
-        hpcf_name = hpcf_dict.get('headphone') + ' ' + hpcf_dict.get('sample')
-        
-        #output directories
-        out_file_dir_plot = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'Plots',brand_folder)
-        
+        # Get dictionary of HpCF data
+        hpcf_dict = get_hpcf_headphone_sample_dict(conn, headphone, sample, brand=brand)
+        if hpcf_dict is None:
+            hf.log_with_timestamp(f"No HpCF data found for {headphone} / {sample}", gui_logger)
+            return
+
+        # Directories
+        brand_name = hpcf_dict.get('brand')
+        brand_folder = brand_name.replace(" ", "_")
+        hpcf_name = f"{hpcf_dict.get('headphone')} {hpcf_dict.get('sample')}"
+
+        # Output directory
+        out_file_dir_plot = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS, 'Plots', brand_folder)
+
+        # FIR data
         hpcf_fir_json = hpcf_dict.get('fir')
-        hpcf_fir_list = json.loads(hpcf_fir_json) 
+        hpcf_fir_list = json.loads(hpcf_fir_json)
         hpcf_fir = np.array(hpcf_fir_list)
-        
-        #get freq response
-        data_pad=np.zeros(65536)
-        data_pad[0:(CN.HPCF_FIR_LENGTH-1)]=hpcf_fir[0:(CN.HPCF_FIR_LENGTH-1)]
+
+        # Frequency response
+        data_pad = np.zeros(65536)
+        data_pad[0:(CN.HPCF_FIR_LENGTH - 1)] = hpcf_fir[0:(CN.HPCF_FIR_LENGTH - 1)]
         data_fft = np.fft.fft(data_pad)
         hpcf_fr_mag = np.abs(data_fft)
-        
-        #run plot
-        #plot_tile = hpcf_name + ' frequency response'
-        plot_tile = hpcf_name 
-        hf.plot_data(hpcf_fr_mag, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=save_to_file, plot_path=out_file_dir_plot, plot_type=plot_type)
-        
-  
+
+        # Plot
+        plot_title = hpcf_name
+        hf.plot_data(
+            hpcf_fr_mag,
+            title_name=plot_title,
+            n_fft=CN.N_FFT,
+            samp_freq=CN.SAMP_FREQ,
+            y_lim_adjust=1,
+            save_plot=save_to_file,
+            plot_path=out_file_dir_plot,
+            plot_type=plot_type
+        )
+
+        hf.log_with_timestamp(f"Plotted HpCF: {hpcf_name}", gui_logger)
+
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
-        
-    
+        hf.log_with_timestamp(f"Error plotting HpCF for {headphone} / {sample}: {ex}", gui_logger)
+
+
 
 def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set=0, gui_logger=None):
     """
@@ -2164,8 +2446,8 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         #read in-ear headphone equalisation from WAV file
         filename = 'diffuse_field_eq_for_in_ear_headphones.wav'
         wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-        samplerate, data_addit_eq = wavfile.read(wav_fname)
-        data_addit_eq = data_addit_eq / (2.**31)
+        samplerate, data_addit_eq = hf.read_wav_file(wav_fname)
+        data_addit_eq = data_addit_eq
         #convert to mag response
         in_ear_eq_fir=np.zeros(CN.N_FFT)
         in_ear_eq_fir[0:1024] = data_addit_eq[0:1024]
@@ -2740,154 +3022,179 @@ def get_recent_hpcfs(conn, date_str='2025-01-01', gui_logger=None, output_file="
         logging.error("Error occurred", exc_info=e)
 
 
+# def check_for_database_update(conn, gui_logger=None):
+#     """ 
+#     Function finds version of latest database, compares with current version
+#     """
+    
+#     try:
+        
+#         #get version of local database
+#         json_fname = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
+#         with open(json_fname) as fp:
+#             _info = json.load(fp)
+#         local_db_version = _info['version']
+        
+#         #log results
+#         log_string = 'Checking for Headphone Correction Filter dataset updates'
+#         hf.log_with_timestamp(log_string, gui_logger)
+        
+#         #log results
+#         log_string = 'Current dataset version: ' + str(local_db_version)
+#         hf.log_with_timestamp(log_string, gui_logger)
+            
+#         #log results
+#         log_string = 'Finding latest version'
+#         hf.log_with_timestamp(log_string, gui_logger)
+            
+#         #get version of online database
+#         url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
+#         output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata_latest.json')
+#         gdown.download(url, output, fuzzy=True)
+        
+#         #read json
+#         json_fname = output
+#         with open(json_fname) as fp:
+#             _info = json.load(fp)
+#         web_db_version = _info['version']
+        
+#         #log results
+#         log_string = 'Latest dataset version: ' + str(web_db_version)
+#         hf.log_with_timestamp(log_string, gui_logger)
+            
+#         if local_db_version == web_db_version:
+#             #log results
+#             log_string = 'No update available'
+#         else:
+#             log_string = "New version available. Click 'Download Latest Dataset' to update"
+#         hf.log_with_timestamp(log_string, gui_logger)
+        
+#         return True
+    
+
+        
+#     except Error as e:
+
+#         log_string = 'Failed to check HpCF versions'
+#         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
+            
+#         return False
+
 def check_for_database_update(conn, gui_logger=None):
-    """ 
-    Function finds version of latest database, compares with current version
     """
-    
+    Check both Main and Compilation HpCF database versions against their latest online versions.
+    """
     try:
-        
-        #get version of local database
-        json_fname = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
-        with open(json_fname) as fp:
-            _info = json.load(fp)
-        local_db_version = _info['version']
-        
-        #log results
-        log_string = 'Checking for Headphone Correction Filter dataset updates'
-        hf.log_with_timestamp(log_string, gui_logger)
-        
-        #log results
-        log_string = 'Current dataset version: ' + str(local_db_version)
-        hf.log_with_timestamp(log_string, gui_logger)
-            
-        #log results
-        log_string = 'Finding latest version'
-        hf.log_with_timestamp(log_string, gui_logger)
-            
-        #get version of online database
-        url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
-        output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata_latest.json')
-        gdown.download(url, output, fuzzy=True)
-        
-        #read json
-        json_fname = output
-        with open(json_fname) as fp:
-            _info = json.load(fp)
-        web_db_version = _info['version']
-        
-        #log results
-        log_string = 'Latest dataset version: ' + str(web_db_version)
-        hf.log_with_timestamp(log_string, gui_logger)
-            
-        if local_db_version == web_db_version:
-            #log results
-            log_string = 'No update available'
-        else:
-            log_string = "New version available. Click 'Download Latest Dataset' to update"
-        hf.log_with_timestamp(log_string, gui_logger)
-        
-        return True
-    
+        databases = [
+            {
+                "name": "ASH Filters Database",
+                "local_meta": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database_metadata.json"),
+                "remote_meta_url": "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link",
+                "remote_meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database_metadata_latest.json"),
+            },
+            {
+                "name": "Compilation Database",
+                "local_meta": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database_metadata.json"),
+                "remote_meta_url": "https://drive.google.com/file/d/18WZ1DX9s4LJyHYgw5yCnOHKy6SWxiB3p/view?usp=drive_link",
+                "remote_meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database_metadata_latest.json"),
+            },
+        ]
 
-        
+        updates_available = False
+
+        for db in databases:
+            hf.log_with_timestamp(f"Checking for {db['name']} dataset updates", gui_logger)
+
+            # Load local version
+            if not os.path.exists(db["local_meta"]):
+                hf.log_with_timestamp(f"No local metadata found for {db['name']}", gui_logger, log_type=2)
+                local_version = "N/A"
+            else:
+                with open(db["local_meta"]) as fp:
+                    local_info = json.load(fp)
+                local_version = local_info.get("version", "Unknown")
+
+            hf.log_with_timestamp(f"Current {db['name']} version: {local_version}", gui_logger)
+            hf.log_with_timestamp(f"Fetching latest version for {db['name']}...", gui_logger)
+
+            # Download remote metadata
+            gdown.download(db["remote_meta_url"], db["remote_meta_local"], fuzzy=True)
+
+            # Load web version
+            with open(db["remote_meta_local"]) as fp:
+                web_info = json.load(fp)
+            web_version = web_info.get("version", "Unknown")
+
+            hf.log_with_timestamp(f"Latest {db['name']} version: {web_version}", gui_logger)
+
+            if local_version == web_version:
+                hf.log_with_timestamp(f"No update available for {db['name']}", gui_logger)
+            else:
+                hf.log_with_timestamp(
+                    f"New version available for {db['name']}. "
+                    f"Click 'Download Latest Dataset' to update.",
+                    gui_logger
+                )
+                updates_available = True
+
+        return updates_available
+
     except Error as e:
+        hf.log_with_timestamp(
+            log_string="Failed to check HpCF versions",
+            gui_logger=gui_logger,
+            log_type=2,
+            exception=e
+        )
+        return False
 
-        log_string = 'Failed to check HpCF versions'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
-            
+def download_latest_database(conn, gui_logger=None):
+    """
+    Download and replace both Main and Compilation HpCF databases if new versions are available.
+    """
+    try:
+        datasets = [
+            {
+                "name": "ASH Filters",
+                "db_url": "https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link",
+                "meta_url": "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link",
+                "db_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database.db"),
+                "meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database_metadata.json"),
+            },
+            {
+                "name": "Compilation",
+                "db_url": "https://drive.google.com/file/d/1gDrqfyZ4umSXmrn4pjJMzZJb0ipeAs_a/view?usp=drive_link",
+                "meta_url": "https://drive.google.com/file/d/18WZ1DX9s4LJyHYgw5yCnOHKy6SWxiB3p/view?usp=drive_link",
+                "db_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database.db"),
+                "meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database_metadata.json"),
+            },
+        ]
+
+        for ds in datasets:
+            hf.log_with_timestamp(f"Downloading latest {ds['name']} database...", gui_logger)
+
+            # Download database file
+            gdown.download(ds["db_url"], ds["db_local"], fuzzy=True)
+
+            # Download metadata file
+            gdown.download(ds["meta_url"], ds["meta_local"], fuzzy=True)
+
+            hf.log_with_timestamp(f"{ds['name']} database downloaded to: {ds['db_local']}", gui_logger)
+
+        hf.log_with_timestamp("All available databases updated successfully.", gui_logger)
+        return True
+
+    except Error as e:
+        hf.log_with_timestamp(
+            log_string="Failed to download latest HpCF databases",
+            gui_logger=gui_logger,
+            log_type=2,
+            exception=e
+        )
         return False
 
 
-def downlod_latest_database(conn, gui_logger=None):
-    """ 
-    Function downloads and replaces current database
-    """
-    
-    try:
-  
-        log_string = 'Downloading latest HpCF database'
-        hf.log_with_timestamp(log_string, gui_logger)
-  
-        #download latest version of database
-        url = "https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link"
-        output = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_database.db')
-        gdown.download(url, output, fuzzy=True)
 
-        #also download metadata
-        url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
-        output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
-        gdown.download(url, output, fuzzy=True)
-
-        #log results
-        log_string = 'Latest HpCF database downloaded to: ' + str(output)
-        hf.log_with_timestamp(log_string, gui_logger)
-
-        return True
-    
-    except Error as e:
- 
-        log_string = 'Failed to download latest HpCF database'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
-            
-        return False
-            
-            
-            
-
-def check_for_app_update(gui_logger=None):
-    """ 
-    Function finds version of latest app, compares with current version
-    """
-    
-    try:
-        
-        with open(CN.METADATA_FILE) as fp:
-            _info = json.load(fp)
-        __version__ = _info['version']
-        
-        #log results
-        log_string = 'Checking for app updates'
-        hf.log_with_timestamp(log_string, gui_logger)
-        
-        #log results
-        log_string = 'Current ASH Toolset version: ' + str(__version__)
-        hf.log_with_timestamp(log_string, gui_logger)
-            
-        #log results
-        log_string = 'Finding latest version...'
-        hf.log_with_timestamp(log_string, gui_logger)
-            
-        #get version of online database
-        url = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
-        output = pjoin(CN.DATA_DIR_EXT, 'metadata_latest.json')
-        urllib.request.urlretrieve(url, output)
-   
-        #read json
-        json_fname = output
-        with open(json_fname) as fp:
-            _info = json.load(fp)
-        web_app_version = _info['version']
-        
-        #log results
-        log_string = 'Latest ASH Toolset version: ' + str(web_app_version)
-        hf.log_with_timestamp(log_string, gui_logger)
-            
-        if __version__ == web_app_version:
-            #log results
-            log_string = 'No update required'
-        else:
-            log_string = "New version available at https://sourceforge.net/projects/ash-toolset/"
-        hf.log_with_timestamp(log_string, gui_logger)
-        
-        return True
-    
-    except Error as e:
-        
-        log_string = 'Failed to check app versions'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
-            
-        return False
 
 def remove_hpcfs(primary_path, gui_logger=None):
     """
@@ -3048,8 +3355,8 @@ def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logg
         if CN.APPLY_ADD_HP_EQ > 0:
             filename = 'diffuse_field_eq_for_in_ear_headphones.wav'
             wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-            samplerate, data_addit_eq = wavfile.read(wav_fname)
-            data_addit_eq = data_addit_eq / (2.**31)
+            samplerate, data_addit_eq = hf.read_wav_file(wav_fname)
+            data_addit_eq = data_addit_eq 
             #convert to mag response
             in_ear_eq_fir=np.zeros(CN.N_FFT)
             in_ear_eq_fir[0:1024] = data_addit_eq[0:1024]
@@ -3218,3 +3525,516 @@ def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logg
     except Exception as ex:
         log_string = 'Failed to complete analysis'
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+        
+
+
+def build_headphone_db_single_row(root_dir, db_path="headphones.db"):
+    """
+    Store each CSV as a single measurement, with frequency and raw arrays stored as JSON.
+    <Source Dataset>/
+    data/
+        <Headphone Type>/
+            [Optional Measurement Rig]/
+                <CSV Files>
+    """
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # Create table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS measurements (
+            id INTEGER PRIMARY KEY,
+            source TEXT,
+            type TEXT,
+            rig TEXT,
+            filename TEXT,
+            frequencies TEXT,
+            raws TEXT
+        )
+    ''')
+
+    for source in os.listdir(root_dir):
+        source_path = os.path.join(root_dir, source)
+        data_path = os.path.join(source_path, "data")
+        if not os.path.isdir(data_path):
+            continue
+
+        for hp_type in os.listdir(data_path):
+            type_path = os.path.join(data_path, hp_type)
+            if not os.path.isdir(type_path):
+                continue
+
+            possible_rigs = [d for d in os.listdir(type_path) if os.path.isdir(os.path.join(type_path, d))]
+            if possible_rigs:
+                # Each rig folder contains CSVs
+                for rig_name in possible_rigs:
+                    rig_path = os.path.join(type_path, rig_name)
+                    for csv_file in os.listdir(rig_path):
+                        if csv_file.lower().endswith(".csv"):
+                            csv_path = os.path.join(rig_path, csv_file)
+                            frequencies, raws = [], []
+                            with open(csv_path, newline='') as f:
+                                reader = csv.DictReader(f)
+                                for row in reader:
+                                    frequencies.append(float(row['frequency']))
+                                    raws.append(float(row['raw']))
+                            c.execute('''
+                                INSERT INTO measurements (source, type, rig, filename, frequencies, raws)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (
+                                source,
+                                hp_type,
+                                rig_name,
+                                csv_file,
+                                json.dumps(frequencies),
+                                json.dumps(raws)
+                            ))
+            else:
+                # No rig folder
+                for csv_file in os.listdir(type_path):
+                    if csv_file.lower().endswith(".csv"):
+                        csv_path = os.path.join(type_path, csv_file)
+                        frequencies, raws = [], []
+                        with open(csv_path, newline='') as f:
+                            reader = csv.DictReader(f)
+                            for row in reader:
+                                frequencies.append(float(row['frequency']))
+                                raws.append(float(row['raw']))
+                        c.execute('''
+                            INSERT INTO measurements (source, type, rig, filename, frequencies, raws)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (
+                            source,
+                            hp_type,
+                            None,
+                            csv_file,
+                            json.dumps(frequencies),
+                            json.dumps(raws)
+                        ))
+
+    conn.commit()
+    conn.close()
+    print(f"Database created at {db_path}")
+
+
+
+def build_target_response_db(measurements_db="headphones.db", target_db="target_responses.db"):
+    """
+    Build a target response database by averaging all measurements per
+    combination of source, type, and rig.
+    """
+    # Connect to the measurements database
+    conn = sqlite3.connect(measurements_db)
+    c = conn.cursor()
+
+    # Connect to the target database
+    conn_target = sqlite3.connect(target_db)
+    ct = conn_target.cursor()
+
+    # Create target table
+    ct.execute('''
+        CREATE TABLE IF NOT EXISTS targets (
+            id INTEGER PRIMARY KEY,
+            source TEXT,
+            type TEXT,
+            rig TEXT,
+            frequencies TEXT,
+            target_raws TEXT
+        )
+    ''')
+
+    # Get all unique combinations of source, type, rig
+    c.execute("SELECT DISTINCT source, type, rig FROM measurements")
+    groups = c.fetchall()
+
+    for source, hp_type, rig in groups:
+        # Fetch all raws for this group
+        c.execute("SELECT frequencies, raws FROM measurements WHERE source=? AND type=? AND rig IS ?", 
+                  (source, hp_type, rig))
+        rows = c.fetchall()
+
+        if not rows:
+            continue
+
+        # Load frequencies and raws as arrays
+        all_raws = []
+        frequencies = None
+        for freq_json, raws_json in rows:
+            freqs = np.array(json.loads(freq_json))
+            raws = np.array(json.loads(raws_json))
+            if frequencies is None:
+                frequencies = freqs
+            else:
+                # Sanity check: all frequencies should be identical
+                if not np.allclose(frequencies, freqs):
+                    raise ValueError(f"Frequency mismatch in group {source}-{hp_type}-{rig}")
+            all_raws.append(raws)
+
+        # Compute arithmetic mean across all measurements
+        avg_raws = np.mean(np.array(all_raws), axis=0)
+
+        # Insert into target database
+        ct.execute('''
+            INSERT INTO targets (source, type, rig, frequencies, target_raws)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            source,
+            hp_type,
+            rig,
+            json.dumps(frequencies.tolist()),
+            json.dumps(avg_raws.tolist())
+        ))
+
+    conn_target.commit()
+    conn.close()
+    conn_target.close()
+    print(f"Target response database created at {target_db}")
+
+def build_difference_db(measurements_db="headphones.db",
+                        targets_db="target_responses.db",
+                        diff_db="differences.db"):
+    """
+    Build a difference database where each entry corresponds to one measurement row,
+    and contains (target - measurement) data.
+
+    Each row from the measurements DB is matched with its corresponding target entry
+    (based on source, type, and rig). Frequencies are checked for alignment.
+
+    If an existing difference database exists, it will be deleted before rebuilding.
+    """
+    # Delete existing diff_db to ensure a clean rebuild
+    if os.path.exists(diff_db):
+        os.remove(diff_db)
+        print(f"Deleted existing database: {diff_db}")
+
+    conn_meas = sqlite3.connect(measurements_db)
+    cm = conn_meas.cursor()
+
+    conn_targ = sqlite3.connect(targets_db)
+    ct = conn_targ.cursor()
+
+    conn_diff = sqlite3.connect(diff_db)
+    cd = conn_diff.cursor()
+
+    # Create the new table
+    cd.execute('''
+        CREATE TABLE IF NOT EXISTS differences (
+            id INTEGER PRIMARY KEY,
+            source TEXT,
+            type TEXT,
+            rig TEXT,
+            filename TEXT,
+            frequencies TEXT,
+            diff_raws TEXT
+        )
+    ''')
+
+    # Get all measurement rows
+    cm.execute("SELECT source, type, rig, filename, frequencies, raws FROM measurements")
+    measurement_rows = cm.fetchall()
+
+    for source, hp_type, rig, filename, freq_json, raw_json in measurement_rows:
+        # Get corresponding target row
+        ct.execute("SELECT frequencies, target_raws FROM targets WHERE source=? AND type=? AND rig IS ?",
+                   (source, hp_type, rig))
+        target_row = ct.fetchone()
+        if target_row is None:
+            print(f"No target found for {source}-{hp_type}-{rig}, skipping {filename}")
+            continue
+
+        # Load data
+        freq_meas = np.array(json.loads(freq_json))
+        raw_meas = np.array(json.loads(raw_json))
+        freq_targ = np.array(json.loads(target_row[0]))
+        raw_targ = np.array(json.loads(target_row[1]))
+
+        # Ensure frequency alignment
+        if not np.allclose(freq_meas, freq_targ):
+            print(f"Frequency mismatch for {source}-{hp_type}-{rig}, skipping {filename}")
+            continue
+
+        # Compute difference (target - measurement)
+        diff = raw_targ - raw_meas
+
+        # Round floats to 2 decimals to reduce DB size
+        freq_meas_rounded = np.round(freq_meas, 2)
+        diff_rounded = np.round(diff, 2)
+
+        # Insert into new DB
+        cd.execute('''
+            INSERT INTO differences (source, type, rig, filename, frequencies, diff_raws)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            source,
+            hp_type,
+            rig,
+            filename,
+            json.dumps(freq_meas_rounded.tolist()),
+            json.dumps(diff_rounded.tolist())
+        ))
+
+    conn_diff.commit()
+    conn_meas.close()
+    conn_targ.close()
+    conn_diff.close()
+
+    print(f"Difference database created at {diff_db}")
+
+
+    
+def build_minphase_difference_db_with_correction(
+    diff_db="differences.db",
+    out_db="differences_minphase_corrected.db",
+    fs=CN.SAMP_FREQ,
+    n_fft=65536,
+    truncate_len=384,
+    f_min=20,
+    f_max=20000,
+    band_limit=True,
+    correction_wav=None
+):
+    """
+    Create a minimum-phase difference database with optional correction.
+    For rows where type=='in-ear', adds the correction in dB before
+    converting to a minimum-phase FIR.
+
+    Parameters
+    ----------
+    diff_db : str
+        Input differences database path.
+    out_db : str
+        Output database path.
+    fs : int
+        Sampling frequency.
+    n_fft : int
+        FFT size for minimum-phase conversion.
+    truncate_len : int
+        FIR length.
+    f_min, f_max : float
+        Band limits for FIR shaping.
+    band_limit : bool
+        Whether to band-limit the magnitude.
+    correction_wav : str or None
+        WAV file containing a correction FIR to add in dB.
+    """
+
+    import scipy.signal
+
+    # --- Load correction FIR if provided ---
+    if correction_wav:
+        sr_corr, comp_fir = hf.read_wav_file(correction_wav)
+        if comp_fir.ndim > 1:
+            comp_fir = comp_fir[:, 0]
+        # FFT of correction FIR
+        H_corr = np.fft.rfft(comp_fir, n=n_fft)
+        H_corr_mag_db = 20 * np.log10(np.maximum(np.abs(H_corr), 1e-8))
+        fft_freqs_corr = np.fft.rfftfreq(n_fft, 1/sr_corr)
+    else:
+        comp_fir = None
+        H_corr_mag_db = None
+        fft_freqs_corr = None
+
+    # --- Delete output DB if exists ---
+    if os.path.exists(out_db):
+        os.remove(out_db)
+
+    # --- Connect to input/output DBs ---
+    conn_in = sqlite3.connect(diff_db)
+    cin = conn_in.cursor()
+    conn_out = sqlite3.connect(out_db)
+    cout = conn_out.cursor()
+
+    # --- Create output table ---
+    cout.execute('''
+        CREATE TABLE IF NOT EXISTS differences_minphase (
+            id INTEGER PRIMARY KEY,
+            source TEXT,
+            type TEXT,
+            rig TEXT,
+            filename TEXT,
+            fir_json TEXT
+        )
+    ''')
+
+    # --- Read all rows ---
+    cin.execute("SELECT source, type, rig, filename, frequencies, diff_raws FROM differences")
+    rows = cin.fetchall()
+    print(f"Processing {len(rows)} entries...")
+
+    for i, (source, hp_type, rig, filename, freq_json, diff_json) in enumerate(rows, 1):
+        freqs = np.array(json.loads(freq_json))
+        diffs_db = np.array(json.loads(diff_json))  # already in dB
+
+        # --- Apply correction if needed ---
+        if hp_type.lower() == "in-ear" and H_corr_mag_db is not None:
+            # Interpolate correction to match measurement frequencies
+            H_corr_interp_db = np.interp(freqs, fft_freqs_corr, H_corr_mag_db)
+            # Add correction in dB
+            diffs_db = diffs_db + H_corr_interp_db
+
+        try:
+            # Convert corrected dB to linear
+            mag_lin = 10 ** (diffs_db / 20.0)
+
+            # Build minimum-phase FIR
+            h_min = hf.build_min_phase_filter_intrp(
+                smoothed_mag=mag_lin,
+                freq_axis=freqs,
+                fs=fs,
+                n_fft=n_fft,
+                truncate_len=truncate_len,
+                f_min=f_min,
+                f_max=f_max,
+                band_limit=band_limit,
+                normalize=True,
+                norm_freq_range=(60, 300)
+            )
+
+            # Normalize if needed
+            max_val = np.max(np.abs(h_min))
+            if max_val > 1.0:
+                h_min = h_min / max_val
+
+            # Insert into DB
+            cout.execute('''
+                INSERT INTO differences_minphase (source, type, rig, filename, fir_json)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (source, hp_type, rig, filename, json.dumps(h_min.tolist())))
+
+        except Exception as e:
+            print(f"[{i}/{len(rows)}] Failed: {source}-{hp_type}-{rig}-{filename}: {e}")
+            continue
+
+        if i % 50 == 0:
+            print(f"Processed {i}/{len(rows)} entries...")
+
+    # --- Finalize ---
+    conn_out.commit()
+    conn_in.close()
+    conn_out.close()
+    print(f"Minimum-phase difference database with dB correction created at: {out_db}")
+    
+def build_averaged_headphone_firs(
+    minphase_db="differences_minphase_corrected.db",
+    out_db="differences_minphase_averaged.db",
+    fs=CN.SAMP_FREQ,
+    n_fft=65536,
+    truncate_len=384,
+    f_min=20,
+    f_max=20000,
+    band_limit=True
+):
+    """
+    Build a new database with averaged filters for each headphone.
+    Only creates an average if there are at least 2 measurements for the headphone.
+
+    Parameters
+    ----------
+    minphase_db : str
+        Input min-phase differences database.
+    out_db : str
+        Output database path.
+    fs : int
+        Sampling frequency.
+    n_fft : int
+        FFT size for frequency domain conversion.
+    truncate_len : int
+        FIR length.
+    f_min, f_max : float
+        Frequency band limits for FIR shaping.
+    band_limit : bool
+        Whether to band-limit the magnitude.
+    """
+
+    import scipy.signal
+    from collections import defaultdict
+
+    # --- Delete output DB if exists ---
+    if os.path.exists(out_db):
+        os.remove(out_db)
+
+    # --- Connect input/output DBs ---
+    conn_in = sqlite3.connect(minphase_db)
+    cin = conn_in.cursor()
+    conn_out = sqlite3.connect(out_db)
+    cout = conn_out.cursor()
+
+    # --- Create output table ---
+    cout.execute('''
+        CREATE TABLE IF NOT EXISTS hpcf_table (
+            id INTEGER PRIMARY KEY,
+            source TEXT,
+            type TEXT,
+            rig TEXT,
+            headphone_name TEXT,
+            fir_json TEXT
+        )
+    ''')
+
+    # --- Read all rows ---
+    cin.execute("SELECT source, type, rig, filename, fir_json FROM differences_minphase")
+    rows = cin.fetchall()
+    print(f"Processing {len(rows)} entries...")
+
+    # --- Prepare dictionary of lists for each headphone ---
+    headphone_dict = defaultdict(list)
+    metadata_dict = {}  # store type and rig for first occurrence
+
+    for source, hp_type, rig, filename, fir_json in rows:
+        headphone_name = filename.replace(".csv", "")
+        h = np.array(json.loads(fir_json))
+        headphone_dict[headphone_name].append(h)
+        if headphone_name not in metadata_dict:
+            metadata_dict[headphone_name] = (hp_type, rig)
+
+        # Insert original row into output DB with renamed column
+        cout.execute('''
+            INSERT INTO hpcf_table (source, type, rig, headphone_name, fir_json)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (source, hp_type, rig, headphone_name, json.dumps(h.tolist())))
+
+    # --- Process averages (only if >=2 rows) ---
+    for i, (headphone_name, fir_list) in enumerate(headphone_dict.items(), 1):
+        if len(fir_list) < 2:
+            continue  # skip averaging if fewer than 2 measurements
+
+        hp_type, rig = metadata_dict[headphone_name]
+
+        # Convert all FIRs to frequency domain in dB
+        H_list_db = []
+        for h in fir_list:
+            H = np.fft.rfft(h, n=n_fft)
+            H_db = 20 * np.log10(np.maximum(np.abs(H), 1e-8))
+            H_list_db.append(H_db)
+
+        # Average in dB
+        H_avg_db = np.mean(np.stack(H_list_db), axis=0)
+
+        # Convert back to linear magnitude
+        H_avg_lin = 10 ** (H_avg_db / 20.0)
+
+        # Build min-phase FIR
+        h_avg = hf.build_min_phase_filter_intrp(
+            smoothed_mag=H_avg_lin,
+            fs=fs,
+            n_fft=n_fft,
+            truncate_len=truncate_len,
+            f_min=f_min,
+            f_max=f_max,
+            band_limit=band_limit
+        )
+
+        # Insert average row
+        cout.execute('''
+            INSERT INTO hpcf_table (source, type, rig, headphone_name, fir_json)
+            VALUES (?, ?, ?, ?, ?)
+        ''', ("Averaged Measurements", hp_type, rig, headphone_name, json.dumps(h_avg.tolist())))
+
+        if i % 10 == 0:
+            print(f"Processed {i}/{len(headphone_dict)} headphone averages...")
+
+    conn_out.commit()
+    conn_in.close()
+    conn_out.close()
+
+    print(f" Averaged headphone FIR database created at: {out_db}")

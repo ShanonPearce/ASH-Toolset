@@ -11,9 +11,8 @@ License: (see /LICENSE)
 
 
 import logging.config
-from os.path import join as pjoin
+from os.path import join as pjoin, normpath
 from pathlib import Path
-import configparser
 from ash_toolset import constants as CN
 from ash_toolset import hpcf_functions
 from ash_toolset import helper_functions as hf
@@ -24,15 +23,15 @@ import dearpygui.dearpygui as dpg
 import dearpygui_extend as dpge
 from dearpygui_ext import logger
 import numpy as np
-import json
 import winreg as wrg
-import ast
 import ctypes
 import math
 import threading
 import sys
 import os
-import shutil
+
+
+
 
 def main():
 
@@ -51,6 +50,7 @@ def main():
     logging.info('Started')
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('numba').setLevel(logging.WARNING)
+
     
     #hide splash screen
     try:
@@ -61,9 +61,9 @@ def main():
     except:
         pass
     
-    with open(CN.METADATA_FILE) as fp:
-        _info = json.load(fp)
-    __version__ = _info['version']
+    # with open(CN.METADATA_FILE) as fp:
+    #     _info = json.load(fp)
+    # __version__ = _info['version']
     
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w")
@@ -71,772 +71,61 @@ def main():
         sys.stderr = open(os.devnull, "w")
     
     
-    #
-    #program code
-    #
-    
-    # HpCF Database code
-    database = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_database.db')
-    # create a database connection
-    conn = hpcf_functions.create_connection(database)
-    brands_list = hpcf_functions.get_brand_list(conn)
-    brand_default=brands_list[0]
-    hp_list_default = hpcf_functions.get_headphone_list(conn, brands_list[0])#index 0
-    headphone_default = hp_list_default[0]
-    sample_list_default = hpcf_functions.get_samples_list(conn, headphone_default)
-    sample_default = 'Sample A' #sample_list_default[0]
-    hpcf_db_dict =  {
-    'database': database,
-    'conn': conn,
-    'brands_list': brands_list,
-    'hp_list_default': hp_list_default,
-    'sample_list_default': sample_list_default,
-    'brand_default': brand_default,
-    'headphone_default': headphone_default,
-    'sample_default': sample_default
-    }
-    
- 
-    
-    
-    #start with flat response
-    impulse=np.zeros(CN.N_FFT)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    
-    #
-    #Section for loading settings
-    #
-    
-    def migrate_settings():
-        """
-        Migrate the settings file from the old application directory to the new user-specific config directory.
-    
-        This function checks if the new settings file already exists; if so, no action is taken.
-        If the new settings file does not exist but the old settings file does, the old settings file
-        is copied to the new location to preserve user configuration. After a successful copy,
-        the old settings file is deleted to avoid confusion.
-    
-        This migration ensures that settings persist across application versions that changed
-        the default storage location for the settings file.
-    
-        Note:
-            - Assumes SETTINGS_FILE_NEW and SETTINGS_FILE_OLD are defined globally or imported.
-            - Does not return any value.
-        """
-        try:
-            if os.path.exists(CN.SETTINGS_FILE_NEW):
-                return
-    
-            if os.path.exists(CN.SETTINGS_FILE_OLD):
-                new_dir = os.path.dirname(CN.SETTINGS_FILE_NEW)
-                os.makedirs(new_dir, exist_ok=True)
-                logging.info(f"[INFO] Migrating settings from old to new path: {CN.SETTINGS_FILE_OLD} → {CN.SETTINGS_FILE_NEW}")
-                shutil.copy2(CN.SETTINGS_FILE_OLD, CN.SETTINGS_FILE_NEW)
-    
-                # If copy successful, delete old settings file
-                os.remove(CN.SETTINGS_FILE_OLD)
-                logging.info(f"[INFO] Deleted old settings file: {CN.SETTINGS_FILE_OLD}")
-    
-        except Exception as e:
-            logging.error(f"Failed to migrate settings file: {e}")
+        
+
 
     
-    def safe_get(config, key, expected_type, default):
-        """Safely get a value from config with fallback and type casting.
-        Supports bool, list, dict, tuple via automatic parsing from JSON or Python literals.
+    #
+    ## GUI Related Functions 
+    #
+
+
+
+    def get_primary_paths(logz=None, create_dirs=True):
         """
+        Detects the primary EqualizerAPO path and ASH Toolset project folder.
+    
+        Returns:
+            primary_path (str): path to EqualizerAPO 'config' folder (registry or fallback)
+            primary_ash_path (str): path to project folder inside primary_path
+            e_apo_path (str): raw EqualizerAPO install path (registry or fallback)
+    
+        Args:
+            logz: log object for hf.log_with_timestamp
+            create_dirs (bool): whether to create primary_path and primary_ash_path if missing
+        """
+        # Fallback install folder
+        fallback_root = r"C:\Program Files\EqualizerAPO"
+    
+        # Attempt registry read
         try:
-            val = config['DEFAULT'].get(key, default)
-            
-            # If the value already matches the expected type (and expected_type is a type), return it
-            if isinstance(expected_type, type) and isinstance(val, expected_type):
-                return val
+            key = wrg.OpenKey(wrg.HKEY_LOCAL_MACHINE, r"Software\EqualizerAPO")
+            value = wrg.QueryValueEx(key, "InstallPath")[0]
+            e_apo_path = value
+            if not os.path.isdir(e_apo_path):
+                e_apo_path = fallback_root
+                hf.log_with_timestamp(f"Registry path does not exist. Using fallback: {fallback_root}", logz)
+        except Exception:
+            e_apo_path = fallback_root
+            hf.log_with_timestamp(f"EqualizerAPO not found in registry. Using fallback: {fallback_root}", logz)
     
-            if expected_type == bool:
-                if isinstance(val, str):
-                    lowered = val.strip().lower()
-                    if lowered in ('true', 'false'):
-                        return lowered == 'true'
-                return bool(ast.literal_eval(str(val)))
+        # Normalize path
+        e_apo_path = normpath(e_apo_path)
+        primary_path = normpath(pjoin(e_apo_path, "config"))
+        primary_ash_path = normpath(pjoin(primary_path, getattr(CN, "PROJECT_FOLDER", "")))
     
-            if expected_type in (list, dict, tuple):
-                if isinstance(val, str):
+        # Optionally create folders if missing
+        if create_dirs:
+            for path in (primary_path, primary_ash_path):
+                if not os.path.isdir(path):
                     try:
-                        parsed = json.loads(val)
-                    except (json.JSONDecodeError, TypeError):
-                        parsed = ast.literal_eval(val)
-                    return parsed if isinstance(parsed, expected_type) else default
-                elif isinstance(val, expected_type):
-                    return val
-                else:
-                    return default
+                        os.makedirs(path, exist_ok=True)
+                        hf.log_with_timestamp(f"Created missing folder: {path}", logz)
+                    except Exception as e:
+                        hf.log_with_timestamp(f"Failed to create folder '{path}': {e}", logz)
     
-            # Special case for ast.literal_eval as expected_type
-            if expected_type == ast.literal_eval:
-                if val is None or (isinstance(val, str) and val.strip() == ''):
-                    return default
-                return ast.literal_eval(val)
-    
-            # For other types (int, float, str, etc.), cast
-            if callable(expected_type):
-                return expected_type(val)
-    
-            # Fallback for unexpected expected_type
-            logging.info(f"safe_get: Expected type for key '{key}' is not callable. Using raw value.")
-            return val
-    
-        except Exception as e:
-            logging.info(f"safe_get: Failed to load key '{key}' – {e}. Using default: {default}")
-            return default
-        
- 
-        
-    def validate_choice(loaded_value, valid_list):
-        """
-        Ensure the loaded_value is present in valid_list.
-        If not, return the first item in the list and log a fallback message.
-        """
-        # Ensure valid_list is iterable
-        if not valid_list:
-            logging.warning(f"validate_choice: No valid list provided. Cannot validate '{loaded_value}'.")
-            return "Not Found"
-    
-        if loaded_value in valid_list:
-            return loaded_value
-        else:
-            fallback = valid_list[0]
-            logging.info(f"validate_choice: '{loaded_value}' is not valid. Falling back to '{fallback}'.")
-            return fallback
-    
-    
-    #
-    #default values
-    #
-    sample_freq_default=CN.SAMPLE_RATE_LIST[0]
-    bit_depth_default=CN.BIT_DEPTH_LIST[0]
-    brir_hp_type_default=CN.HP_COMP_LIST[2]
-    show_hpcf_history_default=False
-    spatial_res_default=CN.SPATIAL_RES_LIST[0]
-    room_target_default=CN.ROOM_TARGET_LIST[1]
-    direct_gain_default=2.0
-    #acoustic space
-    ac_space_default=CN.AC_SPACE_LIST_GUI[2]
-    fir_hpcf_exp_default=True
-    fir_st_hpcf_exp_default=False
-    eapo_hpcf_exp_default=False
-    geq_hpcf_exp_default=False
-    geq_31_exp_default=False
-    hesuvi_hpcf_exp_default=False
-    dir_brir_exp_default=True
-    ts_brir_exp_default=False
-    hesuvi_brir_exp_default=False
-    eapo_brir_exp_default=False
-    sofa_brir_exp_default=False
-    audio_channels_default=CN.AUDIO_CHANNELS[0]
-    e_apo_upmix_method_default=CN.UPMIXING_METHODS[1]
-    e_apo_side_delay_default=0
-    e_apo_rear_delay_default=0
-    auto_check_updates_default=False
-    #E-APO config related settings
-    e_apo_mute_default=False
-    e_apo_gain_default=0.0
-    e_apo_elev_angle_default=0
-    e_apo_az_angle_fl_default=-30  
-    e_apo_az_angle_fr_default=30  
-    e_apo_az_angle_c_default=0  
-    e_apo_az_angle_sl_default=-90  
-    e_apo_az_angle_sr_default=90  
-    e_apo_az_angle_rl_default=-135 
-    e_apo_az_angle_rr_default=135 
-    e_apo_enable_hpcf_default=False
-    e_apo_enable_brir_default=False
-    e_apo_autoapply_hpcf_default=False
-    e_apo_prevent_clip_default=CN.AUTO_GAIN_METHODS[1]
-    e_apo_hpcf_curr_default=''
-    e_apo_hpcf_sel_default=''
-    e_apo_brir_curr_default=''
-    e_apo_brir_sel_default=''
-    tab_selected_default=0
-    hrtf_symmetry_default=CN.HRTF_SYM_LIST[0]
-    er_rise_default=0.5#0
-    qc_brir_hp_type_default=CN.HP_COMP_LIST[2]
-    qc_room_target_default=CN.ROOM_TARGET_LIST[1]
-    qc_direct_gain_default=2.0
-    #acoustic space
-    qc_ac_space_default=CN.AC_SPACE_LIST_GUI[1]
-    qc_brand_default=brand_default
-    qc_headphone_default=headphone_default
-    qc_sample_default=sample_default
-    #hrtf selection related
-    brir_hrtf_type_list_default=CN.HRTF_TYPE_LIST
-    brir_hrtf_type_default=CN.HRTF_TYPE_DEFAULT
-    brir_hrtf_dataset_list_default=CN.HRTF_TYPE_DATASET_DICT.get(brir_hrtf_type_default)
-    brir_hrtf_dataset_default=CN.HRTF_DATASET_DEFAULT
-    hrtf_list_default=hrir_processing.get_listener_list(listener_type=brir_hrtf_type_default, dataset_name=brir_hrtf_dataset_default)
-    hrtf_list_favs_default=CN.HRTF_BASE_LIST_FAV
-    hrtf_default=CN.HRTF_LISTENER_DEFAULT
-    sofa_exp_conv_default=CN.SOFA_OUTPUT_CONV[0]
-    crossover_f_mode_default=CN.SUB_FC_SETTING_LIST[0]
-    crossover_f_default=CN.SUB_FC_DEFAULT
-    hrtf_polarity_default=CN.HRTF_POLARITY_LIST[0]
-    sub_response_default = (CN.SUB_RESPONSE_LIST_GUI[3] if len(CN.SUB_RESPONSE_LIST_GUI) > 3 else CN.SUB_RESPONSE_LIST_GUI[0] if CN.SUB_RESPONSE_LIST_GUI else None)#use index 1 if available
-    hp_rolloff_comp_default=False
-    fb_filtering_default=False
-    default_qc_brir_settings = {
-    'qc_brir_hp_type_default': qc_brir_hp_type_default,
-    'qc_room_target_default': qc_room_target_default,
-    'qc_direct_gain_default': qc_direct_gain_default,
-    'qc_ac_space_default': qc_ac_space_default,
-    'qc_brand_default': qc_brand_default,
-    'qc_headphone_default': qc_headphone_default,
-    'qc_sample_default': qc_sample_default,
-    'qc_hrtf_default': hrtf_default,
-    'qc_brir_hrtf_type_default': brir_hrtf_type_default,
-    'qc_brir_hrtf_dataset_default': brir_hrtf_dataset_default,
-    'qc_crossover_f_mode_default': crossover_f_mode_default,
-    'qc_crossover_f_default': crossover_f_default,
-    'qc_sub_response_default': sub_response_default,
-    'qc_hp_rolloff_comp_default': hp_rolloff_comp_default,
-    'qc_fb_filtering_default': fb_filtering_default
-    }#use in save settings function
-    
-    #
-    #loaded values - start with defaults
-    #
-    sample_freq_loaded=sample_freq_default
-    bit_depth_loaded=bit_depth_default
-    brir_hp_type_loaded=brir_hp_type_default
-    hrtf_loaded=hrtf_default
-    hrtf_list_favs_loaded=hrtf_list_favs_default
-    spatial_res_loaded=spatial_res_default
-    room_target_loaded=room_target_default
-    direct_gain_loaded=direct_gain_default
-    #acoustic space
-    ac_space_loaded=ac_space_default
-    fir_hpcf_exp_loaded=fir_hpcf_exp_default
-    fir_st_hpcf_exp_loaded=fir_st_hpcf_exp_default
-    eapo_hpcf_exp_loaded=eapo_hpcf_exp_default
-    geq_hpcf_exp_loaded=geq_hpcf_exp_default
-    geq_31_exp_loaded=geq_31_exp_default
-    hesuvi_hpcf_exp_loaded=hesuvi_hpcf_exp_default
-    dir_brir_exp_loaded=dir_brir_exp_default
-    ts_brir_exp_loaded=ts_brir_exp_default
-    hesuvi_brir_exp_loaded=hesuvi_brir_exp_default
-    eapo_brir_exp_loaded=eapo_brir_exp_default
-    sofa_brir_exp_loaded=sofa_brir_exp_default
-    audio_channels_loaded=audio_channels_default
-    auto_check_updates_loaded=auto_check_updates_default
-    hrtf_symmetry_loaded=hrtf_symmetry_default
-    er_rise_loaded=er_rise_default
-    show_hpcf_history_loaded=show_hpcf_history_default
-    #E-APO config related settings
-    e_apo_upmix_method_loaded=e_apo_upmix_method_default
-    e_apo_side_delay_loaded=e_apo_side_delay_default
-    e_apo_rear_delay_loaded=e_apo_rear_delay_default
-    e_apo_mute_fl_loaded=e_apo_mute_default
-    e_apo_mute_fr_loaded=e_apo_mute_default
-    e_apo_mute_c_loaded=e_apo_mute_default
-    e_apo_mute_sl_loaded=e_apo_mute_default
-    e_apo_mute_sr_loaded=e_apo_mute_default
-    e_apo_mute_rl_loaded=e_apo_mute_default
-    e_apo_mute_rr_loaded=e_apo_mute_default
-    e_apo_gain_oa_loaded=e_apo_gain_default
-    e_apo_gain_fl_loaded=e_apo_gain_default
-    e_apo_gain_fr_loaded=e_apo_gain_default
-    e_apo_gain_c_loaded=e_apo_gain_default
-    e_apo_gain_sl_loaded=e_apo_gain_default
-    e_apo_gain_sr_loaded=e_apo_gain_default
-    e_apo_gain_rl_loaded=e_apo_gain_default
-    e_apo_gain_rr_loaded=e_apo_gain_default
-    e_apo_elev_angle_fl_loaded=e_apo_elev_angle_default
-    e_apo_elev_angle_fr_loaded=e_apo_elev_angle_default
-    e_apo_elev_angle_c_loaded=e_apo_elev_angle_default
-    e_apo_elev_angle_sl_loaded=e_apo_elev_angle_default
-    e_apo_elev_angle_sr_loaded=e_apo_elev_angle_default
-    e_apo_elev_angle_rl_loaded=e_apo_elev_angle_default
-    e_apo_elev_angle_rr_loaded=e_apo_elev_angle_default
-    e_apo_az_angle_fl_loaded=e_apo_az_angle_fl_default  
-    e_apo_az_angle_fr_loaded=e_apo_az_angle_fr_default  
-    e_apo_az_angle_c_loaded=e_apo_az_angle_c_default 
-    e_apo_az_angle_sl_loaded=e_apo_az_angle_sl_default
-    e_apo_az_angle_sr_loaded=e_apo_az_angle_sr_default 
-    e_apo_az_angle_rl_loaded=e_apo_az_angle_rl_default
-    e_apo_az_angle_rr_loaded=e_apo_az_angle_rr_default
-    e_apo_enable_hpcf_loaded=e_apo_enable_hpcf_default
-    e_apo_enable_brir_loaded=e_apo_enable_brir_default
-    e_apo_autoapply_hpcf_loaded=e_apo_autoapply_hpcf_default
-    e_apo_prevent_clip_loaded=e_apo_prevent_clip_default
-    e_apo_hpcf_curr_loaded = e_apo_hpcf_curr_default
-    e_apo_hpcf_sel_loaded = e_apo_hpcf_sel_default
-    e_apo_brir_curr_loaded = e_apo_brir_curr_default
-    e_apo_brir_sel_loaded = e_apo_brir_sel_default
-    e_apo_brir_sel_loaded = e_apo_brir_sel_default
-    qc_brir_hp_type_loaded=qc_brir_hp_type_default
-    qc_hrtf_loaded=hrtf_default
-    qc_room_target_loaded=qc_room_target_default
-    qc_direct_gain_loaded=qc_direct_gain_default
-    qc_ac_space_loaded=qc_ac_space_default
-    qc_brand_loaded=qc_brand_default
-    qc_headphone_loaded=qc_headphone_default
-    qc_sample_loaded=qc_sample_default
-    #hrtf selection related
-    brir_hrtf_type_loaded=brir_hrtf_type_default
-    brir_hrtf_dataset_loaded=brir_hrtf_dataset_default
-    qc_brir_hrtf_type_loaded=brir_hrtf_type_default
-    qc_brir_hrtf_dataset_loaded=brir_hrtf_dataset_default
-    sofa_exp_conv_loaded=sofa_exp_conv_default
-    qc_crossover_f_mode_loaded=crossover_f_mode_default
-    qc_crossover_f_loaded=crossover_f_default
-    qc_sub_response_loaded=sub_response_default
-    qc_hp_rolloff_comp_loaded=hp_rolloff_comp_default
-    qc_fb_filtering_loaded=fb_filtering_default
-    crossover_f_mode_loaded=crossover_f_mode_default
-    crossover_f_loaded=crossover_f_default
-    sub_response_loaded=sub_response_default
-    hp_rolloff_comp_loaded=hp_rolloff_comp_default
-    fb_filtering_loaded=fb_filtering_default
-    hrtf_polarity_loaded=hrtf_polarity_default
-    
-    #thread variables
-    e_apo_conf_lock = threading.Lock()
-    
-    #get equalizer APO path
-    try:
-        key = wrg.OpenKey(wrg.HKEY_LOCAL_MACHINE, "Software\\EqualizerAPO")
-        value =  wrg.QueryValueEx(key, "InstallPath")[0]
-        e_apo_path= pjoin(value, 'config')
-        #E APO was found in registry
-    except:
-        e_apo_path = None
-    #set primary path to E APO path before attempting to load saved path
-    if e_apo_path is not None:
-        primary_path = e_apo_path
-        primary_ash_path = pjoin(e_apo_path, CN.PROJECT_FOLDER)
-        #print('found in registry')
-    else:
-        primary_path = 'C:\\Program Files\\EqualizerAPO\\config'
-        primary_ash_path = 'C:\\Program Files\\EqualizerAPO\\config\\' + CN.PROJECT_FOLDER
-    qc_primary_path=primary_path
-    
-    
-    
-    #try reading from settings.ini to get path
-    try:
-        migrate_settings()
-        # then load from SETTINGS_FILE (which points to SETTINGS_FILE_NEW)
-        #load settings
-        config = configparser.ConfigParser()
-        config.read(CN.SETTINGS_FILE)
-        version_loaded = safe_get(config, 'version', str, __version__)
-        
-        
-        
-        if version_loaded != __version__ and CN.LOG_INFO:
-            logging.info(f"Settings version mismatch: file version={version_loaded}, expected={__version__}. Loading available settings anyway.")
-    
-        primary_path = safe_get(config, 'path', str, primary_path)
-        primary_ash_path=pjoin(primary_path, CN.PROJECT_FOLDER)
- 
-        sample_freq_loaded = safe_get(config, 'sampling_frequency', str, sample_freq_default)
-        bit_depth_loaded = safe_get(config, 'bit_depth', str, bit_depth_default)
-        brir_hp_type_loaded = safe_get(config, 'brir_headphone_type', str, brir_hp_type_default)
-        hrtf_loaded = safe_get(config, 'brir_hrtf', str, hrtf_default)
-        spatial_res_loaded = safe_get(config, 'spatial_resolution', str, spatial_res_default)
-        room_target_loaded = safe_get(config, 'brir_room_target', str, room_target_default)
-        direct_gain_loaded = safe_get(config, 'brir_direct_gain', float, direct_gain_default)
-        hrtf_list_favs_loaded = safe_get(config, 'hrtf_list_favs', list, hrtf_list_favs_default)
-        ac_space_loaded = safe_get(config, 'acoustic_space', str, ac_space_default)
-        fir_hpcf_exp_loaded = safe_get(config, 'fir_hpcf_exp', ast.literal_eval, fir_hpcf_exp_default)
-        fir_st_hpcf_exp_loaded = safe_get(config, 'fir_st_hpcf_exp', ast.literal_eval, fir_st_hpcf_exp_default)
-        eapo_hpcf_exp_loaded = safe_get(config, 'eapo_hpcf_exp', ast.literal_eval, eapo_hpcf_exp_default)
-        geq_hpcf_exp_loaded = safe_get(config, 'geq_hpcf_exp', ast.literal_eval, geq_hpcf_exp_default)
-        geq_31_exp_loaded = safe_get(config, 'geq_31_exp', ast.literal_eval, geq_31_exp_default)
-        hesuvi_hpcf_exp_loaded = safe_get(config, 'hesuvi_hpcf_exp', ast.literal_eval, hesuvi_hpcf_exp_default)
-        dir_brir_exp_loaded = safe_get(config, 'dir_brir_exp', ast.literal_eval, dir_brir_exp_default)
-        ts_brir_exp_loaded = safe_get(config, 'ts_brir_exp', ast.literal_eval, ts_brir_exp_default)
-        hesuvi_brir_exp_loaded = safe_get(config, 'hesuvi_brir_exp', ast.literal_eval, hesuvi_brir_exp_default)
-        eapo_brir_exp_loaded = safe_get(config, 'eapo_brir_exp', ast.literal_eval, eapo_brir_exp_default)
-        sofa_brir_exp_loaded = safe_get(config, 'sofa_brir_exp', ast.literal_eval, sofa_brir_exp_default)
-        auto_check_updates_loaded = safe_get(config, 'auto_check_updates', bool, auto_check_updates_default)
-        hrtf_symmetry_loaded = safe_get(config, 'force_hrtf_symmetry', str, hrtf_symmetry_default)
-        er_rise_loaded = safe_get(config, 'er_delay_time', float, er_rise_default)
-        show_hpcf_history_loaded = safe_get(config, 'show_hpcf_history', bool, show_hpcf_history_default)
-        e_apo_upmix_method_loaded = safe_get(config, 'upmix_method', str, e_apo_upmix_method_default)
-        e_apo_side_delay_loaded = safe_get(config, 'side_delay', int, e_apo_side_delay_default)
-        e_apo_rear_delay_loaded = safe_get(config, 'rear_delay', int, e_apo_rear_delay_default)
-        e_apo_mute_fl_loaded = safe_get(config, 'mute_fl', bool, e_apo_mute_default)
-        e_apo_mute_fr_loaded = safe_get(config, 'mute_fr', bool, e_apo_mute_default)
-        e_apo_mute_c_loaded = safe_get(config, 'mute_c', bool, e_apo_mute_default)
-        e_apo_mute_sl_loaded = safe_get(config, 'mute_sl', bool, e_apo_mute_default)
-        e_apo_mute_sr_loaded = safe_get(config, 'mute_sr', bool, e_apo_mute_default)
-        e_apo_mute_rl_loaded = safe_get(config, 'mute_rl', bool, e_apo_mute_default)
-        e_apo_mute_rr_loaded = safe_get(config, 'mute_rr', bool, e_apo_mute_default)
-        e_apo_gain_oa_loaded = safe_get(config, 'gain_oa', float, e_apo_gain_default)
-        e_apo_gain_fl_loaded = safe_get(config, 'gain_fl', float, e_apo_gain_default)
-        e_apo_gain_fr_loaded = safe_get(config, 'gain_fr', float, e_apo_gain_default)
-        e_apo_gain_c_loaded = safe_get(config, 'gain_c', float, e_apo_gain_default)
-        e_apo_gain_sl_loaded = safe_get(config, 'gain_sl', float, e_apo_gain_default)
-        e_apo_gain_sr_loaded = safe_get(config, 'gain_sr', float, e_apo_gain_default)
-        e_apo_gain_rl_loaded = safe_get(config, 'gain_rl', float, e_apo_gain_default)
-        e_apo_gain_rr_loaded = safe_get(config, 'gain_rr', float, e_apo_gain_default)
-        e_apo_elev_angle_fl_loaded = safe_get(config, 'elev_fl', int, e_apo_elev_angle_default)
-        e_apo_elev_angle_fr_loaded = safe_get(config, 'elev_fr', int, e_apo_elev_angle_default)
-        e_apo_elev_angle_c_loaded = safe_get(config, 'elev_c', int, e_apo_elev_angle_default)
-        e_apo_elev_angle_sl_loaded = safe_get(config, 'elev_sl', int, e_apo_elev_angle_default)
-        e_apo_elev_angle_sr_loaded = safe_get(config, 'elev_sr', int, e_apo_elev_angle_default)
-        e_apo_elev_angle_rl_loaded = safe_get(config, 'elev_rl', int, e_apo_elev_angle_default)
-        e_apo_elev_angle_rr_loaded = safe_get(config, 'elev_rr', int, e_apo_elev_angle_default)
-        e_apo_az_angle_fl_loaded = safe_get(config, 'azim_fl', int, e_apo_az_angle_fl_default)
-        e_apo_az_angle_fr_loaded = safe_get(config, 'azim_fr', int, e_apo_az_angle_fr_default)
-        e_apo_az_angle_c_loaded = safe_get(config, 'azim_c', int, e_apo_az_angle_c_default)
-        e_apo_az_angle_sl_loaded = safe_get(config, 'azim_sl', int, e_apo_az_angle_sl_default)
-        e_apo_az_angle_sr_loaded = safe_get(config, 'azim_sr', int, e_apo_az_angle_sr_default)
-        e_apo_az_angle_rl_loaded = safe_get(config, 'azim_rl', int, e_apo_az_angle_rl_default)
-        e_apo_az_angle_rr_loaded = safe_get(config, 'azim_rr', int, e_apo_az_angle_rr_default)
-        e_apo_enable_hpcf_loaded = safe_get(config, 'enable_hpcf', bool, e_apo_enable_hpcf_default)
-        e_apo_enable_brir_loaded = safe_get(config, 'enable_brir', bool, e_apo_enable_brir_default)
-        e_apo_autoapply_hpcf_loaded = safe_get(config, 'auto_apply_hpcf', bool, e_apo_autoapply_hpcf_default)
-        e_apo_prevent_clip_loaded = safe_get(config, 'prevent_clip', str, e_apo_prevent_clip_default)
-        e_apo_hpcf_curr_loaded = safe_get(config, 'hpcf_current', str, e_apo_hpcf_curr_default)
-        e_apo_hpcf_sel_loaded = safe_get(config, 'hpcf_selected', str, e_apo_hpcf_sel_default)
-        e_apo_brir_curr_loaded = safe_get(config, 'brir_set_current', str, e_apo_brir_curr_default)
-        e_apo_brir_sel_loaded = safe_get(config, 'brir_set_selected', str, e_apo_brir_sel_default)
-        audio_channels_loaded = safe_get(config, 'channel_config', str, audio_channels_default)
-        tab_selected_loaded = safe_get(config, 'tab_selected', int, tab_selected_default)
-        qc_brir_hp_type_loaded = safe_get(config, 'qc_brir_headphone_type', str, qc_brir_hp_type_default)
-        qc_hrtf_loaded = safe_get(config, 'qc_brir_hrtf', str, hrtf_default)
-        qc_room_target_loaded = safe_get(config, 'qc_brir_room_target', str, qc_room_target_default)
-        qc_direct_gain_loaded = safe_get(config, 'qc_brir_direct_gain', float, qc_direct_gain_default)
-        qc_ac_space_loaded = safe_get(config, 'qc_acoustic_space', str, qc_ac_space_default)
-        qc_brand_loaded = safe_get(config, 'qc_brand', str, qc_brand_default)
-        qc_headphone_loaded = safe_get(config, 'qc_headphone', str, qc_headphone_default)
-        qc_sample_loaded = safe_get(config, 'qc_sample', str, qc_sample_default)
-        brir_hrtf_type_loaded = safe_get(config, 'brir_hrtf_type', str, brir_hrtf_type_default)
-        brir_hrtf_dataset_loaded = safe_get(config, 'brir_hrtf_dataset', str, brir_hrtf_dataset_default)
-        qc_brir_hrtf_type_loaded = safe_get(config, 'qc_brir_hrtf_type', str, brir_hrtf_type_default)
-        qc_brir_hrtf_dataset_loaded = safe_get(config, 'qc_brir_hrtf_dataset', str, brir_hrtf_dataset_default)
-        sofa_exp_conv_loaded = safe_get(config, 'sofa_exp_conv', str, sofa_exp_conv_default)
-        qc_crossover_f_mode_loaded = safe_get(config, 'qc_crossover_f_mode', str, crossover_f_mode_default)
-        qc_crossover_f_loaded = safe_get(config, 'qc_crossover_f', int, crossover_f_default)
-        qc_sub_response_loaded = safe_get(config, 'qc_sub_response', str, sub_response_default)
-        qc_hp_rolloff_comp_loaded = safe_get(config, 'qc_hp_rolloff_comp', bool, hp_rolloff_comp_default)
-        qc_fb_filtering_loaded = safe_get(config, 'qc_fb_filtering_mode', bool, fb_filtering_default)
-        crossover_f_mode_loaded = safe_get(config, 'crossover_f_mode', str, crossover_f_mode_default)
-        crossover_f_loaded = safe_get(config, 'crossover_f', int, crossover_f_default)
-        sub_response_loaded = safe_get(config, 'sub_response', str, sub_response_default)
-        hp_rolloff_comp_loaded = safe_get(config, 'hp_rolloff_comp', bool, hp_rolloff_comp_default)
-        fb_filtering_loaded = safe_get(config, 'fb_filtering_mode', bool, fb_filtering_default)
-        hrtf_polarity_loaded = safe_get(config, 'hrtf_polarity', str, hrtf_polarity_default)
-        
-        
-    except Exception as e:
-        logging.info(f"Error loading configuration: {e}")
-        logging.info("Falling back to default values.")
-        
-    
-    
-    
-    #set hesuvi path
-    if 'EqualizerAPO' in primary_path:
-        primary_hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
-    else:
-        primary_hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
+        return primary_path, primary_ash_path, e_apo_path
 
-    
-
-    #hp and sample lists based on loaded brand and headphone
-    qc_hp_list_loaded = hpcf_functions.get_headphone_list(conn, qc_brand_loaded)#
-    qc_sample_list_loaded = hpcf_functions.get_samples_list(conn, qc_headphone_loaded)
-    
-    
-
-    #code to get gui width based on windows resolution
-    gui_win_width_default=1722
-    gui_win_height_default=717
-    gui_win_width_loaded=gui_win_width_default
-    gui_win_height_loaded=gui_win_height_default
-
-    try:
-        screen_width = ctypes.windll.user32.GetSystemMetrics(0)
-        screen_height = ctypes.windll.user32.GetSystemMetrics(1)
-        
-        if screen_width < gui_win_width_default:
-            gui_win_width_loaded=screen_width
-        if screen_height < gui_win_height_default:
-            gui_win_height_loaded=screen_height
-    except Exception as e:
-        logging.error(f"Error getting screen size: {e}")
-        gui_win_width_loaded=gui_win_width_default
-        gui_win_height_loaded=gui_win_height_default
-        
-
-    #adjust hrtf list based on loaded spatial resolution
-    #also adjust file export selection
-    dir_brir_exp_show=True
-    ts_brir_exp_show=True
-    hesuvi_brir_exp_show=True
-    eapo_brir_exp_show=True
-    sofa_brir_exp_show=True
-    dir_brir_tooltip_show=True
-    ts_brir_tooltip_show=True
-    hesuvi_brir_tooltip_show=True
-    eapo_brir_tooltip_show=True
-    sofa_brir_tooltip_show=True
-    
-    add_fav_button_show=True
-    remove_fav_button_show=False
-    qc_add_fav_button_show=True
-    qc_remove_fav_button_show=False
-    
-    brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(brir_hrtf_type_loaded) or []
-    if brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
-        hrtf_list_loaded = hrtf_list_favs_loaded
-        add_fav_button_show=False
-        remove_fav_button_show=True
-    elif spatial_res_loaded == 'Max':#reduced list
-        hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_loaded, dataset_name=brir_hrtf_dataset_loaded, max_res_only=True)
-    else:
-        hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_loaded, dataset_name=brir_hrtf_dataset_loaded)
-        
-    if brir_hrtf_type_loaded == 'User SOFA Input':
-        add_fav_button_show=False
-        remove_fav_button_show=False
-        
-    if spatial_res_loaded == 'Max':
-        brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get('Dummy Head - Max Resolution')
-        ts_brir_exp_loaded=False
-        hesuvi_brir_exp_loaded=False
-        eapo_brir_exp_loaded=False
-        ts_brir_exp_show=False
-        hesuvi_brir_exp_show=False
-        eapo_brir_exp_show=False
-        ts_brir_tooltip_show=False
-        hesuvi_brir_tooltip_show=False
-        eapo_brir_tooltip_show=False
-    elif spatial_res_loaded == 'Medium' or spatial_res_loaded == 'Low':
-        sofa_brir_exp_loaded=False
-        sofa_brir_exp_show=False
-        sofa_brir_tooltip_show=False
-    
-    spatial_res_list_loaded=CN.SPATIAL_RES_LIST_LIM
-    if brir_hrtf_type_loaded == CN.HRTF_TYPE_LIST[0]:
-        spatial_res_list_loaded=CN.SPATIAL_RES_LIST
-        
-
-    #qc dataset list based on loaded hrtf type
-    qc_brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(qc_brir_hrtf_type_loaded) or []
-    #qc hrtf list based on dataset and hrtf type
-    if qc_brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
-        qc_hrtf_list_loaded = hrtf_list_favs_loaded
-        qc_add_fav_button_show=False
-        qc_remove_fav_button_show=True
-    else:
-        qc_hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_loaded, dataset_name=qc_brir_hrtf_dataset_loaded)
-
-
-    #validate that loaded strings are within associated lists
-    ac_space_loaded = validate_choice(ac_space_loaded, CN.AC_SPACE_LIST_GUI)
-    qc_ac_space_loaded = validate_choice(qc_ac_space_loaded, CN.AC_SPACE_LIST_GUI)
-    room_target_loaded = validate_choice(room_target_loaded, CN.ROOM_TARGET_LIST)
-    qc_room_target_loaded = validate_choice(qc_room_target_loaded, CN.ROOM_TARGET_LIST)
-    brir_hp_type_loaded = validate_choice(brir_hp_type_loaded, CN.HP_COMP_LIST)
-    qc_brir_hp_type_loaded = validate_choice(qc_brir_hp_type_loaded, CN.HP_COMP_LIST)
-    sub_response_loaded = validate_choice(sub_response_loaded, CN.SUB_RESPONSE_LIST_GUI)
-    qc_sub_response_loaded = validate_choice(qc_sub_response_loaded, CN.SUB_RESPONSE_LIST_GUI)
-    brir_hrtf_dataset_loaded = validate_choice(brir_hrtf_dataset_loaded, brir_hrtf_dataset_list_loaded)
-    qc_brir_hrtf_dataset_loaded = validate_choice(qc_brir_hrtf_dataset_loaded, qc_brir_hrtf_dataset_list_loaded)
-    hrtf_loaded = validate_choice(hrtf_loaded, hrtf_list_loaded)
-    qc_hrtf_loaded = validate_choice(qc_hrtf_loaded, qc_hrtf_list_loaded)
-
-
-    #
-    # Equalizer APO related code
-    #
-    elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
-  
-    
-    #
-    ## GUI Functions 
-    #
-
-    #
-    ## misc tools and settings
-    #
-
-            
-    def reset_settings():
-        """ 
-        GUI function to reset settings
-        """
-        dpg.set_value("wav_sample_rate", sample_freq_default)
-        dpg.set_value("wav_bit_depth", bit_depth_default)  
-        dpg.set_value("brir_hp_type", brir_hp_type_default)
-        dpg.set_value("qc_toggle_hpcf_history", show_hpcf_history_default)
-        dpg.set_value("brir_spat_res", spatial_res_default)
-        dpg.set_value("rm_target_list", room_target_default)
-        dpg.set_value("direct_gain", direct_gain_default)
-        dpg.set_value("direct_gain_slider", direct_gain_default)
-        dpg.set_value("acoustic_space_combo", ac_space_default)
-        dpg.set_value("crossover_f_mode", crossover_f_mode_default)
-        dpg.set_value("crossover_f", crossover_f_default)
-        dpg.set_value("sub_response", sub_response_default)
-        dpg.set_value("hp_rolloff_comp", hp_rolloff_comp_default)
-        dpg.set_value("fb_filtering", fb_filtering_default)
-        
-        dpg.configure_item('brand_list',items=brands_list)
-        dpg.configure_item('headphone_list',items=hp_list_default)
-        dpg.configure_item('sample_list',items=sample_list_default)
-        dpg.set_value("brand_list", brand_default)
-        dpg.set_value("headphone_list", headphone_default)
-        dpg.set_value("sample_list", sample_default)
-        dpg.configure_item('qc_brand_list',items=brands_list)
-        dpg.configure_item('qc_headphone_list',items=hp_list_default)
-        dpg.configure_item('qc_sample_list',items=sample_list_default)
-        dpg.set_value("qc_brand_list", brand_default)
-        dpg.set_value("qc_headphone_list", headphone_default)
-        dpg.set_value("qc_sample_list", sample_default)
- 
-        dpg.set_value("qc_wav_sample_rate", sample_freq_default)
-        dpg.set_value("qc_wav_bit_depth", bit_depth_default)
-        dpg.set_value("qc_brir_hp_type", brir_hp_type_default)
-        
-        dpg.set_value("qc_rm_target_list", room_target_default)
-        dpg.set_value("qc_direct_gain", direct_gain_default)
-        dpg.set_value("qc_direct_gain_slider", direct_gain_default)
-        dpg.set_value("qc_acoustic_space_combo", ac_space_default)
-        dpg.set_value("qc_crossover_f_mode", crossover_f_mode_default)
-        dpg.set_value("qc_crossover_f", crossover_f_default)
-        dpg.set_value("qc_sub_response", sub_response_default)
-        dpg.set_value("qc_hp_rolloff_comp", hp_rolloff_comp_default)
-        dpg.set_value("qc_fb_filtering", fb_filtering_default)
-        
-        dpg.set_value("fir_hpcf_toggle", fir_hpcf_exp_default)
-        dpg.set_value("fir_st_hpcf_toggle", fir_st_hpcf_exp_default)
-        dpg.set_value("eapo_hpcf_toggle", eapo_hpcf_exp_default)
-        dpg.set_value("geq_hpcf_toggle", geq_hpcf_exp_default)
-        dpg.set_value("geq_31_hpcf_toggle", geq_31_exp_default)
-        dpg.set_value("hesuvi_hpcf_toggle", hesuvi_hpcf_exp_default)
-        dpg.set_value("dir_brir_toggle", dir_brir_exp_default)
-        dpg.set_value("ts_brir_toggle", ts_brir_exp_default)
-        dpg.set_value("hesuvi_brir_toggle", hesuvi_brir_exp_default)
-        dpg.set_value("eapo_brir_toggle", eapo_brir_exp_default)
-        dpg.set_value("sofa_brir_toggle", sofa_brir_exp_default)
-        dpg.set_value("force_hrtf_symmetry", hrtf_symmetry_default)
-        dpg.set_value("er_delay_time_tag", er_rise_default)
-        dpg.set_value("e_apo_brir_conv", e_apo_enable_brir_default)
-        dpg.set_value("e_apo_hpcf_conv", e_apo_enable_hpcf_default)
-        dpg.set_value("e_apo_prevent_clip", e_apo_prevent_clip_default)
-        #hrtf selection related
-        dpg.configure_item('brir_hrtf',items=hrtf_list_default)
-        dpg.set_value("brir_hrtf", hrtf_default)
-        dpg.configure_item('qc_brir_hrtf',items=hrtf_list_default)
-        dpg.set_value("qc_brir_hrtf", hrtf_default)
-        dpg.set_value("brir_hrtf_type", brir_hrtf_type_default)
-        dpg.configure_item('brir_hrtf_dataset',items=brir_hrtf_dataset_list_default)
-        dpg.set_value("brir_hrtf_dataset", brir_hrtf_dataset_default)
-        dpg.set_value("qc_brir_hrtf_type", brir_hrtf_type_default)
-        dpg.configure_item('qc_brir_hrtf_dataset',items=brir_hrtf_dataset_list_default)
-        dpg.set_value("qc_brir_hrtf_dataset", brir_hrtf_dataset_default)
-        dpg.set_value("sofa_exp_conv", sofa_exp_conv_default )
-        #reset progress bars
-        cb.reset_hpcf_progress()
-        cb.reset_brir_progress()
-        cb.qc_reset_progress()
-        cb.e_apo_toggle_hpcf_gui(app_data=False)
-        cb.e_apo_toggle_brir_gui(app_data=False)
-        
-        #reset output directory
-        if e_apo_path is not None:
-            primary_path = e_apo_path
-            primary_ash_path = pjoin(e_apo_path, CN.PROJECT_FOLDER)
-        else:
-            primary_path = 'C:\\Program Files\\EqualizerAPO\\config'
-            primary_ash_path = 'C:\\Program Files\\EqualizerAPO\\config\\' + CN.PROJECT_FOLDER
-        dpg.set_value('selected_folder_base', primary_path)
-        dpg.set_value('selected_folder_ash', primary_ash_path)
-        dpg.set_value('selected_folder_ash_tooltip', primary_ash_path)
-        #hesuvi path
-        if 'EqualizerAPO' in primary_path:
-            hesuvi_path_selected = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
-        else:
-            hesuvi_path_selected = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
-        dpg.set_value('selected_folder_hesuvi', hesuvi_path_selected)
-        dpg.set_value('selected_folder_hesuvi_tooltip', hesuvi_path_selected)
-
-        reset_channel_config()
-
-        cb.save_settings()
-        
-        #log results
-        log_string = 'Settings have been reset to default '
-        hf.log_with_timestamp(log_string, logz)
-       
-
-
-
-
-    def reset_channel_config(sender=None, app_data=None):
-        """ 
-        GUI function to reset channel config in E-APO config section
-        """
-        dpg.set_value("e_apo_upmix_method", e_apo_upmix_method_default)
-        dpg.set_value("e_apo_side_delay", e_apo_side_delay_default)
-        dpg.set_value("e_apo_rear_delay", e_apo_rear_delay_default)
-        dpg.set_value("e_apo_mute_fl", e_apo_mute_default)
-        dpg.set_value("e_apo_mute_fr", e_apo_mute_default)
-        dpg.set_value("e_apo_mute_c", e_apo_mute_default)
-        dpg.set_value("e_apo_mute_sl", e_apo_mute_default)
-        dpg.set_value("e_apo_mute_sr", e_apo_mute_default)
-        dpg.set_value("e_apo_mute_rl", e_apo_mute_default)
-        dpg.set_value("e_apo_mute_rr", e_apo_mute_default)
-        dpg.set_value("e_apo_gain_oa", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_fl", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_fr", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_c", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_sl", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_sr", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_rl", e_apo_gain_default)
-        dpg.set_value("e_apo_gain_rr", e_apo_gain_default)
-        dpg.set_value("e_apo_elev_angle_fl", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_elev_angle_fr", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_elev_angle_c", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_elev_angle_sl", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_elev_angle_sr", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_elev_angle_rl", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_elev_angle_rr", e_apo_elev_angle_default)
-        dpg.set_value("e_apo_az_angle_fl", e_apo_az_angle_fl_default)
-        dpg.set_value("e_apo_az_angle_fr", e_apo_az_angle_fr_default)
-        dpg.set_value("e_apo_az_angle_c", e_apo_az_angle_c_default)
-        dpg.set_value("e_apo_az_angle_sl", e_apo_az_angle_sl_default)
-        dpg.set_value("e_apo_az_angle_sr", e_apo_az_angle_sr_default)
-        dpg.set_value("e_apo_az_angle_rl", e_apo_az_angle_rl_default)
-        dpg.set_value("e_apo_az_angle_rr", e_apo_az_angle_rr_default)
-        dpg.set_value("hesuvi_elev_angle_fl", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_elev_angle_fr", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_elev_angle_c", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_elev_angle_sl", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_elev_angle_sr", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_elev_angle_rl", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_elev_angle_rr", e_apo_elev_angle_default)
-        dpg.set_value("hesuvi_az_angle_fl", e_apo_az_angle_fl_default)
-        dpg.set_value("hesuvi_az_angle_fr", e_apo_az_angle_fr_default)
-        dpg.set_value("hesuvi_az_angle_c", e_apo_az_angle_c_default)
-        dpg.set_value("hesuvi_az_angle_sl", e_apo_az_angle_sl_default)
-        dpg.set_value("hesuvi_az_angle_sr", e_apo_az_angle_sr_default)
-        dpg.set_value("hesuvi_az_angle_rl", e_apo_az_angle_rl_default)
-        dpg.set_value("hesuvi_az_angle_rr", e_apo_az_angle_rr_default)
-        
-        dpg.set_value("e_apo_prevent_clip", e_apo_prevent_clip_default)
-        #also reset channel config
-        dpg.set_value("audio_channels_combo", audio_channels_default)
-        cb.e_apo_select_channels(app_data=audio_channels_default,aquire_config=False)
-        #update drawings for azimuths
-        cb.e_apo_activate_direction()
-        
-        #finally rewrite config file
-        cb.e_apo_config_acquire()
-  
 
     def _hsv_to_rgb(h, s, v):
         """ 
@@ -868,9 +157,11 @@ def main():
             cb.update_as_table_from_csvs()
         # #room target manager
         cb.update_room_target_list()
+        #qc_presets
+        cb.qc_refresh_preset_list()
         
         #check for updates on start
-        if auto_check_updates_loaded == True:
+        if loaded_values["check_updates_start_toggle"] == True:
             #start thread
             thread = threading.Thread(target=cb.check_all_updates, args=(), daemon=True)
             thread.start()
@@ -878,24 +169,333 @@ def main():
 
         #inital configuration
         #update channel gui elements on load, will also write e-APO config again
-        cb.e_apo_select_channels(app_data=dpg.get_value('audio_channels_combo'),aquire_config=False)
+        cb.e_apo_select_channels(app_data=dpg.get_value('e_apo_audio_channels'),aquire_config=False)
         #adjust active tab
         try:
-            dpg.set_value("tab_bar", tab_selected_loaded)
+            dpg.set_value("tab_bar", loaded_values["tab_bar"])
         except Exception:
             pass
-        #cb.save_settings()#not needed
+
         hpcf_is_active=dpg.get_value('e_apo_hpcf_conv')
         brir_is_active=dpg.get_value('e_apo_brir_conv')
         #show hpcf history
         cb.qc_show_hpcf_history(app_data=dpg.get_value('qc_toggle_hpcf_history'))
 
-        cb.e_apo_toggle_hpcf_custom(app_data=hpcf_is_active, aquire_config=False)
-        cb.e_apo_toggle_brir_custom(app_data=brir_is_active, aquire_config=False)
+        cb.e_apo_toggle_hpcf_custom(activate=hpcf_is_active, aquire_config=False)
+        cb.e_apo_toggle_brir_custom(activate=brir_is_active, aquire_config=False)
         #finally acquire config once
         cb.e_apo_config_acquire()
         
+        #also update gui labels based on active database
+        qc_active_database = dpg.get_value('qc_hpcf_active_database')
+        if qc_active_database == CN.HPCF_DATABASE_LIST[0]:#ash filters
+            dpg.set_value('qc_hpcf_brand_search_title', "Search Brand:")
+            dpg.configure_item('qc_hpcf_brand_search_title', show=True)
+            dpg.configure_item('qc_hpcf_brand_search', show=True)
+            dpg.set_value('qc_hpcf_headphone_search_title', "Search Headphone:")
+            dpg.set_value('qc_hpcf_brand_title', "Brand")
+            dpg.set_value('qc_hpcf_headphone_title', "Headphone")
+            dpg.set_value('qc_hpcf_sample_title', "Sample")
+            dpg.configure_item('qc_hpcf_brand', width=135)
+            dpg.configure_item('qc_hpcf_headphone', width=250)
+            dpg.configure_item('qc_hpcf_sample', width=115)
+            
+            dpg.set_value('fde_hpcf_brand_search_title', "Search Brand:")
+            dpg.configure_item('fde_hpcf_brand_search_title', show=True)
+            dpg.configure_item('fde_hpcf_brand_search', show=True)
+            dpg.set_value('fde_hpcf_headphone_search_title', "Search Headphone:")
+            dpg.set_value('fde_hpcf_brand_title', "Brand")
+            dpg.set_value('fde_hpcf_headphone_title', "Headphone")
+            dpg.set_value('fde_hpcf_sample_title', "Sample")
+            dpg.configure_item('fde_hpcf_brand', width=135)
+            dpg.configure_item('fde_hpcf_headphone', width=250)
+            dpg.configure_item('fde_hpcf_sample', width=115)
+       
+        else:#compilation database
+            dpg.set_value('qc_hpcf_brand_search_title', "Search Type:")
+            dpg.configure_item('qc_hpcf_brand_search_title', show=False)
+            dpg.configure_item('qc_hpcf_brand_search', show=False)
+            dpg.set_value('qc_hpcf_headphone_search_title', "Search Headphone:")
+            dpg.set_value('qc_hpcf_brand_title', "Type")
+            dpg.set_value('qc_hpcf_headphone_title', "Headphone")
+            dpg.set_value('qc_hpcf_sample_title', "Dataset")
+            dpg.configure_item('qc_hpcf_brand', width=80)
+            dpg.configure_item('qc_hpcf_headphone', width=290)
+            dpg.configure_item('qc_hpcf_sample', width=140)
+            
+            dpg.set_value('fde_hpcf_brand_search_title', "Search Type:")
+            dpg.configure_item('fde_hpcf_brand_search_title', show=False)
+            dpg.configure_item('fde_hpcf_brand_search', show=False)
+            dpg.set_value('fde_hpcf_headphone_search_title', "Search Headphone:")
+            dpg.set_value('fde_hpcf_brand_title', "Type")
+            dpg.set_value('fde_hpcf_headphone_title', "Headphone")
+            dpg.set_value('fde_hpcf_sample_title', "Dataset")
+            dpg.configure_item('fde_hpcf_brand', width=80)
+            dpg.configure_item('fde_hpcf_headphone', width=290)
+            dpg.configure_item('fde_hpcf_sample', width=140)
+        
 
+
+
+
+      
+        
+    
+    #
+    #program code
+    #
+    
+    #code to get gui width based on windows resolution
+    gui_win_width_default=1722
+    gui_win_height_default=717
+    gui_win_width_loaded=gui_win_width_default
+    gui_win_height_loaded=gui_win_height_default
+
+    try:
+        screen_width = ctypes.windll.user32.GetSystemMetrics(0)
+        screen_height = ctypes.windll.user32.GetSystemMetrics(1)
+        
+        if screen_width < gui_win_width_default:
+            gui_win_width_loaded=screen_width
+        if screen_height < gui_win_height_default:
+            gui_win_height_loaded=screen_height
+    except Exception as e:
+        logging.error(f"Error getting screen size: {e}")
+        gui_win_width_loaded=gui_win_width_default
+        gui_win_height_loaded=gui_win_height_default
+        
+    
+    # HpCF Database code
+    # create database connections to each database
+    database_ash = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_database.db')
+    database_comp = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_compilation_database.db')
+    conn_ash = hpcf_functions.create_connection(database_ash)
+    conn_comp = hpcf_functions.create_connection(database_comp)
+    
+    #define hpcf defaults
+    brands_list_default = hpcf_functions.get_brand_list(conn_ash)
+    brand_default=brands_list_default[0]
+    hp_list_default = hpcf_functions.get_headphone_list(conn_ash, brands_list_default[0])#index 0
+    headphone_default = hp_list_default[0]
+    sample_list_default = hpcf_functions.get_samples_list(conn_ash, headphone_default)
+    sample_default = CN.HPCF_SAMPLE_DEFAULT #sample_list_default[0]
+    qc_brand_default=brand_default
+    qc_headphone_default=headphone_default
+    qc_sample_default=sample_default
+    #make updates for dynamic defaults in constants dict
+    CN.DEFAULTS.update({
+        "fde_hpcf_brand": brand_default,
+        "fde_hpcf_headphone": headphone_default,
+        "fde_hpcf_sample": sample_default,
+        "qc_hpcf_brand": qc_brand_default,
+        "qc_hpcf_headphone": qc_headphone_default,
+        "qc_hpcf_sample": qc_sample_default,
+    })
+    
+    #used for hpcf related callback functions, dict is stored as user data in a gui element  
+    # store database info and connections in user data dict for GUI
+    hpcf_db_dict = {
+        'database_ash': database_ash,
+        'conn_ash': conn_ash,
+        'database_comp': database_comp,
+        'conn_comp': conn_comp,
+        'database': database_ash,           # currently active database
+        'conn': conn_ash,                   # currently active connection
+        'brands_list_default': brands_list_default,#used in reset function
+        'hp_list_default': hp_list_default,
+        'sample_list_default': sample_list_default,
+        'brand_default': brand_default,
+        'headphone_default': headphone_default,
+        'sample_default': sample_default
+    }
+    
+    
+    #generate flat response
+    impulse=np.zeros(CN.N_FFT)
+    impulse[0]=1
+    fr_flat_mag = np.abs(np.fft.fft(impulse))
+    
+    
+    
+  
+    
+    #thread variables
+    e_apo_conf_lock = threading.Lock()
+    
+    #
+    # Path handling
+    #
+    #get equalizer APO path
+    primary_path, primary_ash_path, e_apo_path = get_primary_paths()
+    qc_primary_path=primary_path
+    
+    #load settings from settings file, stores in a dict
+    loaded_values = cb.load_settings()
+
+    #overwrite paths if user values differ from defaults
+    default_path = CN.DEFAULTS["path"]
+    loaded_path = loaded_values.get("path", default_path)
+    
+    # --- Resolve active path ---
+    if os.path.normcase(loaded_path) != os.path.normcase(default_path):
+        active_path = loaded_path
+        hf.log_with_timestamp(f"Using user-saved path for filter and dataset exports: {active_path}")
+    else:
+        active_path = primary_path
+        hf.log_with_timestamp(f"No custom path found. Using detected primary path for filter and dataset exports: {active_path}")
+
+    primary_path = active_path
+    primary_ash_path = pjoin(primary_path, CN.PROJECT_FOLDER)
+    
+    #path handling continued
+    #set hesuvi path
+    if 'EqualizerAPO' in primary_path:
+        primary_hesuvi_path = pjoin(primary_path,'HeSuVi')#stored outside of project folder (within hesuvi installation)
+    else:
+        primary_hesuvi_path = pjoin(primary_path, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
+    
+    
+
+
+    #QC loaded hp and sample lists based on loaded brand and headphone
+    qc_active_database = loaded_values['qc_hpcf_active_database']
+    loaded_values['fde_hpcf_active_database'] = loaded_values['qc_hpcf_active_database']#ensure both are aligned
+    # --- Validate lists and values ---
+    if qc_active_database == CN.HPCF_DATABASE_LIST[0]:#which database is active?
+        hpcf_db_dict['conn'] = conn_ash
+        
+        qc_brands_list_loaded = hpcf_functions.get_brand_list(conn_ash)
+        qc_brands_list_loaded, loaded_values["qc_hpcf_brand"] = hf.ensure_valid_selection( qc_brands_list_loaded, loaded_values.get("qc_hpcf_brand", ""))
+        qc_hp_list_loaded = hpcf_functions.get_headphone_list(conn_ash, loaded_values["qc_hpcf_brand"])#
+        qc_hp_list_loaded, loaded_values["qc_hpcf_headphone"] = hf.ensure_valid_selection(qc_hp_list_loaded, loaded_values.get("qc_hpcf_headphone", ""))
+        qc_sample_list_loaded = hpcf_functions.get_samples_list(conn_ash, loaded_values["qc_hpcf_headphone"])
+        qc_sample_list_loaded, loaded_values["qc_hpcf_sample"] = hf.ensure_valid_selection(qc_sample_list_loaded, loaded_values.get("qc_hpcf_sample", ""))
+        
+        fde_brands_list_loaded = hpcf_functions.get_brand_list(conn_ash)
+        fde_brands_list_loaded, loaded_values["fde_hpcf_brand"] = hf.ensure_valid_selection( fde_brands_list_loaded, loaded_values.get("fde_hpcf_brand", ""))
+        fde_hp_list_loaded = hpcf_functions.get_headphone_list(conn_ash, loaded_values["fde_hpcf_brand"])#
+        fde_hp_list_loaded, loaded_values["fde_hpcf_headphone"] = hf.ensure_valid_selection(fde_hp_list_loaded, loaded_values.get("fde_hpcf_headphone", ""))
+        fde_sample_list_loaded = hpcf_functions.get_samples_list(conn_ash, loaded_values["fde_hpcf_headphone"])
+        fde_sample_list_loaded, loaded_values["fde_hpcf_sample"] = hf.ensure_valid_selection(fde_sample_list_loaded, loaded_values.get("fde_hpcf_sample", ""))
+    else:
+        hpcf_db_dict['conn'] = conn_comp
+        
+        qc_brands_list_loaded = hpcf_functions.get_brand_list(conn_comp)
+        qc_brands_list_loaded, loaded_values["qc_hpcf_brand"] = hf.ensure_valid_selection( qc_brands_list_loaded, loaded_values.get("qc_hpcf_brand", ""))
+        qc_hp_list_loaded = hpcf_functions.get_headphone_list(conn_comp, loaded_values["qc_hpcf_brand"])#
+        qc_hp_list_loaded, loaded_values["qc_hpcf_headphone"] = hf.ensure_valid_selection(qc_hp_list_loaded, loaded_values.get("qc_hpcf_headphone", ""))
+        qc_sample_list_loaded = hpcf_functions.get_samples_list(conn_comp, loaded_values["qc_hpcf_headphone"])
+        qc_sample_list_loaded, loaded_values["qc_hpcf_sample"] = hf.ensure_valid_selection(qc_sample_list_loaded, loaded_values.get("qc_hpcf_sample", ""))
+        
+        fde_brands_list_loaded = hpcf_functions.get_brand_list(conn_comp)
+        fde_brands_list_loaded, loaded_values["fde_hpcf_brand"] = hf.ensure_valid_selection( fde_brands_list_loaded, loaded_values.get("fde_hpcf_brand", ""))
+        fde_hp_list_loaded = hpcf_functions.get_headphone_list(conn_comp, loaded_values["fde_hpcf_brand"])#
+        fde_hp_list_loaded, loaded_values["fde_hpcf_headphone"] = hf.ensure_valid_selection(fde_hp_list_loaded, loaded_values.get("fde_hpcf_headphone", ""))
+        fde_sample_list_loaded = hpcf_functions.get_samples_list(conn_comp, loaded_values["fde_hpcf_headphone"])
+        fde_sample_list_loaded, loaded_values["fde_hpcf_sample"] = hf.ensure_valid_selection(fde_sample_list_loaded, loaded_values.get("fde_hpcf_sample", ""))
+        
+
+  
+    #grab loaded settings for dynamic lists (hrtf lists)
+    fde_brir_hrtf_type_loaded=loaded_values["fde_brir_hrtf_type"]
+    fde_brir_hrtf_dataset_loaded=loaded_values["fde_brir_hrtf_dataset"]
+    fde_hrtf_loaded=loaded_values["fde_brir_hrtf"]
+    fde_brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(fde_brir_hrtf_type_loaded) or []
+    qc_brir_hrtf_type_loaded=loaded_values["qc_brir_hrtf_type"]
+    qc_brir_hrtf_dataset_loaded=loaded_values["qc_brir_hrtf_dataset"]
+    qc_hrtf_loaded =loaded_values["qc_brir_hrtf"]
+    qc_brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get(qc_brir_hrtf_type_loaded) or []
+  
+
+    
+    #listener related buttons are dynamic
+    add_fav_button_show=True
+    remove_fav_button_show=False
+    sofa_folder_button_show=False
+    qc_add_fav_button_show=True
+    qc_remove_fav_button_show=False
+    qc_sofa_folder_button_show=False
+
+    
+    if fde_brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
+        add_fav_button_show=False
+        remove_fav_button_show=True     
+    elif fde_brir_hrtf_type_loaded == 'User SOFA Input':
+        sofa_folder_button_show=True
+        
+    if fde_brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
+        hrtf_list_loaded = loaded_values["hrtf_list_favs"]
+    else:
+        hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=fde_brir_hrtf_type_loaded, dataset_name=fde_brir_hrtf_dataset_loaded)
+
+    if qc_brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
+        qc_add_fav_button_show=False
+        qc_remove_fav_button_show=True
+    elif qc_brir_hrtf_type_loaded == 'User SOFA Input':
+        qc_sofa_folder_button_show=True
+        
+    if qc_brir_hrtf_type_loaded == 'Favourites':#use loaded favourites list if favourites selected
+        qc_hrtf_list_loaded = loaded_values["hrtf_list_favs"]
+    else:
+        qc_hrtf_list_loaded = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_loaded, dataset_name=qc_brir_hrtf_dataset_loaded)
+
+
+    #export options are dynamic
+    #adjust hrtf list based on loaded spatial resolution
+    #also adjust file export selection
+    dir_brir_exp_show=True
+    ts_brir_exp_show=True
+    hesuvi_brir_exp_show=True
+    eapo_brir_exp_show=True
+    sofa_brir_exp_show=True
+    dir_brir_tooltip_show=True
+    ts_brir_tooltip_show=True
+    hesuvi_brir_tooltip_show=True
+    multi_chan_brir_tooltip_show=True
+    sofa_brir_tooltip_show=True
+    
+    if loaded_values["fde_brir_spat_res"] == 'Medium' or loaded_values["fde_brir_spat_res"] == 'Low':
+        loaded_values["sofa_brir_toggle"] =False
+        sofa_brir_exp_show=False
+        sofa_brir_tooltip_show=False
+    spatial_res_list_loaded=CN.SPATIAL_RES_LIST_LIM
+
+
+    # ----- List validation ------
+    
+    #validate that loaded strings are within associated lists - dynamic lists
+    fde_brir_hrtf_dataset_loaded = hf.validate_choice(fde_brir_hrtf_dataset_loaded, fde_brir_hrtf_dataset_list_loaded)
+    qc_brir_hrtf_dataset_loaded = hf.validate_choice(qc_brir_hrtf_dataset_loaded, qc_brir_hrtf_dataset_list_loaded)
+    fde_hrtf_loaded = hf.validate_choice(fde_hrtf_loaded, hrtf_list_loaded)
+    qc_hrtf_loaded = hf.validate_choice(qc_hrtf_loaded, qc_hrtf_list_loaded)
+
+    # Define which additional keys need list validation and their valid option lists - static lists
+    VALIDATION_MAP = {
+        "fde_acoustic_space": CN.AC_SPACE_LIST_GUI,
+        "qc_acoustic_space": CN.AC_SPACE_LIST_GUI,
+        "fde_room_target": CN.ROOM_TARGET_LIST,
+        "qc_room_target": CN.ROOM_TARGET_LIST,
+        "fde_brir_hp_type": CN.HP_COMP_LIST,
+        "qc_brir_hp_type": CN.HP_COMP_LIST,
+        "fde_sub_response": CN.SUB_RESPONSE_LIST_GUI,
+        "qc_sub_response": CN.SUB_RESPONSE_LIST_GUI,
+        # "fde_brir_hrtf_dataset": CN.HRTF_TYPE_DATASET_DICT.get(CN.HRTF_TYPE_DEFAULT, []),
+        # "qc_brir_hrtf_dataset": CN.HRTF_TYPE_DATASET_DICT.get(CN.HRTF_TYPE_DEFAULT, []),
+    }
+    # Validate list-based settings after loading 
+    for key, valid_list in VALIDATION_MAP.items():
+        if key in loaded_values:
+            loaded_values[key] = hf.validate_choice(loaded_values[key], valid_list)
+
+
+
+    #
+    # Equalizer APO related code
+    #
+    elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
+  
+    
+ 
     
    
     
@@ -942,18 +542,7 @@ def main():
 
     # add a font registry
     with dpg.font_registry():
-        # first argument ids the path to the .ttf or .otf file
-        # in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Medium.ttf')#SourceSansPro-Regular
-        # default_font = dpg.add_font(in_file_path, 14)    
-        # in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
-        # bold_font = dpg.add_font(in_file_path, 14)
-        # in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
-        # bold_small_font = dpg.add_font(in_file_path, 13) 
-        # in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Bold.ttf')#SourceSansPro-Regular
-        # large_font = dpg.add_font(in_file_path, 16)    
-        # in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Lato-Medium.ttf')#SourceSansPro-Regular
-        # small_font = dpg.add_font(in_file_path, 13)
-        
+ 
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Roboto-Medium.ttf')#
         default_font = dpg.add_font(in_file_path, 14)    
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Roboto-Bold.ttf')#
@@ -961,14 +550,17 @@ def main():
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Roboto-Bold.ttf')#
         bold_small_font = dpg.add_font(in_file_path, 13) 
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Roboto-Bold.ttf')#
-        large_font = dpg.add_font(in_file_path, 16)    
+        large_font = dpg.add_font(in_file_path, 16)  
+        in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Roboto-Bold.ttf')#
+        med_font = dpg.add_font(in_file_path, 15)
         in_file_path = pjoin(CN.DATA_DIR_EXT,'font', 'Roboto-Medium.ttf')#
         small_font = dpg.add_font(in_file_path, 13)
         
         
-
-    dpg.create_viewport(title='Audio Spatialisation for Headphones', width=gui_win_width_loaded, height=gui_win_height_loaded, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
+    #crete viewport
+    viewport = dpg.create_viewport(title='Audio Spatialisation for Headphones', width=gui_win_width_loaded, height=gui_win_height_loaded, small_icon=CN.ICON_LOCATION, large_icon=CN.ICON_LOCATION)
     
+    #All elements fall within primary window
     with dpg.window(tag="Primary Window", horizontal_scrollbar=True):
         
         # set font of app
@@ -996,6 +588,13 @@ def main():
                 dpg.add_theme_color(dpg.mvThemeCol_Header, (138, 138, 62), category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, (135, 163, 78), category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, (138, 138, 62), category=dpg.mvThemeCat_Core)
+        with dpg.theme(tag="__theme_d"):
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(0.6, 0.15, 0.3))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(0.6, 0.15, 0.6))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(0.6, 0.15, 0.5))
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 2, 2)
         with dpg.theme(tag="__theme_f"):
             i=3.9
             with dpg.theme_component(dpg.mvAll):
@@ -1045,7 +644,18 @@ def main():
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(j/7.0, 0.3*k, 0.5)) 
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, _hsv_to_rgb(j/7.0, 0.7*k, 0.7))
                 dpg.add_theme_color(dpg.mvThemeCol_PlotHistogram, _hsv_to_rgb(i/7.0, 0.2, 0.55)) 
-        
+        with dpg.theme(tag="__theme_k"):
+            i=4.2#i=3
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.3, 0.3))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.5))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.6, 0.4))
+        with dpg.theme(tag="__theme_l"):
+            i=3.8
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _hsv_to_rgb(i/7.0, 0.3, 0.3))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, _hsv_to_rgb(i/7.0, 0.8, 0.5))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, _hsv_to_rgb(i/7.0, 0.6, 0.4))
         with dpg.theme() as modern_theme:
             i=3.9
             j=3.9
@@ -1082,6 +692,9 @@ def main():
         
         dpg.bind_theme(modern_theme)#global_theme
         
+   
+        
+        # ---- main GUI code ------
         with dpg.tab_bar(tag='tab_bar'):
 
             with dpg.tab(label="Quick Configuration",tag='quick_config', parent="tab_bar"): 
@@ -1091,32 +704,30 @@ def main():
                     #Section for HpCF Export
                     with dpg.child_window(width=550, height=610):
                         title_1_qc = dpg.add_text("Headphone Correction")
-                        dpg.bind_item_font(title_1_qc, bold_font)
+                        dpg.bind_item_font(title_1_qc, med_font)
                         with dpg.child_window(autosize_x=True, height=390):
                             
 
                             
                             with dpg.group(horizontal=True):
-                                with dpg.group():
-                                    subtitle_1_qc = dpg.add_text("Select Headphone & Sample", tag='qc_hpcf_title')
-                                    with dpg.tooltip("qc_hpcf_title"):
-                                        dpg.add_text("Select a headphone from below list")
-                                    dpg.bind_item_font(subtitle_1_qc, bold_font)
-                                dpg.add_text("                                                      ")
-                                dpg.add_checkbox(label="Show History", default_value = show_hpcf_history_loaded,  tag='qc_toggle_hpcf_history', callback=cb.qc_show_hpcf_history)
+                                
+                                dpg.add_text("Headphone Database: ")
+                                dpg.add_combo(CN.HPCF_DATABASE_LIST,  tag= "qc_hpcf_active_database", default_value=loaded_values["qc_hpcf_active_database"], callback=cb.change_hpcf_database_callback, width=140)
+                   
+                               
+                                dpg.add_text("             ")
+                                dpg.add_checkbox(label="Show History", default_value=loaded_values["qc_toggle_hpcf_history"], tag='qc_toggle_hpcf_history', callback=cb.qc_show_hpcf_history)
+
                                 with dpg.tooltip("qc_toggle_hpcf_history"):
                                     dpg.add_text("Shows previously applied headphones")
                                 dpg.add_text("     ")
                                 
-                                #dpg.add_button(label="Clear History",user_data="",tag="qc_clear_history", callback=cb.remove_hpcfs)
                                 # Button to trigger the popup
                                 dpg.add_button(label="Clear History", user_data="", tag="qc_clear_history_button",
                                                callback=lambda: dpg.configure_item("qc_clear_history_popup", show=True))
-                                
                                 # Optional tooltip
                                 with dpg.tooltip("qc_clear_history_button"):
                                     dpg.add_text("Clear headphone correction history")
-                                
                                 # Confirmation popup
                                 with dpg.popup("qc_clear_history_button", modal=True, mousebutton=dpg.mvMouseButton_Left, tag="qc_clear_history_popup"):
                                     dpg.add_text("This will clear headphone correction history")
@@ -1124,36 +735,35 @@ def main():
                                     with dpg.group(horizontal=True):
                                         dpg.add_button(label="OK", width=75, callback=cb.remove_hpcfs)
                                         dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("qc_clear_history_popup", show=False))
-                                
-                                
+                
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
-                                dpg.add_text("Search Brand:")
+                                dpg.add_text("Search Brand:", tag='qc_hpcf_brand_search_title')
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_text(label="", callback=cb.qc_filter_brand_list, width=105)
-                                dpg.add_text("Search Headphone:")
+                                dpg.add_input_text(label="", callback=cb.filter_brand_list, width=105, tag='qc_hpcf_brand_search')
+                                dpg.add_text("Search Headphone:", tag='qc_hpcf_headphone_search_title')
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_text(label="", callback=cb.qc_filter_headphone_list, width=209)
+                                dpg.add_input_text(label="", callback=cb.filter_headphone_list, width=209, tag='qc_hpcf_headphone_search')
                             with dpg.group(horizontal=True, width=0):
                                 with dpg.group():
-                                    dpg.add_text("Brand")
+                                    dpg.add_text("Brand", tag='qc_hpcf_brand_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_listbox(brands_list, width=135, num_items=16, tag='qc_brand_list', default_value=qc_brand_loaded, callback=cb.qc_update_headphone_list)
+                                    dpg.add_listbox(qc_brands_list_loaded, width=135, num_items=16, tag='qc_hpcf_brand', default_value=loaded_values["qc_hpcf_brand"], callback=cb.qc_update_headphone_list)
                                 with dpg.group():
-                                    dpg.add_text("Headphone")
+                                    dpg.add_text("Headphone", tag='qc_hpcf_headphone_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_listbox(qc_hp_list_loaded, width=250, num_items=16, tag='qc_headphone_list', default_value=qc_headphone_loaded ,callback=cb.qc_update_sample_list)
+                                    dpg.add_listbox(qc_hp_list_loaded, width=250, num_items=16, tag='qc_hpcf_headphone', default_value=loaded_values["qc_hpcf_headphone"] ,callback=cb.qc_update_sample_list)
                                 with dpg.group():
-                                    dpg.add_text("Sample")
+                                    dpg.add_text("Sample", tag='qc_hpcf_sample_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_listbox(qc_sample_list_loaded, width=115, num_items=16, default_value=qc_sample_loaded, tag='qc_sample_list', callback=cb.qc_plot_sample) 
+                                    dpg.add_listbox(qc_sample_list_loaded, width=115, num_items=16, default_value=loaded_values["qc_hpcf_sample"], tag='qc_hpcf_sample', callback=cb.qc_plot_sample) 
                         
-                        with dpg.child_window(autosize_x=True, height=176):
+                        with dpg.child_window(autosize_x=True, height=173):
                             with dpg.group(horizontal=True):
                                 subtitle_3_qc = dpg.add_text("Apply Headphone Correction in Equalizer APO")
                                 dpg.bind_item_font(subtitle_3_qc, bold_font)
                                 dpg.add_text("                                    ")
-                                dpg.add_checkbox(label="Auto Apply Selection", default_value = e_apo_autoapply_hpcf_loaded,  tag='qc_auto_apply_hpcf_sel', callback=cb.e_apo_auto_apply_hpcf)
+                                dpg.add_checkbox(label="Auto Apply Selection", default_value = loaded_values["qc_auto_apply_hpcf_sel"],  tag='qc_auto_apply_hpcf_sel', callback=cb.e_apo_auto_apply_hpcf)
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
                                 dpg.add_button(label=CN.PROCESS_BUTTON_HPCF,user_data="",tag="qc_hpcf_tag", callback=cb.qc_apply_hpcf_params, width=145)
@@ -1164,21 +774,21 @@ def main():
                                 dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=30, width=356, overlay=CN.PROGRESS_START, tag="qc_progress_bar_hpcf")
                                 dpg.bind_item_theme(dpg.last_item(), "__theme_h")
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="Enable Headphone Correction", default_value = e_apo_enable_hpcf_loaded,  tag='e_apo_hpcf_conv', callback=cb.e_apo_toggle_hpcf_gui, user_data=e_apo_conf_lock )
+                                dpg.add_checkbox(label="Enable Headphone Correction", default_value = loaded_values["e_apo_hpcf_conv"],  tag='e_apo_hpcf_conv', callback=cb.e_apo_toggle_hpcf_gui, user_data=e_apo_conf_lock )
                                 #dpg.add_text("                                    ")
                                 
                             dpg.add_separator()
                             dpg.add_text("Current Filter: ")
                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                            dpg.add_text(default_value=e_apo_hpcf_curr_loaded,  tag='qc_e_apo_curr_hpcf')
+                            dpg.add_text(default_value=loaded_values["qc_e_apo_curr_hpcf"],  tag='qc_e_apo_curr_hpcf')
                             dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.bind_item_theme(dpg.last_item(), "__theme_f")
-                            dpg.add_text(default_value=e_apo_hpcf_sel_loaded, tag='qc_e_apo_sel_hpcf',show=False, user_data=hpcf_db_dict)
+                            dpg.add_text(default_value=loaded_values["qc_e_apo_sel_hpcf"], tag='qc_e_apo_sel_hpcf',show=False, user_data=hpcf_db_dict)
                             
                     #Section for BRIR generation
                     with dpg.child_window(width=534, height=610):
-                        title_2_qc = dpg.add_text("Binaural Room Simulation", tag='qc_brir_title',user_data=default_qc_brir_settings )
-                        dpg.bind_item_font(title_2_qc, bold_font)
+                        title_2_qc = dpg.add_text("Binaural Room Simulation", tag='qc_brir_title')
+                        dpg.bind_item_font(title_2_qc, med_font)
                         with dpg.tooltip("qc_brir_title"):
                             dpg.add_text("Customise a new binaural room simulation using below parameters")
                         with dpg.child_window(autosize_x=True, height=390):
@@ -1194,27 +804,27 @@ def main():
                                                 dpg.add_text("Sort by: ")
                                                 dpg.add_combo(CN.AC_SPACE_LIST_SORT_BY, width=140, label="",  tag='qc_sort_by_as',default_value=CN.AC_SPACE_LIST_SORT_BY[0], callback=cb.qc_sort_ac_space)
                                             
-                                            dpg.add_listbox(CN.AC_SPACE_LIST_GUI, label="",tag='qc_acoustic_space_combo',default_value=qc_ac_space_loaded, callback=cb.qc_update_ac_space, num_items=16, width=255)
+                                            dpg.add_listbox(CN.AC_SPACE_LIST_GUI, label="",tag='qc_acoustic_space',default_value=loaded_values["qc_acoustic_space"], callback=cb.qc_update_ac_space, num_items=16, width=255)
                                             with dpg.tooltip("qc_acoustic_space_title"):
                                                 dpg.add_text("This will determine the listening environment")
                                         with dpg.group():
                                             dpg.add_text("Direct Sound Gain (dB)", tag='qc_direct_gain_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='qc_direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=qc_direct_gain_loaded,min_clamped=True, max_clamped=True, callback=cb.qc_update_direct_gain)
+                                            dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='qc_direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=loaded_values["qc_direct_gain"],min_clamped=True, max_clamped=True, callback=cb.qc_update_direct_gain)
                                             with dpg.tooltip("qc_direct_gain_title"):
                                                 dpg.add_text("This will control the loudness of the direct signal")
                                                 dpg.add_text("Higher values result in lower perceived distance, lower values result in higher perceived distance")
-                                            dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=qc_direct_gain_loaded, width=140,clamped=True, no_input=True, format="", callback=cb.qc_update_direct_gain_slider, tag='qc_direct_gain_slider')
+                                            dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=loaded_values["qc_direct_gain_slider"], width=140,clamped=True, no_input=True, format="", callback=cb.qc_update_direct_gain_slider, tag='qc_direct_gain_slider')
                                             dpg.add_separator()
                                             dpg.add_text("Room Target", tag='qc_rm_target_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=qc_room_target_loaded, num_items=7, width=235, tag='qc_rm_target_list', callback=cb.qc_select_room_target)
+                                            dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=loaded_values["qc_room_target"], num_items=7, width=245, tag='qc_room_target', callback=cb.qc_select_room_target)
                                             with dpg.tooltip("qc_rm_target_title"):
                                                 dpg.add_text("This will influence the overall balance of low and high frequencies")
                                             dpg.add_separator()
                                             dpg.add_text("Headphone Compensation", tag='qc_brir_hp_type_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.HP_COMP_LIST, default_value=qc_brir_hp_type_loaded, num_items=4, width=235, callback=cb.qc_select_hp_comp, tag='qc_brir_hp_type')
+                                            dpg.add_listbox(CN.HP_COMP_LIST, default_value=loaded_values["qc_brir_hp_type"], num_items=4, width=245, callback=cb.qc_select_hp_comp, tag='qc_brir_hp_type')
                                             with dpg.tooltip("qc_brir_hp_type_title"):
                                                 dpg.add_text("This should align with the listener's headphone type")
                                                 dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised")
@@ -1224,7 +834,7 @@ def main():
                                         with dpg.group():
                                             dpg.add_text("Category", tag='qc_brir_hrtf_type_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_radio_button(brir_hrtf_type_list_default, horizontal=False, tag= "qc_brir_hrtf_type", default_value=qc_brir_hrtf_type_loaded, callback=cb.qc_update_hrtf_dataset_list )
+                                            dpg.add_radio_button(CN.HRTF_TYPE_LIST, horizontal=False, tag= "qc_brir_hrtf_type", default_value=loaded_values["qc_brir_hrtf_type"], callback=cb.qc_update_hrtf_dataset_list )
                                             with dpg.tooltip("qc_brir_hrtf_type_title"):
                                                 dpg.add_text("User SOFA files must be placed in 'ASH Toolset\\_internal\\data\\user\\SOFA' folder")
                                             dpg.add_separator()
@@ -1232,6 +842,7 @@ def main():
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_listbox(qc_brir_hrtf_dataset_list_loaded, default_value=qc_brir_hrtf_dataset_loaded, num_items=10, width=255, callback=cb.qc_update_hrtf_list, tag='qc_brir_hrtf_dataset')
                                         with dpg.group():
+                                            dpg.add_loading_indicator(style=1, pos = (486,355), radius =1.9, color =(120,120,120),show=False, tag='qc_hrtf_average_fav_load_ind')
                                             dpg.add_text("Listener", tag='qc_brir_hrtf_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_listbox(qc_hrtf_list_loaded, default_value=qc_hrtf_loaded, num_items=16, width=240, callback=cb.qc_select_hrtf, tag='qc_brir_hrtf')
@@ -1242,16 +853,23 @@ def main():
                                                 dpg.add_button(label="Add Favourite", tag="qc_hrtf_add_favourite", callback=cb.add_hrtf_favourite_qc_callback,show=qc_add_fav_button_show)
                                                 #dpg.add_text("     ")
                                                 dpg.add_button(label="Remove Favourite", tag="qc_hrtf_remove_favourite", callback=cb.remove_hrtf_favourite_qc_callback,show=qc_remove_fav_button_show)
+                                                dpg.add_text("  ")
+                                                dpg.add_button(label="Create Average", tag="qc_hrtf_average_favourite", callback=cb.create_hrtf_favourite_avg,show=qc_remove_fav_button_show)
+                                                dpg.bind_item_theme(dpg.last_item(), "__theme_k")
+                                                with dpg.tooltip("qc_hrtf_average_favourite"):
+                                                    dpg.add_text("Creates an averaged HRTF by interpolating across favourite listeners")
+                                                    dpg.add_text("Uses higher quality interpolation and will take longer to run when no. listeners = 2")
+                                                dpg.add_button(label="Open Folder", tag="qc_open_user_sofa_folder", callback=cb.open_user_sofa_folder,show=qc_sofa_folder_button_show)
                                                 
                                 with dpg.tab(label="Low-frequency Extension",tag='qc_lfe_tab', parent="qc_brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
                                             dpg.add_text("Integration Crossover Frequency", tag='qc_crossover_f_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_combo(CN.SUB_FC_SETTING_LIST, default_value=qc_crossover_f_mode_loaded, width=130, callback=cb.qc_update_crossover_f, tag='qc_crossover_f_mode')
+                                            dpg.add_combo(CN.SUB_FC_SETTING_LIST, default_value=loaded_values["qc_crossover_f_mode"], width=130, callback=cb.qc_update_crossover_f, tag='qc_crossover_f_mode')
                                             with dpg.tooltip("qc_crossover_f_mode"):
                                                 dpg.add_text("Auto Select mode will select an optimal frequency for the selected acoustic space")
-                                            dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='qc_crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=qc_crossover_f_loaded,min_clamped=True, max_clamped=True, callback=cb.qc_update_crossover_f)
+                                            dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='qc_crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=loaded_values["qc_crossover_f"],min_clamped=True, max_clamped=True, callback=cb.qc_update_crossover_f)
                                             with dpg.tooltip("qc_crossover_f"):
                                                 dpg.add_text("Crossover Frequency can be adjusted to a value between 20Hz and 150Hz")
                                                 dpg.add_text("This can be used to tune the integration of the cleaner LF response and original room response")
@@ -1259,18 +877,18 @@ def main():
                                             dpg.add_separator()
                                             dpg.add_text("Response for Low-frequency Extension", tag='qc_sub_response_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=qc_sub_response_loaded, num_items=7, width=240, callback=cb.qc_select_sub_brir, tag='qc_sub_response')
+                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=loaded_values["qc_sub_response"], num_items=7, width=350, callback=cb.qc_select_sub_brir, tag='qc_sub_response')
                                             with dpg.tooltip("qc_sub_response_title"):
                                                 dpg.add_text("Refer to supporting information tab and filter preview for comparison")
                                             dpg.add_separator()
                                             dpg.add_text("Additonal EQ", tag='qc_hp_rolloff_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             with dpg.group(horizontal=True):
-                                                dpg.add_checkbox(label="Compensate Headphone Roll-off", default_value = qc_hp_rolloff_comp_loaded,  tag='qc_hp_rolloff_comp', callback=cb.qc_update_brir_param)
+                                                dpg.add_checkbox(label="Compensate Headphone Roll-off", default_value = loaded_values["qc_hp_rolloff_comp"],  tag='qc_hp_rolloff_comp', callback=cb.qc_update_brir_param)
                                                 with dpg.tooltip("qc_hp_rolloff_comp"):
                                                     dpg.add_text("This will compensate the typical reduction in bass response at lower frequencies")
                                                 dpg.add_text("      ")
-                                                dpg.add_checkbox(label="Forward-Backward Filtering", default_value = qc_fb_filtering_loaded,  tag='qc_fb_filtering', callback=cb.qc_update_brir_param)
+                                                dpg.add_checkbox(label="Forward-Backward Filtering", default_value = loaded_values["qc_fb_filtering"],  tag='qc_fb_filtering', callback=cb.qc_update_brir_param)
                                                 with dpg.tooltip("qc_fb_filtering"):
                                                     dpg.add_text("This will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases")
                                             
@@ -1278,7 +896,7 @@ def main():
                                             with dpg.group(horizontal=True):
                                                 with dpg.group():
                                                     dpg.add_text("Analysis", tag='qc_analysis_title')
-                                                    dpg.add_checkbox(label="Plot Integrated Response in Analysis Tab", default_value = qc_hp_rolloff_comp_loaded,  tag='qc_lf_analysis_toggle', callback=cb.qc_lf_analyse_toggle)
+                                                    dpg.add_checkbox(label="Plot Integrated Response in Analysis Tab", default_value = loaded_values["qc_lf_analysis_toggle"],  tag='qc_lf_analysis_toggle', callback=cb.qc_lf_analyse_toggle)
                                                 dpg.add_text("          ")
                                                 with dpg.group():
                                                     dpg.add_text("Plot Type", tag='qc_analysis_type_title')
@@ -1303,16 +921,17 @@ def main():
                                 dpg.add_progress_bar(label="Progress Bar", default_value=0.0, height=30, width=340, overlay=CN.PROGRESS_START, tag="qc_progress_bar_brir",user_data=CN.STOP_THREAD_FLAG)#user data is thread cancel flag
                                 dpg.bind_item_theme(dpg.last_item(), "__theme_h")
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = e_apo_enable_brir_loaded,  tag='e_apo_brir_conv', callback=cb.e_apo_toggle_brir_gui, user_data=[])#user data will be a dict list
+                                dpg.add_checkbox(label="Enable Binaural Room Simulation", default_value = loaded_values["e_apo_brir_conv"],  tag='e_apo_brir_conv', callback=cb.e_apo_toggle_brir_gui, user_data=[])#user data will be a dict list
                                 dpg.add_text("                                    ")
                      
                             dpg.add_separator()
                             dpg.add_text("Current Simulation: ")
                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                            dpg.add_text(default_value=e_apo_brir_curr_loaded,  tag='qc_e_apo_curr_brir_set' , wrap=506, user_data=False)#user data used for flagging use of below BRIR dict
+                            dpg.add_text(default_value=loaded_values["qc_e_apo_curr_brir_set"],  tag='qc_e_apo_curr_brir_set' , wrap=506, user_data=False)#user data used for flagging use of below BRIR dict
                             dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.bind_item_theme(dpg.last_item(), "__theme_f")
-                            dpg.add_text(default_value=e_apo_brir_sel_loaded, tag='qc_e_apo_sel_brir_set',show=False, user_data={})#user data used for storing snapshot of BRIR dict 
+                            dpg.add_text(default_value=loaded_values["qc_e_apo_sel_brir_set"], tag='qc_e_apo_sel_brir_set',show=False, user_data={})#user data used for storing snapshot of BRIR dict 
+                    
                     #right most section
                     with dpg.group():    
                         #Section for channel config, plotting
@@ -1327,20 +946,20 @@ def main():
                                                     dpg.bind_item_font(dpg.last_item(), bold_font)
                                                     dpg.add_text("Configure Audio Channels                                                              ")
                                                     dpg.add_text("Reset Configuration:  ")
-                                                    dpg.add_button(label="Reset to Default",  callback=reset_channel_config)
+                                                    dpg.add_button(label="Reset to Default",  callback=cb.reset_channel_config)
                                                 dpg.add_separator()
                                                 with dpg.group(horizontal=True):
                                                     dpg.add_text("Preamplification (dB) :  ")
-                                                    dpg.add_input_float(label=" ",format="%.1f", width=100,min_value=-100, max_value=20,min_clamped=True,max_clamped=True, tag='e_apo_gain_oa',default_value=e_apo_gain_oa_loaded, callback=cb.e_apo_adjust_preamp)
+                                                    dpg.add_input_float(label=" ",format="%.1f", width=100,min_value=-100, max_value=20,min_clamped=True,max_clamped=True, tag='e_apo_gain_oa',default_value=loaded_values["e_apo_gain_oa"], callback=cb.e_apo_adjust_preamp)
                                                     dpg.add_text("  ")
                                                 with dpg.group(horizontal=True):
                                                     dpg.add_text("Auto-Adjust Preamp: ")
-                                                    dpg.add_combo(CN.AUTO_GAIN_METHODS, label="", width=160, default_value = e_apo_prevent_clip_loaded,  tag='e_apo_prevent_clip', callback=cb.e_apo_config_acquire_gui)
+                                                    dpg.add_combo(CN.AUTO_GAIN_METHODS, label="", width=160, default_value = loaded_values["e_apo_prevent_clip"],  tag='e_apo_prevent_clip', callback=cb.e_apo_config_acquire_gui)
                                                     with dpg.tooltip("e_apo_prevent_clip"):
                                                         dpg.add_text("This will auto-adjust the preamp to prevent clipping or align low/mid frequency levels for 2.0 inputs")
                                                 with dpg.group(horizontal=True):
                                                     dpg.add_text("Audio Channels:  ")
-                                                    dpg.add_combo(CN.AUDIO_CHANNELS, width=180, label="",  tag='audio_channels_combo',default_value=audio_channels_loaded, callback=cb.e_apo_select_channels_gui)
+                                                    dpg.add_combo(CN.AUDIO_CHANNELS, width=180, label="",  tag='e_apo_audio_channels',default_value=loaded_values["e_apo_audio_channels"], callback=cb.e_apo_select_channels_gui)
                                                 with dpg.group(horizontal=True):
                                                     with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
                                                         borders_outerH=True, borders_innerH=True, no_host_extendX=True,
@@ -1399,11 +1018,11 @@ def main():
                                                                                 dpg.add_text('Rear channels are delayed by specified samples')
                                                                     elif j == 1:#peak gain
                                                                         if i == 0:
-                                                                            dpg.add_combo(CN.UPMIXING_METHODS, width=100, label="",  tag='e_apo_upmix_method',default_value=e_apo_upmix_method_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                            dpg.add_combo(CN.UPMIXING_METHODS, width=100, label="",  tag='e_apo_upmix_method',default_value=loaded_values["e_apo_upmix_method"], callback=cb.e_apo_config_acquire_gui)
                                                                         elif i == 1:
-                                                                            dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_side_delay',min_clamped=True,max_clamped=True, default_value=e_apo_side_delay_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                            dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_side_delay',min_clamped=True,max_clamped=True, default_value=loaded_values["e_apo_side_delay"], callback=cb.e_apo_config_acquire_gui)
                                                                         elif i == 2:
-                                                                            dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_rear_delay',min_clamped=True,max_clamped=True, default_value=e_apo_rear_delay_loaded, callback=cb.e_apo_config_acquire_gui)  
+                                                                            dpg.add_input_int(label=" ", width=100,min_value=-100, max_value=100, tag='e_apo_rear_delay',min_clamped=True,max_clamped=True, default_value=loaded_values["e_apo_rear_delay"], callback=cb.e_apo_config_acquire_gui)  
                                                                         
                                                 with dpg.group(horizontal=True):
                                                     with dpg.group():
@@ -1444,85 +1063,85 @@ def main():
                                                                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                                                         if j == 1:#Mute
                                                                             if i == 0:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fl',default_value=e_apo_mute_fl_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fl',default_value=loaded_values["e_apo_mute_fl"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                             elif i == 1:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fr',default_value=e_apo_mute_fr_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_fr',default_value=loaded_values["e_apo_mute_fr"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                             elif i == 2:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_c',default_value=e_apo_mute_c_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_c',default_value=loaded_values["e_apo_mute_c"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                             elif i == 3:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sl',default_value=e_apo_mute_sl_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sl',default_value=loaded_values["e_apo_mute_sl"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                             elif i == 4:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sr',default_value=e_apo_mute_sr_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_sr',default_value=loaded_values["e_apo_mute_sr"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                             elif i == 5:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rl',default_value=e_apo_mute_rl_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rl',default_value=loaded_values["e_apo_mute_rl"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                             elif i == 6:
-                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rr',default_value=e_apo_mute_rr_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_selectable(label=" M ", width=30,tag='e_apo_mute_rr',default_value=loaded_values["e_apo_mute_rr"], callback=cb.e_apo_config_acquire_gui)
                                                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_c")
                                                                         if j == 2:#gain
                                                                             if i == 0:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fl',min_clamped=True,max_clamped=True, default_value=e_apo_gain_fl_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fl',min_clamped=True,max_clamped=True, default_value=loaded_values["e_apo_gain_fl"], callback=cb.e_apo_config_acquire_gui)
                                                                             elif i == 1:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_fr_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_fr',min_clamped=True,max_clamped=True,default_value=loaded_values["e_apo_gain_fr"], callback=cb.e_apo_config_acquire_gui)
                                                                             elif i == 2:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_c',min_clamped=True,max_clamped=True,default_value=e_apo_gain_c_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_c',min_clamped=True,max_clamped=True,default_value=loaded_values["e_apo_gain_c"], callback=cb.e_apo_config_acquire_gui)
                                                                             elif i == 3:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sl',min_clamped=True,max_clamped=True,default_value=e_apo_gain_sl_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sl',min_clamped=True,max_clamped=True,default_value=loaded_values["e_apo_gain_sl"], callback=cb.e_apo_config_acquire_gui)
                                                                             elif i == 4:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_sr_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_sr',min_clamped=True,max_clamped=True,default_value=loaded_values["e_apo_gain_sr"], callback=cb.e_apo_config_acquire_gui)
                                                                             elif i == 5:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rl',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rl_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rl',min_clamped=True,max_clamped=True,default_value=loaded_values["e_apo_gain_rl"], callback=cb.e_apo_config_acquire_gui)
                                                                             elif i == 6:
-                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rr',min_clamped=True,max_clamped=True,default_value=e_apo_gain_rr_loaded, callback=cb.e_apo_config_acquire_gui)
+                                                                                dpg.add_input_float(label=" ", format="%.1f", width=90,min_value=-100, max_value=20, tag='e_apo_gain_rr',min_clamped=True,max_clamped=True,default_value=loaded_values["e_apo_gain_rr"], callback=cb.e_apo_config_acquire_gui)
                                                                         if j == 3:#elevation
                                                                             if i == 0:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fl',default_value=e_apo_elev_angle_fl_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fl',default_value=loaded_values["e_apo_elev_angle_fl"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_fl"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 1:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fr',default_value=e_apo_elev_angle_fr_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_fr',default_value=loaded_values["e_apo_elev_angle_fr"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_fr"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 2:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_c',default_value=e_apo_elev_angle_c_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_c',default_value=loaded_values["e_apo_elev_angle_c"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_c"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 3:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sl',default_value=e_apo_elev_angle_sl_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sl',default_value=loaded_values["e_apo_elev_angle_sl"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_sl"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 4:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sr',default_value=e_apo_elev_angle_sr_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_sr',default_value=loaded_values["e_apo_elev_angle_sr"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_sr"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 5:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rl',default_value=e_apo_elev_angle_rl_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rl',default_value=loaded_values["e_apo_elev_angle_rl"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_rl"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 6:
-                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rr',default_value=e_apo_elev_angle_rr_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(elevation_list_sel, width=70, label="",  tag='e_apo_elev_angle_rr',default_value=loaded_values["e_apo_elev_angle_rr"], callback=cb.e_apo_activate_direction_gui)
                                                                                 with dpg.tooltip("e_apo_elev_angle_rr"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         if j == 4:#azimuth
                                                                             if i == 0:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=70, label="",  tag='e_apo_az_angle_fl',default_value=e_apo_az_angle_fl_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=70, label="",  tag='e_apo_az_angle_fl',default_value=loaded_values["e_apo_az_angle_fl"], callback=cb.e_apo_activate_direction_gui)
                                                                             elif i == 1:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=70, label="",  tag='e_apo_az_angle_fr',default_value=e_apo_az_angle_fr_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=70, label="",  tag='e_apo_az_angle_fr',default_value=loaded_values["e_apo_az_angle_fr"], callback=cb.e_apo_activate_direction_gui)
                                                                             elif i == 2:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=70, label="",  tag='e_apo_az_angle_c',default_value=e_apo_az_angle_c_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=70, label="",  tag='e_apo_az_angle_c',default_value=loaded_values["e_apo_az_angle_c"], callback=cb.e_apo_activate_direction_gui)
                                                                             elif i == 3:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=70, label="",  tag='e_apo_az_angle_sl',default_value=e_apo_az_angle_sl_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=70, label="",  tag='e_apo_az_angle_sl',default_value=loaded_values["e_apo_az_angle_sl"], callback=cb.e_apo_activate_direction_gui)
                                                                             elif i == 4:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=70, label="",  tag='e_apo_az_angle_sr',default_value=e_apo_az_angle_sr_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=70, label="",  tag='e_apo_az_angle_sr',default_value=loaded_values["e_apo_az_angle_sr"], callback=cb.e_apo_activate_direction_gui)
                                                                             elif i == 5:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=70, label="",  tag='e_apo_az_angle_rl',default_value=e_apo_az_angle_rl_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=70, label="",  tag='e_apo_az_angle_rl',default_value=loaded_values["e_apo_az_angle_rl"], callback=cb.e_apo_activate_direction_gui)
                                                                             elif i == 6:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=70, label="",  tag='e_apo_az_angle_rr',default_value=e_apo_az_angle_rr_loaded, callback=cb.e_apo_activate_direction_gui)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=70, label="",  tag='e_apo_az_angle_rr',default_value=loaded_values["e_apo_az_angle_rr"], callback=cb.e_apo_activate_direction_gui)
                                        
                                                     with dpg.drawlist(width=250, height=200, tag="channel_drawing"):
                                                         with dpg.draw_layer():
@@ -1535,45 +1154,45 @@ def main():
                                                                 dpg.draw_image('listener_image',[-30, -30],[30, 30])
                                                                 
                                                                 with dpg.draw_node(tag="fl_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_fl"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="fl_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_fl_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_fl"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('fl_image',[-12, -12],[12, 12])
                                                                         
                                                                 with dpg.draw_node(tag="fr_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_fr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_fr"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="fr_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_fr_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_fr"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('fr_image',[-12, -12],[12, 12])
                                                                 
                                                                 with dpg.draw_node(tag="c_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_c_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_c"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="c_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_c_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_c"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('c_image',[-12, -12],[12, 12])
                                                                         
                                                                 with dpg.draw_node(tag="sl_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_sl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_sl"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="sl_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_sl_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_sl"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('sl_image',[-12, -12],[12, 12])
                                                                         
                                                                 with dpg.draw_node(tag="sr_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_sr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_sr"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="sr_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_sr_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_sr"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('sr_image',[-12, -12],[12, 12])
                                                                         
                                                                 with dpg.draw_node(tag="rl_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_rl_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_rl"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="rl_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rl_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_rl"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('rl_image',[-12, -12],[12, 12])
                                                                         
                                                                 with dpg.draw_node(tag="rr_drawing"):
-                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
+                                                                    dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+(loaded_values["e_apo_az_angle_rr"]*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
                                                                     with dpg.draw_node(tag="rr_drawing_inner", user_data=45.0):
-                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(e_apo_az_angle_rr_loaded*-1))/180.0 , [0, 0, -1]))
+                                                                        dpg.apply_transform(dpg.last_item(), dpg.create_rotation_matrix(math.pi*(90.0+180-(loaded_values["e_apo_az_angle_rr"]*-1))/180.0 , [0, 0, -1]))
                                                                         dpg.draw_image('rr_image',[-12, -12],[12, 12])
                                                 
                                                   
@@ -1620,6 +1239,40 @@ def main():
                                             #initial plot
                                             hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=3)
                                             
+                                    with dpg.tab(label="Presets", parent="qc_inner_tab_bar",tag='qc_preset_tab'):
+                                        dpg.add_text("Manage Presets")
+                                        dpg.add_separator()
+                                        with dpg.group(horizontal=True):
+          
+                                            dpg.add_button(label="Load Preset", tag="qc_load_selected_preset", callback=cb.qc_load_selected_preset_callback)
+                                            dpg.add_text("     ")
+                                            dpg.add_button(label="Save Preset", tag="qc_save_preset", callback=cb.qc_save_preset_callback)
+                                            with dpg.tooltip("qc_save_preset"):
+                                                dpg.add_text("Saves current parameters as a preset")
+                                            dpg.add_text("     ")
+                                            dpg.add_button(label="Delete Preset", tag="qc_delete_selected_preset", callback=lambda: dpg.configure_item("qc_del_preset_popup", show=True))
+                                            with dpg.tooltip("qc_delete_selected_preset"):
+                                                dpg.add_text("Deletes the selected preset")
+                                            dpg.add_text("     ")
+                                            dpg.add_button(label="Rename Preset", tag="qc_rename_selected_preset", callback = cb.qc_rename_selected_preset_callback)
+                                            with dpg.tooltip("qc_rename_selected_preset"):
+                                                dpg.add_text("Enter new name in the text box")
+                                            dpg.add_input_text(label="", tag="qc_rename_selected_preset_text", width=190)
+                                
+                                        with dpg.popup("qc_delete_selected_preset", modal=True, mousebutton=dpg.mvMouseButton_Left, tag="qc_del_preset_popup"):
+                                            dpg.add_text("Selected preset will be deleted")
+                                            dpg.add_separator()
+                                            with dpg.group(horizontal=True):
+                                                dpg.add_button(label="OK", width=75, callback=cb.qc_delete_selected_preset_callback)
+                                                dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("qc_del_preset_popup", show=False))
+                                        dpg.add_listbox(
+                                            items=[],
+                                            tag="qc_preset_list",
+                                            width=574,
+                                            num_items=18
+                                        )
+                                        dpg.bind_item_font(dpg.last_item(), bold_small_font)
+ 
                                     
                      
                         #Section for misc settings
@@ -1650,12 +1303,12 @@ def main():
                                                 elif j == 1:#Sample Rate
                                                     with dpg.group(horizontal=True):
                                                         dpg.add_text("  ")
-                                                        dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=True, tag= "qc_wav_sample_rate", default_value=sample_freq_loaded, callback=cb.sync_wav_sample_rate )
+                                                        dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=True, tag= "qc_wav_sample_rate", default_value=loaded_values["qc_wav_sample_rate"], callback=cb.sync_wav_sample_rate )
                                                         dpg.add_text("  ")
                                                 elif j == 2:#Bit Depth
                                                     with dpg.group(horizontal=True):
                                                         dpg.add_text("  ")
-                                                        dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "qc_wav_bit_depth", default_value=bit_depth_loaded, callback=cb.sync_wav_bit_depth)
+                                                        dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "qc_wav_bit_depth", default_value=loaded_values["qc_wav_bit_depth"], callback=cb.sync_wav_bit_depth)
                                                         dpg.add_text("  ")
                             with dpg.child_window(width=590, height=72):
                                 dpg.add_text("Audio Device Configuration", tag='qc_ad_title')
@@ -1677,61 +1330,60 @@ def main():
                     #Section for HpCF Export
                     with dpg.child_window(width=550, height=610):
                         title_1 = dpg.add_text("Headphone Correction Filters")
-                        dpg.bind_item_font(title_1, bold_font)
+                        dpg.bind_item_font(title_1, med_font)
                         with dpg.child_window(autosize_x=True, height=390):
-                            subtitle_1 = dpg.add_text("Select a Headphone", tag='hpcf_title')
-                            with dpg.tooltip("hpcf_title"):
-                                dpg.add_text("Select a headphone from below list for filter export")
-                            dpg.bind_item_font(subtitle_1, bold_font)
+                            with dpg.group(horizontal=True):
+                                dpg.add_text("Headphone Database: ")
+                                dpg.add_combo(CN.HPCF_DATABASE_LIST,  tag= "fde_hpcf_active_database", default_value=loaded_values["fde_hpcf_active_database"], width=140, callback=cb.change_hpcf_database_callback)
+                            
+                         
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
-                                dpg.add_text("Search Brand:")
+                                dpg.add_text("Search Brand:", tag='fde_hpcf_brand_search_title')
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_text(label="", callback=cb.filter_brand_list, width=105)
-                                dpg.add_text("Search Headphone:")
+                                dpg.add_input_text(label="", callback=cb.filter_brand_list, width=105, tag='fde_hpcf_brand_search')
+                                dpg.add_text("Search Headphone:", tag='fde_hpcf_headphone_search_title')
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_input_text(label="", callback=cb.filter_headphone_list, width=209)
+                                dpg.add_input_text(label="", callback=cb.filter_headphone_list, width=209, tag='fde_hpcf_headphone_search')
                             with dpg.group(horizontal=True, width=0):
                                 with dpg.group():
-                                    dpg.add_text("Brand")
+                                    dpg.add_text("Brand", tag='fde_hpcf_brand_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_listbox(brands_list, width=135, num_items=16, tag='brand_list', callback=cb.update_headphone_list)
+                                    dpg.add_listbox(fde_brands_list_loaded, width=135, num_items=16, tag='fde_hpcf_brand', default_value=loaded_values["fde_hpcf_brand"], callback=cb.update_headphone_list)
                                 with dpg.group():
-                                    dpg.add_text("Headphone")
+                                    dpg.add_text("Headphone", tag='fde_hpcf_headphone_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_listbox(hp_list_default, width=250, num_items=16, tag='headphone_list', default_value=headphone_default ,callback=cb.update_sample_list)
+                                    dpg.add_listbox(fde_hp_list_loaded, width=250, num_items=16, tag='fde_hpcf_headphone', default_value=loaded_values["fde_hpcf_headphone"] ,callback=cb.update_sample_list)
                                 with dpg.group():
-                                    dpg.add_text("Sample")
+                                    dpg.add_text("Sample", tag='fde_hpcf_sample_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_listbox(sample_list_default, width=115, num_items=16, default_value=sample_default, tag='sample_list', user_data=headphone_default, callback=cb.plot_sample)
-                                    with dpg.tooltip("sample_list"):
+                                    dpg.add_listbox(fde_sample_list_loaded, width=115, num_items=16, tag='fde_hpcf_sample', default_value=loaded_values["fde_hpcf_sample"], callback=cb.plot_sample)
+                                    with dpg.tooltip("fde_hpcf_sample"):
                                         dpg.add_text("Note: all samples will be exported. Select a sample to preview")
                         with dpg.child_window(autosize_x=True, height=88):
                             subtitle_2 = dpg.add_text("Select Files to Include in Export")
                             dpg.bind_item_font(subtitle_2, bold_font)
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="WAV FIR Filters", default_value = fir_hpcf_exp_loaded, callback=cb.export_hpcf_file_toggle, tag='fir_hpcf_toggle')
+                                dpg.add_checkbox(label="WAV FIR Filters", default_value = loaded_values["fir_hpcf_toggle"], callback=cb.export_hpcf_file_toggle, tag='fir_hpcf_toggle')
                                 with dpg.tooltip("fir_hpcf_toggle"):
                                     dpg.add_text("Min phase FIRs in WAV format for convolution. 1 Channel")
                                     dpg.add_text("Required for Equalizer APO configuration updates")
-                                dpg.add_checkbox(label="WAV Stereo FIR Filters", default_value = fir_st_hpcf_exp_loaded, callback=cb.export_hpcf_file_toggle, tag='fir_st_hpcf_toggle')
+                                dpg.add_checkbox(label="WAV Stereo FIR Filters", default_value = loaded_values["fir_st_hpcf_toggle"], callback=cb.export_hpcf_file_toggle, tag='fir_st_hpcf_toggle')
                                 with dpg.tooltip("fir_st_hpcf_toggle"):
                                     dpg.add_text("Min phase FIRs in WAV format for convolution. 2 Channels")
-                                dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_hpcf_exp_loaded, callback=cb.export_hpcf_file_toggle, tag='eapo_hpcf_toggle')  
-                                with dpg.tooltip("eapo_hpcf_toggle"):
-                                    dpg.add_text("Equalizer APO configurations to perform convolution with FIR filters. Deprecated from V2.0.0 onwards")
-                            with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="Graphic EQ Filters (127 Bands)", default_value = geq_hpcf_exp_loaded, callback=cb.export_hpcf_file_toggle, tag='geq_hpcf_toggle')
-                                with dpg.tooltip("geq_hpcf_toggle"):
-                                    dpg.add_text("Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet")
-                                dpg.add_checkbox(label="Graphic EQ Filters (31 Bands)", default_value = geq_31_exp_loaded, callback=cb.export_hpcf_file_toggle, tag='geq_31_hpcf_toggle')
-                                with dpg.tooltip("geq_31_hpcf_toggle"):
-                                    dpg.add_text("Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO")
-                                dpg.add_checkbox(label="HeSuVi Filters", default_value = hesuvi_hpcf_exp_loaded, callback=cb.export_hpcf_file_toggle, tag='hesuvi_hpcf_toggle')
+                                dpg.add_checkbox(label="HeSuVi Filters", default_value = loaded_values["hesuvi_hpcf_toggle"], callback=cb.export_hpcf_file_toggle, tag='hesuvi_hpcf_toggle')
                                 with dpg.tooltip("hesuvi_hpcf_toggle"):
                                     dpg.add_text("Graphic EQ configurations with 103 bands. Compatible with HeSuVi. Saved in HeSuVi\\eq folder")
-                        with dpg.child_window(autosize_x=True, height=84):
+                            with dpg.group(horizontal=True):
+                                dpg.add_checkbox(label="Graphic EQ Filters (127 Bands)", default_value = loaded_values["geq_hpcf_toggle"], callback=cb.export_hpcf_file_toggle, tag='geq_hpcf_toggle')
+                                with dpg.tooltip("geq_hpcf_toggle"):
+                                    dpg.add_text("Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet")
+                                dpg.add_checkbox(label="Graphic EQ Filters (31 Bands)", default_value = loaded_values["geq_31_hpcf_toggle"], callback=cb.export_hpcf_file_toggle, tag='geq_31_hpcf_toggle')
+                                with dpg.tooltip("geq_31_hpcf_toggle"):
+                                    dpg.add_text("Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO")
+                                
+                        with dpg.child_window(autosize_x=True, height=82):
                             subtitle_3 = dpg.add_text("Export Correction Filters")
                             dpg.bind_item_font(subtitle_3, bold_font)
                             dpg.add_separator()
@@ -1748,7 +1400,7 @@ def main():
                     #Section for BRIR generation
                     with dpg.child_window(width=520, height=610):
                         title_2 = dpg.add_text("Binaural Room Simulation", tag='brir_title')
-                        dpg.bind_item_font(title_2, bold_font)
+                        dpg.bind_item_font(title_2, med_font)
                         with dpg.tooltip("brir_title"):
                             dpg.add_text("Customise a new binaural room simulation using below parameters")
                         with dpg.child_window(autosize_x=True, height=388):
@@ -1764,7 +1416,7 @@ def main():
                                             with dpg.group(horizontal=True):
                                                 dpg.add_text("Sort by: ")
                                                 dpg.add_combo(CN.AC_SPACE_LIST_SORT_BY, width=140, label="",  tag='sort_by_as',default_value=CN.AC_SPACE_LIST_SORT_BY[0], callback=cb.sort_ac_space)
-                                            dpg.add_listbox(CN.AC_SPACE_LIST_GUI, label="",tag='acoustic_space_combo',default_value=ac_space_loaded, callback=cb.update_ac_space, num_items=16, width=250)
+                                            dpg.add_listbox(CN.AC_SPACE_LIST_GUI, label="",tag='fde_acoustic_space',default_value=loaded_values["fde_acoustic_space"], callback=cb.update_ac_space, num_items=16, width=250)
                                             with dpg.tooltip("acoustic_space_title"):
                                                 dpg.add_text("This will determine the listening environment")
                                             
@@ -1772,21 +1424,21 @@ def main():
                                         with dpg.group():
                                             dpg.add_text("Direct Sound Gain (dB)", tag='direct_gain_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded,min_clamped=True, max_clamped=True, callback=cb.update_direct_gain)
+                                            dpg.add_input_float(label="Direct Gain (dB)",width=140, format="%.1f", tag='fde_direct_gain', min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=loaded_values["fde_direct_gain"],min_clamped=True, max_clamped=True, callback=cb.update_direct_gain)
                                             with dpg.tooltip("direct_gain_title"):
                                                 dpg.add_text("This will control the loudness of the direct signal")
                                                 dpg.add_text("Higher values result in lower perceived distance, lower values result in higher perceived distance")
-                                            dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=direct_gain_loaded, width=140,clamped=True, no_input=True, format="", callback=cb.update_direct_gain_slider, tag='direct_gain_slider')
+                                            dpg.add_slider_float(label="", min_value=CN.DIRECT_GAIN_MIN, max_value=CN.DIRECT_GAIN_MAX, default_value=loaded_values["fde_direct_gain_slider"], width=140,clamped=True, no_input=True, format="", callback=cb.update_direct_gain_slider, tag='fde_direct_gain_slider')
                                             dpg.add_separator()
                                             dpg.add_text("Room Target", tag='rm_target_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=room_target_loaded, num_items=6, width=230, tag='rm_target_list', callback=cb.select_room_target)
+                                            dpg.add_listbox(CN.ROOM_TARGET_LIST, default_value=loaded_values["fde_room_target"], num_items=6, width=235, tag='fde_room_target', callback=cb.select_room_target)
                                             with dpg.tooltip("rm_target_title"):
                                                 dpg.add_text("This will influence the overall balance of low and high frequencies")
                                             dpg.add_separator()
                                             dpg.add_text("Headphone Compensation", tag='brir_hp_type_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.HP_COMP_LIST, default_value=brir_hp_type_loaded, num_items=4, width=230, callback=cb.select_hp_comp, tag='brir_hp_type')
+                                            dpg.add_listbox(CN.HP_COMP_LIST, default_value=loaded_values["fde_brir_hp_type"], num_items=4, width=235, callback=cb.select_hp_comp, tag='fde_brir_hp_type')
                                             with dpg.tooltip("brir_hp_type_title"):
                                                 dpg.add_text("This should align with the listener's headphone type")
                                                 dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised")
@@ -1796,63 +1448,71 @@ def main():
                                         with dpg.group():
                                             dpg.add_text("Spatial Resolution", tag= "brir_spat_res_title")
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_radio_button(spatial_res_list_loaded, horizontal=True, tag= "brir_spat_res", default_value=spatial_res_loaded, callback=cb.select_spatial_resolution )
+                                            dpg.add_radio_button(spatial_res_list_loaded, horizontal=True, tag= "fde_brir_spat_res", default_value=loaded_values["fde_brir_spat_res"], callback=cb.select_spatial_resolution )
                                             with dpg.tooltip("brir_spat_res_title"):
                                                 dpg.add_text("Increasing resolution will increase number of directions available but will also increase processing time and dataset size")
                                                 dpg.add_text("'Low' is recommended unless additional directions or SOFA export is required")
+                                                dpg.add_text("Refer to Supporting Information tab for comparison")
                                             dpg.add_separator()    
                                             dpg.add_text("Category", tag='brir_hrtf_type_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_radio_button(brir_hrtf_type_list_default, horizontal=False, tag= "brir_hrtf_type", default_value=brir_hrtf_type_loaded, callback=cb.update_hrtf_dataset_list )
+                                            dpg.add_radio_button(CN.HRTF_TYPE_LIST, horizontal=False, tag= "fde_brir_hrtf_type", default_value=loaded_values["fde_brir_hrtf_type"], callback=cb.update_hrtf_dataset_list )
                                             with dpg.tooltip("brir_hrtf_type_title"):
                                                 dpg.add_text("User SOFA files must be placed in 'ASH Toolset\\_internal\\data\\user\\SOFA' folder")
                                             dpg.add_separator()
                                             dpg.add_text("Dataset", tag='brir_hrtf_dataset_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(brir_hrtf_dataset_list_loaded, default_value=brir_hrtf_dataset_loaded, num_items=7, width=255, callback=cb.update_hrtf_list, tag='brir_hrtf_dataset')
+                                            dpg.add_listbox(fde_brir_hrtf_dataset_list_loaded, default_value=fde_brir_hrtf_dataset_loaded, num_items=7, width=255, callback=cb.update_hrtf_list, tag='fde_brir_hrtf_dataset')
                                         with dpg.group():
-                                            
+                                            dpg.add_loading_indicator(style=1, pos = (480,355), radius =1.8, color =(120,120,120),show=False, tag='hrtf_average_fav_load_ind')
                                             dpg.add_text("Listener", tag='brir_hrtf_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(hrtf_list_loaded, default_value=hrtf_loaded, num_items=16, width=230, callback=cb.select_hrtf, tag='brir_hrtf')
+                                            dpg.add_listbox(hrtf_list_loaded, default_value=fde_hrtf_loaded, num_items=16, width=230, callback=cb.select_hrtf, tag='fde_brir_hrtf')
                                             with dpg.tooltip("brir_hrtf_title"):
                                                 dpg.add_text("This will influence the externalisation and localisation of sounds around the listener")
                                             with dpg.group(horizontal=True):
-                                                dpg.add_text("  ")
-                                                dpg.add_button(label="Add Favourite", tag="hrtf_add_favourite", callback=cb.add_hrtf_favourite_callback,user_data=hrtf_list_favs_loaded,show=add_fav_button_show)
+                                                dpg.add_text("")
+                                                dpg.add_button(label="Add Favourite", tag="hrtf_add_favourite", callback=cb.add_hrtf_favourite_callback,user_data=loaded_values["hrtf_list_favs"],show=add_fav_button_show)
                                                 #dpg.add_text("     ")
                                                 dpg.add_button(label="Remove Favourite", tag="hrtf_remove_favourite", callback=cb.remove_hrtf_favourite_callback,show=remove_fav_button_show)
+                                                dpg.add_text("  ")
+                                                dpg.add_button(label="Create Average", tag="hrtf_average_favourite", callback=cb.create_hrtf_favourite_avg,show=remove_fav_button_show)
+                                                dpg.bind_item_theme(dpg.last_item(), "__theme_l")
+                                                with dpg.tooltip("hrtf_average_favourite"):
+                                                    dpg.add_text("Creates an averaged HRTF by interpolating across favourite listeners")
+                                                    dpg.add_text("Uses higher quality interpolation and will take longer to run when no. listeners = 2")
+                                                dpg.add_button(label="Open Folder", tag="open_user_sofa_folder", callback=cb.open_user_sofa_folder,show=sofa_folder_button_show)
                                         
                                 with dpg.tab(label="Low-frequency Extension",tag='lfe_tab', parent="brir_tab_bar"): 
                                     with dpg.group(horizontal=True):
                                         with dpg.group():
                                             dpg.add_text("Integration Crossover Frequency", tag='crossover_f_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_combo(CN.SUB_FC_SETTING_LIST, default_value=crossover_f_mode_loaded, width=130, callback=cb.update_crossover_f, tag='crossover_f_mode')
-                                            with dpg.tooltip("crossover_f_mode"):
+                                            dpg.add_combo(CN.SUB_FC_SETTING_LIST, default_value=loaded_values["fde_crossover_f_mode"], width=130, callback=cb.update_crossover_f, tag='fde_crossover_f_mode')
+                                            with dpg.tooltip("fde_crossover_f_mode"):
                                                 dpg.add_text("Auto Select mode will select an optimal frequency for the selected acoustic space")
                                                 
-                                            dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=crossover_f_loaded,min_clamped=True, max_clamped=True, callback=cb.update_crossover_f)
-                                            with dpg.tooltip("crossover_f"):
+                                            dpg.add_input_int(label="Crossover Frequency (Hz)",width=140, tag='fde_crossover_f', min_value=CN.SUB_FC_MIN, max_value=CN.SUB_FC_MAX, default_value=loaded_values["fde_crossover_f"],min_clamped=True, max_clamped=True, callback=cb.update_crossover_f)
+                                            with dpg.tooltip("fde_crossover_f"):
                                                 dpg.add_text("Crossover Frequency can be adjusted to a value between 20Hz and 150Hz")
                                                 dpg.add_text("This can be used to tune the integration of the cleaner LF response and original room response")
                                                 dpg.add_text("Higher values may result in a smoother bass response")
                                             dpg.add_separator()
                                             dpg.add_text("Response for Low-frequency Extension", tag='sub_response_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
-                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=sub_response_loaded, num_items=9, width=240, callback=cb.select_sub_brir, tag='sub_response')
+                                            dpg.add_listbox(CN.SUB_RESPONSE_LIST_GUI, default_value=loaded_values["fde_sub_response"], num_items=9, width=350, callback=cb.select_sub_brir, tag='fde_sub_response')
                                             with dpg.tooltip("sub_response_title"):
                                                 dpg.add_text("Refer to supporting information tab and filter preview for comparison")
                                             dpg.add_separator()
                                             dpg.add_text("Additonal EQ", tag='hp_rolloff_title')
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             with dpg.group(horizontal=True):
-                                                dpg.add_checkbox(label="Compensate Headphone Roll-off", default_value = hp_rolloff_comp_loaded,  tag='hp_rolloff_comp', callback=cb.update_brir_param)
-                                                with dpg.tooltip("hp_rolloff_comp"):
+                                                dpg.add_checkbox(label="Compensate Headphone Roll-off", default_value = loaded_values["fde_hp_rolloff_comp"],  tag='fde_hp_rolloff_comp', callback=cb.update_brir_param)
+                                                with dpg.tooltip("fde_hp_rolloff_comp"):
                                                     dpg.add_text("This will compensate the typical reduction in bass response at lower frequencies")
                                                 dpg.add_text("      ")
-                                                dpg.add_checkbox(label="Forward-Backward Filtering", default_value = fb_filtering_loaded,  tag='fb_filtering', callback=cb.qc_update_brir_param)
-                                                with dpg.tooltip("fb_filtering"):
+                                                dpg.add_checkbox(label="Forward-Backward Filtering", default_value = loaded_values["fde_fb_filtering"],  tag='fde_fb_filtering', callback=cb.qc_update_brir_param)
+                                                with dpg.tooltip("fde_fb_filtering"):
                                                     dpg.add_text("This will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases")
                                             
                                             
@@ -1862,26 +1522,27 @@ def main():
                             dpg.bind_item_font(subtitle_5, bold_font)
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="Direction-specific WAV BRIRs", default_value = dir_brir_exp_loaded,  tag='dir_brir_toggle', callback=cb.export_brir_toggle, show=dir_brir_exp_show)
+                                dpg.add_checkbox(label="Direction-specific WAV BRIRs", default_value = loaded_values["dir_brir_toggle"],  tag='dir_brir_toggle', callback=cb.export_brir_toggle, show=dir_brir_exp_show)
                                 with dpg.tooltip("dir_brir_toggle", tag='dir_brir_tooltip', show=dir_brir_tooltip_show):
                                     dpg.add_text("Binaural Room Impulse Responses (BRIRs) in WAV format for convolution")
                                     dpg.add_text("2 channels per file. One file for each direction")
                                     dpg.add_text("Required for Equalizer APO configuration updates")
-                                dpg.add_checkbox(label="True Stereo WAV BRIR", default_value = ts_brir_exp_loaded,  tag='ts_brir_toggle', callback=cb.export_brir_toggle, show=ts_brir_exp_show)
+                                dpg.add_checkbox(label="True Stereo WAV BRIR", default_value = loaded_values["ts_brir_toggle"],  tag='ts_brir_toggle', callback=cb.export_brir_toggle, show=ts_brir_exp_show)
                                 with dpg.tooltip("ts_brir_toggle", tag='ts_brir_tooltip', show=ts_brir_tooltip_show):
                                     dpg.add_text("True Stereo BRIR in WAV format for convolution")
                                     dpg.add_text("4 channels. One file representing L and R speakers")
-                                dpg.add_checkbox(label="SOFA File", default_value = sofa_brir_exp_loaded,  tag='sofa_brir_toggle', callback=cb.export_brir_toggle, show=sofa_brir_exp_show)
+                                dpg.add_checkbox(label="SOFA File", default_value = loaded_values["sofa_brir_toggle"],  tag='sofa_brir_toggle', callback=cb.export_brir_toggle, show=sofa_brir_exp_show)
                                 with dpg.tooltip("sofa_brir_toggle", tag='sofa_brir_tooltip', show=sofa_brir_tooltip_show):
                                     dpg.add_text("BRIR dataset as a SOFA file")
                             with dpg.group(horizontal=True):
-                                dpg.add_checkbox(label="HeSuVi WAV BRIRs", default_value = hesuvi_brir_exp_loaded,  tag='hesuvi_brir_toggle', callback=cb.export_brir_toggle, show=hesuvi_brir_exp_show)  
+                                dpg.add_checkbox(label="HeSuVi WAV BRIRs", default_value = loaded_values["hesuvi_brir_toggle"],  tag='hesuvi_brir_toggle', callback=cb.export_brir_toggle, show=hesuvi_brir_exp_show)  
                                 with dpg.tooltip("hesuvi_brir_toggle", tag='hesuvi_brir_tooltip', show=hesuvi_brir_tooltip_show):
                                     dpg.add_text("BRIRs in HeSuVi compatible WAV format. 14 channels, 44.1kHz and 48kHz")
-                                dpg.add_checkbox(label="E-APO Configuration Files", default_value = eapo_brir_exp_loaded,  tag='eapo_brir_toggle', callback=cb.export_brir_toggle, show=eapo_brir_exp_show)
-                                with dpg.tooltip("eapo_brir_toggle", tag='eapo_brir_tooltip', show=eapo_brir_tooltip_show):
-                                    dpg.add_text("Equalizer APO configurations to perform convolution with BRIRs. Deprecated from V2.0.0 onwards")
-                        with dpg.child_window(autosize_x=True, height=86):
+                                    
+                                dpg.add_checkbox(label="16-Channel WAV BRIRs", default_value = loaded_values["multi_chan_brir_toggle"],  tag='multi_chan_brir_toggle', callback=cb.export_brir_toggle, show=eapo_brir_exp_show)
+                                with dpg.tooltip("multi_chan_brir_toggle", tag='multi_chan_brir_tooltip', show=multi_chan_brir_tooltip_show):
+                                    dpg.add_text("BRIRs in FFMPEG compatible WAV format. 16 channels")
+                        with dpg.child_window(autosize_x=True, height=83):
                             subtitle_6 = dpg.add_text("Generate and Export Binaural Dataset")
                             dpg.bind_item_font(subtitle_6, bold_font)
                             dpg.add_separator()
@@ -1924,9 +1585,9 @@ def main():
                                             hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=1)
                                         
                                                                         
-                                    with dpg.tab(label="HeSuVi Channel Configuration", parent="inner_tab_bar",tag='hcc_tab'):
-                                        dpg.add_text("Adjust source directions for HeSuVi export")
-                                        dpg.add_button(label="Reset to Default",  callback=reset_channel_config)
+                                    with dpg.tab(label="HeSuVi & Multichannel Configuration", parent="inner_tab_bar",tag='hcc_tab'):
+                                        dpg.add_text("Source directions for HeSuVi and 16-Channel exports")
+                                        dpg.add_button(label="Reset to Default",  callback=cb.reset_channel_config)
                                         with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
                                                             borders_outerH=True, borders_innerH=True, no_host_extendX=True,
                                                             borders_outerV=True, borders_innerV=True, delay_search=True):
@@ -1940,13 +1601,13 @@ def main():
                                                                     for j in range(3):
                                                                         if j == 0:#channel
                                                                             if i == 0:
-                                                                                dpg.add_text("L")
+                                                                                dpg.add_text("FL")
                                                                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                                                             elif i == 1:
-                                                                                dpg.add_text("R")
+                                                                                dpg.add_text("FR")
                                                                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                                                             elif i == 2:
-                                                                                dpg.add_text("C + SUB")
+                                                                                dpg.add_text("FC/SUB")
                                                                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                                                             elif i == 3:
                                                                                 dpg.add_text("SL")
@@ -1962,62 +1623,67 @@ def main():
                                                                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                                                         if j == 1:#elevation
                                                                             if i == 0:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_fl',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_fl',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_fl"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 1:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_fr',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_fr',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_fr"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 2:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_c',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_c',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_c"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 3:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_sl',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_sl',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_sl"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 4:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_sr',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_sr',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_sr"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 5:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_rl',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_rl',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_rl"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                             elif i == 6:
-                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_rr',default_value=e_apo_elev_angle_default)
+                                                                                dpg.add_combo(elevation_list_sel, width=80, label="",  tag='hesuvi_elev_angle_rr',default_value=CN.DEFAULTS["e_apo_elev_angle"])
                                                                                 with dpg.tooltip("hesuvi_elev_angle_rr"):
                                                                                     dpg.add_text(CN.TOOLTIP_ELEVATION)
                                                                         if j == 2:#azimuth
                                                                             if i == 0:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=80, label="",  tag='hesuvi_az_angle_fl',default_value=e_apo_az_angle_fl_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_FL_WAV, width=80, label="",  tag='hesuvi_az_angle_fl',default_value=CN.DEFAULTS["e_apo_az_angle_fl"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_fl"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
                                                                             elif i == 1:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=80, label="",  tag='hesuvi_az_angle_fr',default_value=e_apo_az_angle_fr_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_FR_WAV, width=80, label="",  tag='hesuvi_az_angle_fr',default_value=CN.DEFAULTS["e_apo_az_angle_fr"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_fr"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
                                                                             elif i == 2:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=80, label="",  tag='hesuvi_az_angle_c',default_value=e_apo_az_angle_c_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_C_WAV, width=80, label="",  tag='hesuvi_az_angle_c',default_value=CN.DEFAULTS["e_apo_az_angle_c"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_c"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
                                                                             elif i == 3:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=80, label="",  tag='hesuvi_az_angle_sl',default_value=e_apo_az_angle_sl_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_SL_WAV, width=80, label="",  tag='hesuvi_az_angle_sl',default_value=CN.DEFAULTS["e_apo_az_angle_sl"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_sl"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
                                                                             elif i == 4:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=80, label="",  tag='hesuvi_az_angle_sr',default_value=e_apo_az_angle_sr_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_SR_WAV, width=80, label="",  tag='hesuvi_az_angle_sr',default_value=CN.DEFAULTS["e_apo_az_angle_sr"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_sr"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
                                                                             elif i == 5:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=80, label="",  tag='hesuvi_az_angle_rl',default_value=e_apo_az_angle_rl_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_RL_WAV, width=80, label="",  tag='hesuvi_az_angle_rl',default_value=CN.DEFAULTS["e_apo_az_angle_rl"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_rl"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
                                                                             elif i == 6:
-                                                                                dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=80, label="",  tag='hesuvi_az_angle_rr',default_value=e_apo_az_angle_rr_default)
+                                                                                dpg.add_combo(CN.AZ_ANGLES_RR_WAV, width=80, label="",  tag='hesuvi_az_angle_rr',default_value=CN.DEFAULTS["e_apo_az_angle_rr"])
                                                                                 with dpg.tooltip("hesuvi_az_angle_rr"):
                                                                                     dpg.add_text(CN.TOOLTIP_AZIMUTH)
+                                                                                    
+                                        dpg.add_separator()
+                                        dpg.add_text("Channel Order for 16-Channel Exports")
+                                        with dpg.group():
+                                            dpg.add_listbox(label="", width=200, items=CN.PRESET_16CH_LABELS, num_items=7, default_value=CN.PRESET_16CH_LABELS[0], tag="mapping_16ch_wav")                                            
                                     
                                
                         #Section for Exporting files
@@ -2033,12 +1699,12 @@ def main():
                                 with dpg.group():
                                     dpg.add_text("Select Sample Rate")
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=True, tag= "wav_sample_rate", default_value=sample_freq_loaded, callback=cb.update_brir_param )
+                                    dpg.add_radio_button(CN.SAMPLE_RATE_LIST, horizontal=True, tag= "fde_wav_sample_rate", default_value=loaded_values["fde_wav_sample_rate"], callback=cb.sync_wav_sample_rate )
                                 #dpg.add_text("          ")
                                 with dpg.group():
                                     dpg.add_text("Select Bit Depth")
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
-                                    dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "wav_bit_depth", default_value=bit_depth_loaded, callback=cb.update_brir_param)
+                                    dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "fde_wav_bit_depth", default_value=loaded_values["fde_wav_bit_depth"], callback=cb.sync_wav_bit_depth)
                                     
                             #output locations
                             with dpg.child_window(width=371, height=139):
@@ -2062,6 +1728,7 @@ def main():
                                 with dpg.tooltip("selected_folder_ash"):
                                     dpg.add_text("Location to save correction filters and binaural datasets",tag="selected_folder_ash_tooltip")
                                 dpg.add_text(tag='selected_folder_base',show=False)
+                                dpg.add_text(tag='e_apo_program_path',show=False)
                                 dpg.add_text("HeSuVi Outputs:")
                                 dpg.bind_item_font(dpg.last_item(), bold_small_font)
                                 dpg.add_text(tag='selected_folder_hesuvi')
@@ -2074,6 +1741,7 @@ def main():
                             dpg.set_value('selected_folder_base', primary_path)
                             dpg.set_value('selected_folder_hesuvi', primary_hesuvi_path)
                             dpg.set_value('selected_folder_hesuvi_tooltip', primary_hesuvi_path)
+                            dpg.set_value('e_apo_program_path', e_apo_path)
     
 
                         
@@ -2153,7 +1821,7 @@ def main():
                                     with dpg.group():
                                         dpg.add_text("Desired Directions")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_input_int(label="", tag="unique_directions", width=120, default_value=1750, min_value=1000, max_value=3500)
+                                        dpg.add_input_int(label="", tag="unique_directions", width=120, default_value=2500, min_value=1000, max_value=3500)
                                         with dpg.tooltip("unique_directions"):
                                             dpg.add_text("Specify the desired number of source directions for spatial sampling")
                                             dpg.add_text("Min: 1000, Max: 3000. Decrease to reduce processing time")
@@ -2170,13 +1838,13 @@ def main():
                                     with dpg.group():
                                         dpg.add_text("Pitch Shift Range")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_input_float(label="Low", tag="pitch_range_low", width=120,default_value=0.0, min_value=-48.0, max_value=0.0, format="%.2f",min_clamped=True, max_clamped=True)
+                                        dpg.add_input_float(label="Low", tag="pitch_range_low", width=120,default_value=-12.0, min_value=-48.0, max_value=0.0, format="%.2f",min_clamped=True, max_clamped=True)
                                         with dpg.tooltip("pitch_range_low"):
                                             dpg.add_text("Set the minimum pitch shift in semitones (can be fractional)")
                                             dpg.add_text("Used to expand dataset with new simulated source directions")
                                             dpg.add_text("Only used in cases where few IRs are supplied")
                                             dpg.add_text("Min: -48, Max: 0")
-                                        dpg.add_input_float(label="High", tag="pitch_range_high", width=120,default_value=24.0, min_value=0.0, max_value=48.0, format="%.2f",min_clamped=True, max_clamped=True)
+                                        dpg.add_input_float(label="High", tag="pitch_range_high", width=120,default_value=12.0, min_value=0.0, max_value=48.0, format="%.2f",min_clamped=True, max_clamped=True)
                                         with dpg.tooltip("pitch_range_high"):
                                             dpg.add_text("Set the maximum pitch shift in semitones (can be fractional).")
                                             dpg.add_text("Used to expand dataset with new simulated source directions")
@@ -2186,7 +1854,7 @@ def main():
                                     with dpg.group():
                                         dpg.add_text("Pitch Shift Compensation")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_checkbox(label="Enable", tag="pitch_shift_comp")
+                                        dpg.add_checkbox(label="Enable", tag="pitch_shift_comp",default_value=True)
                                         with dpg.tooltip("pitch_shift_comp"):
                                             dpg.add_text("Enable to correct pitch of new directions after expanding dataset")
                                             dpg.add_text("This may introduce artefacts")
@@ -2444,7 +2112,7 @@ def main():
                         
             with dpg.tab(label="Supporting Information",tag='support_tab', parent="tab_bar"):    
                 dpg.bind_item_theme(dpg.last_item(), "__theme_j")
-                with dpg.collapsing_header(label="Acoustic Spaces", default_open=True):
+                with dpg.collapsing_header(label="Acoustic Spaces", default_open=False):
                     with dpg.child_window(auto_resize_x=True, auto_resize_y=True):
                         #dpg.add_text("Acoustic Spaces")
                         #dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2473,7 +2141,7 @@ def main():
                                     dpg.add_text(CN.AC_SPACE_DESCR[i], wrap=0)
                                     dpg.add_text(CN.AC_SPACE_DATASET[i], wrap=0)
                                 
-                with dpg.collapsing_header(label="Spatial Resolutions", default_open=True):
+                with dpg.collapsing_header(label="Spatial Resolutions", default_open=False):
                     with dpg.child_window(auto_resize_x=True, auto_resize_y=True):
                         #dpg.add_text("Spatial Resolutions")
                         dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2499,7 +2167,7 @@ def main():
                                             dpg.add_text(CN.SPATIAL_RES_AZIM_RNG[i])
                                         elif j == 4:#Azimuth Steps
                                             dpg.add_text(CN.SPATIAL_RES_AZIM_STP[i])
-                with dpg.collapsing_header(label="Low-frequency Responses", default_open=True):  
+                with dpg.collapsing_header(label="Low-frequency Responses", default_open=False):  
                     #Section to show sub brir information
                     with dpg.child_window(auto_resize_x=True, auto_resize_y=True):
                         #dpg.add_text("Subwoofer Responses")
@@ -2529,7 +2197,7 @@ def main():
                                     dpg.add_text(CN.SUB_RESPONSE_LIST_LISTENER[i])
                                     dpg.add_text(CN.SUB_RESPONSE_LIST_DATASET[i])
                              
-                with dpg.collapsing_header(label="Supported SOFA Conventions", default_open=True):
+                with dpg.collapsing_header(label="Supported SOFA Conventions", default_open=False):
                     with dpg.child_window(auto_resize_x=True, auto_resize_y=True):               
                         #dpg.add_text("Supported SOFA Conventions")
                         #dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2585,11 +2253,11 @@ def main():
                             #Section for database
                             with dpg.child_window(width=200, height=150):
                                 dpg.add_text("App")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
                                 dpg.add_text("Check for Updates on Start")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_checkbox(label="Auto Check for Updates", default_value = auto_check_updates_loaded,  tag='check_updates_start_tag', callback=cb.save_settings)
+                                dpg.add_checkbox(label="Auto Check for Updates", default_value = loaded_values["check_updates_start_toggle"],  tag='check_updates_start_toggle', callback=cb.save_settings)
                                 dpg.add_text("Check for App Updates")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_button(label="Check for Updates",user_data="",tag="app_version_tag", callback=cb.check_app_version)
@@ -2597,21 +2265,21 @@ def main():
                                     dpg.add_text("This will check for updates to the app and show versions in the log")   
                             with dpg.child_window(width=224, height=150):
                                 dpg.add_text("Headphone Correction Filters")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
                                 dpg.add_text("Check for Headphone Filter Updates")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_button(label="Check for Updates",user_data="",tag="hpcf_db_version_tag", callback=cb.check_db_version)
                                 with dpg.tooltip("hpcf_db_version_tag"):
-                                    dpg.add_text("This will check for updates to the headphone correction filter dataset and show versions in the log")
+                                    dpg.add_text("This will check for updates to the headphone correction filter datasets and show versions in the log")
                                 dpg.add_text("Download Latest Headphone Filters")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_button(label="Download Latest Dataset",user_data="",tag="hpcf_db_download_tag", callback=cb.download_latest_db)
+                                dpg.add_button(label="Download Latest Datasets",user_data="",tag="hpcf_db_download_tag", callback=cb.download_latest_db)
                                 with dpg.tooltip("hpcf_db_download_tag"):
-                                    dpg.add_text("This will download latest version of the dataset and replace local version")
+                                    dpg.add_text("This will download latest version of the datasets and replace local files")
                             with dpg.child_window(width=224, height=150):
                                 dpg.add_text("Acoustic Spaces")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
                                 dpg.add_text("Check for Acoustic Space Updates")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2625,7 +2293,7 @@ def main():
                                     dpg.add_text("This will download any updates to acoustic space datasets and replace local versions")
                             with dpg.child_window(width=224, height=150):
                                 dpg.add_text("HRTF Datasets")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
                                 dpg.add_text("Check for HRTF Dataset Updates")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2640,14 +2308,19 @@ def main():
                             #Section to reset settngs
                             with dpg.child_window(width=190, height=150):
                                 dpg.add_text("Inputs")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
                                 dpg.add_text("Reset All Settings to Default")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_button(label="Reset Settings",user_data="",tag="reset_settings_tag", callback=reset_settings)  
+                                dpg.add_button(label="Reset Settings",tag="reset_settings_tag", callback=cb.reset_settings)  
+                                dpg.add_text("Settings and Presets")
+                                dpg.add_button(label="Open Folder", tag="open_settings_folder_button", callback=cb.open_user_settings_folder)
+                                with dpg.tooltip("open_settings_folder_button"):
+                                    dpg.add_text("Opens the directory where the settings file is stored")
+  
                             with dpg.child_window(width=240, height=150):
                                 dpg.add_text("Outputs")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
                                 dpg.add_text("Delete All Exported Headphone Filters")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
@@ -2662,20 +2335,20 @@ def main():
                             #Section for misc settings
                             with dpg.child_window(width=340, height=150):
                                 dpg.add_text("Misc. Settings")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()    
                                 with dpg.group(horizontal=True):
                                     with dpg.group(): 
                                         dpg.add_text("Force Left/Right Symmetry")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_combo(CN.HRTF_SYM_LIST, default_value=hrtf_symmetry_loaded, width=130, callback=cb.qc_update_brir_param, tag='force_hrtf_symmetry')
+                                        dpg.add_combo(CN.HRTF_SYM_LIST, default_value=loaded_values["force_hrtf_symmetry"], width=130, callback=cb.qc_update_brir_param, tag='force_hrtf_symmetry')
                                         with dpg.tooltip("force_hrtf_symmetry"):
                                             dpg.add_text("This will mirror the left or right sides of the HATS / dummy head") 
                                             dpg.add_text("Applies to the direct sound. Reverberation is not modified") 
                                         dpg.add_text("Early Reflection Delay (ms)")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_input_float(label=" ",width=140, format="%.1f", tag='er_delay_time_tag', min_value=CN.ER_RISE_MIN, max_value=CN.ER_RISE_MAX, default_value=er_rise_loaded,min_clamped=True, max_clamped=True, callback=cb.qc_update_brir_param)
-                                        with dpg.tooltip("er_delay_time_tag"):
+                                        dpg.add_input_float(label=" ",width=140, format="%.1f", tag='er_delay_time', min_value=CN.ER_RISE_MIN, max_value=CN.ER_RISE_MAX, default_value=loaded_values["er_delay_time"],min_clamped=True, max_clamped=True, callback=cb.qc_update_brir_param)
+                                        with dpg.tooltip("er_delay_time"):
                                             dpg.add_text("This will increase the time between the direct sound and early reflections") 
                                             dpg.add_text("This can be used to increase perceived distance") 
                                             dpg.add_text("Min. 0ms, Max. 10ms")
@@ -2683,20 +2356,24 @@ def main():
                                     with dpg.group(): 
                                         dpg.add_text("SOFA Export Convention")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_combo(CN.SOFA_OUTPUT_CONV, default_value=sofa_exp_conv_loaded, width=150, callback=cb.save_settings, tag='sofa_exp_conv')
+                                        dpg.add_combo(CN.SOFA_OUTPUT_CONV, default_value=loaded_values["sofa_exp_conv"], width=150, callback=cb.save_settings, tag='sofa_exp_conv')
                                         dpg.add_text("Direct Sound Polarity")
                                         dpg.bind_item_font(dpg.last_item(), bold_font)
-                                        dpg.add_combo(CN.HRTF_POLARITY_LIST, default_value=hrtf_polarity_loaded, width=150, callback=cb.qc_update_brir_param, tag='hrtf_polarity_rev')
+                                        dpg.add_combo(CN.HRTF_POLARITY_LIST, default_value=loaded_values["hrtf_polarity_rev"], width=150, callback=cb.qc_update_brir_param, tag='hrtf_polarity_rev')
                                         with dpg.tooltip("hrtf_polarity_rev"):
                                             dpg.add_text("This can be used to manually reverse the polarity of the direct sound.") 
                                             dpg.add_text("Reverberation is not modified") 
                                     
                 #section for logging
                 with dpg.child_window(width=1690, height=482, tag="console_window",user_data=None):
-                    dpg.add_text("Primary Log",tag='log_text',user_data=__version__)
+                    dpg.add_text("Primary Log",tag='log_text',user_data=CN.__version__)
                     dpg.bind_item_font(dpg.last_item(), bold_font)
             
+    
 
+
+    
+    
     
     dpg.setup_dearpygui()
     
@@ -2705,7 +2382,7 @@ def main():
 
     #section to log tool version on startup
     #log results
-    log_string = 'Started ASH Toolset - Version: ' + __version__
+    log_string = 'Started ASH Toolset - Version: ' + CN.__version__
     hf.log_with_timestamp(log_string, logz)
   
     dpg.show_viewport()
@@ -2720,7 +2397,8 @@ def main():
     dpg.destroy_context()
         
     #finally close the connection
-    conn.close()
+    conn_ash.close()
+    conn_comp.close()
 
     logging.info('Finished') 
 

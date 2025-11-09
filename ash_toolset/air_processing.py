@@ -64,8 +64,8 @@ def extract_airs_from_recording(ir_set='fw', gui_logger=None):
                 if '.wav' in filename:
                     #read wav file
                     wav_fname = pjoin(root, filename)
-                    samplerate, data = wavfile.read(wav_fname)
-                    fir_array = data / (2.**31)
+                    samplerate, data = hf.read_wav_file(wav_fname)
+                    fir_array = data 
                     
                     #resample if sample rate is not 44100
                     if samplerate != CN.SAMP_FREQ:
@@ -199,9 +199,9 @@ def split_airs_to_set(ir_set='fw', gui_logger=None):
                 if '.wav' in filename:
                     #read wav files
                     wav_fname = pjoin(root, filename)
-                    samplerate, data = wavfile.read(wav_fname)
+                    samplerate, data = hf.read_wav_file(wav_fname)
                     samp_freq=samplerate
-                    fir_array = data / (2.**31)
+                    fir_array = data 
 
                     try:
                         input_channels = len(fir_array[0])
@@ -224,9 +224,9 @@ def split_airs_to_set(ir_set='fw', gui_logger=None):
                     
                     #read wav files
                     wav_fname = pjoin(root, filename)
-                    samplerate, data = wavfile.read(wav_fname)
+                    samplerate, data = hf.read_wav_file(wav_fname)
                     samp_freq=samplerate
-                    fir_array = data / (2.**31)
+                    fir_array = data 
                     fir_length = len(fir_array)
                     try:
                         input_channels = len(fir_array[0])
@@ -509,6 +509,7 @@ def find_valid_ir_and_sr(obj, gui_logger=None):
 
 
 
+
 def etl_airs(
     folder_path,
     file_type=None,
@@ -518,30 +519,15 @@ def etl_airs(
     noise_reduction=False,
     noise_tail_ratio=0.2,
     max_measurements=CN.MAX_IRS,
-    max_samples=CN.N_FFT, cancel_event=None
+    max_samples=CN.N_FFT,
+    cancel_event=None
 ):
     """
     Loads and standardizes impulse responses from a folder (including subfolders) into a 2D array.
-    
-    Parameters:
-        folder_path (str): Root folder to search for IR files.
-        file_type (str, optional): Override for file type: 'mat', 'wav', 'npy', 'sofa', or 'hdf5'.
-        gui_logger (optional): Logger for GUI output.
-        project_samplerate (int): Sample rate to resample all IRs to.
-        normalize (bool): Whether to normalize IRs.
-        noise_reduction (bool): Whether to apply noise reduction.
-        noise_tail_ratio (float): Fraction of IR length to treat as noise.
-        max_measurements (int): Maximum total number of measurements (rows).
-        max_samples (int): Maximum number of samples (columns).
-
-    Returns:
-        air_data (np.ndarray): 2D array of impulse responses (n_measurements, n_samples).
     """
 
-    # Define supported file extensions
     supported_exts = ['.wav', '.mat', '.npy', '.sofa', '.hdf5']
 
-    # Recursively gather all supported files from the input folder
     all_files = [
         f for ext in supported_exts
         for f in glob.glob(os.path.join(folder_path, '**', f'*{ext}'), recursive=True)
@@ -550,22 +536,21 @@ def etl_airs(
     ir_list = []
     max_samples_in_data = 0
     total_measurements = 0
-    status=1
-    air_data=np.array([])
+    status = 1
+    air_data = np.array([])
 
-    # Iterate over each file found
     for path in all_files:
         ext = os.path.splitext(path)[1].lower()
         ftype = file_type if file_type else ext.strip('.')
-        
+
         if cancel_event and cancel_event.is_set():
             gui_logger.log_warning("Operation cancelled by user.")
             return air_data, 2
 
         try:
-            samplerate = project_samplerate  # default sample rate unless overridden
+            samplerate = project_samplerate  # default
 
-            # Load .mat file
+            # --- MAT files ---
             if ftype == 'mat':
                 data = loadmat(path, squeeze_me=True, struct_as_record=False)
                 ir, samplerate, inferred_sr = find_valid_ir_and_sr(data, gui_logger=None)
@@ -574,25 +559,25 @@ def etl_airs(
                 if inferred_sr:
                     hf.log_with_timestamp(f"[Warning] Sample rate inferred as 48000 Hz for '{os.path.basename(path)}' — not found in file.", gui_logger, log_type=1)
 
-            # Load .wav file
+            # --- WAV files ---
             elif ftype == 'wav':
                 ir, samplerate = sf.read(path)
                 ir = np.array(ir)
                 if ir.ndim == 1:
-                    ir = ir[np.newaxis, :]  # mono
+                    ir = ir[np.newaxis, :]
                 elif ir.ndim == 2:
-                    if ir.shape[1] <= 64:  # assume shape (samples, channels)
-                        ir = ir.T  # now (channels, samples)
+                    if ir.shape[1] <= 64:
+                        ir = ir.T
                 hf.log_with_timestamp(f"Loaded WAV file '{os.path.basename(path)}' with shape {ir.shape}", gui_logger)
 
-            # Load .sofa file using helper function
+            # --- SOFA files ---
             elif ftype == 'sofa':
                 loadsofa = hf.sofa_load_object(path, gui_logger)
                 ir = loadsofa['sofa_data_ir']
                 samplerate = loadsofa['sofa_samplerate']
                 ir = hf.reshape_array_to_two_dims(ir)
 
-            # Load .hdf5 file and extract dataset
+            # --- HDF5 files ---
             elif ftype == 'hdf5':
                 with h5py.File(path, mode='r') as rir_dset:
                     if 'rir' not in rir_dset:
@@ -604,16 +589,17 @@ def etl_airs(
                 elif ir.ndim == 2 and ir.shape[0] < ir.shape[1]:
                     ir = ir.T
 
-            # Load .npy file
+            # --- NPY files ---
             elif ftype == 'npy':
                 ir = np.load(path)
                 ir = hf.reshape_array_to_two_dims(ir)
-   
+                samplerate = 48000  # ← Assume NPY files are at 48 kHz
+                hf.log_with_timestamp(f"Loaded NPY file '{os.path.basename(path)}' with assumed SR=48000 Hz", gui_logger)
 
             else:
                 raise ValueError(f"Unsupported file type: {ftype}")
 
-            # Reshape multi-dimensional IRs to 2D array (n_measurements, n_samples)
+            # --- Reshape multidimensional IRs ---
             if ir.ndim > 2:
                 sample_axis = np.argmax(ir.shape)
                 n_samples = ir.shape[sample_axis]
@@ -622,12 +608,12 @@ def etl_airs(
             elif ir.ndim == 1:
                 ir = ir[np.newaxis, :]
 
-            # Resample if needed
-            if ftype != 'npy' and samplerate != project_samplerate:
+            # --- Resample if needed ---
+            if samplerate != project_samplerate:
                 ir = hf.resample_signal(ir, original_rate=samplerate, new_rate=project_samplerate, axis=1)
                 hf.log_with_timestamp(f"Resampled from {samplerate} Hz to {project_samplerate} Hz for {os.path.basename(path)}", gui_logger)
 
-            # Optional noise reduction using trailing portion of IR
+            # --- Optional noise reduction ---
             if noise_reduction:
                 try:
                     tail_len = max(512, int(ir.shape[1] * noise_tail_ratio))
@@ -638,17 +624,16 @@ def etl_airs(
                 except Exception as e:
                     hf.log_with_timestamp(f"[Error] Noise reduction failed on {path}: {e}", gui_logger)
 
-            # Optional normalization
+            # --- Optional normalization ---
             if normalize:
                 ir = hf.normalize_array(ir)
 
             hf.log_with_timestamp(f"Loaded '{os.path.basename(path)}' with shape {ir.shape}", gui_logger)
 
-            # Update sample and measurement limits
+            # --- Limit checks ---
             max_samples_in_data = max(max_samples_in_data, ir.shape[1])
             total_measurements += ir.shape[0]
 
-            # Enforce global measurement limit
             if max_measurements and total_measurements > max_measurements:
                 remaining = max_measurements - (total_measurements - ir.shape[0])
                 ir = ir[:remaining]
@@ -665,7 +650,8 @@ def etl_airs(
     if len(ir_list) == 0:
         hf.log_with_timestamp("No valid impulse responses found in the specified folder.", gui_logger, log_type=2)
         raise ValueError("No valid impulse responses found in the specified folder.")
-    # Pad or truncate all IRs to have consistent number of samples
+
+    # --- Pad or truncate to consistent length ---
     padded_list = []
     for ir in ir_list:
         if ir.shape[1] > max_samples:
@@ -677,14 +663,12 @@ def etl_airs(
             hf.log_with_timestamp(f"Padded IR to {max_samples} samples.", gui_logger)
         padded_list.append(ir)
 
-    # Combine all individual IRs into a single 2D array
     hf.log_with_timestamp(f"Total IRs loaded: {len(ir_list)}, Max samples: {max_samples_in_data}", gui_logger)
     air_data = np.concatenate(padded_list, axis=0)
     hf.log_with_timestamp(f"Final air_data shape: {air_data.shape}", gui_logger)
 
-    status=0#success if reached this far
-    return air_data,status
-
+    status = 0
+    return air_data, status
 
 
 def prepare_air_dataset(
@@ -1219,11 +1203,11 @@ def convert_airs_to_brirs(
         
         #spatial metadata
         spatial_res=3#max resolution
-        elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-        elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
-        elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+        elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+        elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
+        elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
         elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-        azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+        azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
         azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         #define desired angles
         nearest_deg=2
@@ -1746,9 +1730,9 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
 
                     #read wav files
                     wav_fname = pjoin(root, filename)
-                    samplerate, data = wavfile.read(wav_fname)
+                    samplerate, data = hf.read_wav_file(wav_fname)
                     #samp_freq=samplerate
-                    fir_array = data / (2.**31)
+                    fir_array = data 
                     fir_length = len(fir_array)
                     extract_legth = min(n_fft,fir_length)
                     
@@ -1950,8 +1934,8 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
             #load compensation for ku100 BRIRs
             filename = 'ku_100_dummy_head_compensation.wav'
             wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-            samplerate, df_eq = wavfile.read(wav_fname)
-            df_eq = df_eq / (2.**31)
+            samplerate, df_eq = hf.read_wav_file(wav_fname)
+            df_eq = df_eq 
         
         else:
   
@@ -2489,9 +2473,9 @@ def calc_subrir(gui_logger=None):
                 # if sub_set_id == 6:
                 #     filename='BRIR_R05_C2_E0_A-30 EQ.wav'
                 wav_fname = pjoin(brir_out_folder, filename)
-                samplerate, data = wavfile.read(wav_fname)
+                samplerate, data = hf.read_wav_file(wav_fname)
                 #samp_freq=samplerate
-                fir_array = data / (2.**31)
+                fir_array = data 
                 fir_length = len(fir_array)
                 extract_legth = min(n_fft,fir_length)
                 
@@ -3255,212 +3239,6 @@ def calc_subrir(gui_logger=None):
                 hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm after merge')
                 hf.plot_data(brir_fft_avg_mag_inv,'brir_fft_avg_mag_inv after merge')
         
-            #sub set B
-        
-            # filter_type="peaking"
-            # fc=4
-            # sr=samp_freq_ash
-            # q=3.0
-            # gain_db=-2.8
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=8
-            # sr=samp_freq_ash
-            # q=3.0
-            # gain_db=3
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=13
-            # sr=samp_freq_ash
-            # q=3.5
-            # gain_db=-3
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=19
-            # sr=samp_freq_ash
-            # q=4.0
-            # gain_db=1.7
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=27
-            # sr=samp_freq_ash
-            # q=3.5
-            # gain_db=-0.1
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=150
-            # sr=samp_freq_ash
-            # q=2.5
-            # gain_db=-1
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=90
-            # sr=samp_freq_ash
-            # q=2.5
-            # gain_db=-0.2
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=102
-            # sr=samp_freq_ash
-            # q=4.5
-            # gain_db=0.9
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=112
-            # sr=samp_freq_ash
-            # q=6.5
-            # gain_db=1.1
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=120
-            # sr=samp_freq_ash
-            # q=5.2
-            # gain_db=-1.8
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=126
-            # sr=samp_freq_ash
-            # q=6.5
-            # gain_db=1.4
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            #sub set C
-        
-            
-            # filter_type="peaking"
-            # fc=10
-            # sr=samp_freq_ash
-            # q=3.0
-            # gain_db=-4
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=8
-            # sr=samp_freq_ash
-            # q=3.0
-            # gain_db=-1.3
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-         
-            # filter_type="peaking"
-            # fc=15
-            # sr=samp_freq_ash
-            # q=7.0
-            # gain_db=4
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=22
-            # sr=samp_freq_ash
-            # q=3.0
-            # gain_db=-0.5
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=46
-            # sr=samp_freq_ash
-            # q=7.0
-            # gain_db=-0.3
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=51
-            # sr=samp_freq_ash
-            # q=12.0
-            # gain_db=2.1
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=55
-            # sr=samp_freq_ash
-            # q=8.0
-            # gain_db=-0.7
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            # filter_type="peaking"
-            # fc=117
-            # sr=samp_freq_ash
-            # q=7.0
-            # gain_db=-0.5
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            
-            # filter_type="peaking"
-            # fc=131
-            # sr=samp_freq_ash
-            # q=12.0
-            # gain_db=-1.0
-            # pyquad = pyquadfilter.PyQuadFilter(sr)
-            # pyquad.set_params(filter_type, fc, q, gain_db)
-            # sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            # sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
             
             
             #sub set D = N/A
@@ -3779,7 +3557,7 @@ def acoustic_space_updates(download_updates=False, gui_logger=None):
         #directories
         csv_directory = pjoin(CN.DATA_DIR_INT, 'reverberation')
         #read metadata from csv. Expects reverberation_metadata.csv 
-        metadata_file_name = 'reverberation_metadata.csv'
+        metadata_file_name = CN.REV_METADATA_FILE_NAME
         metadata_file = pjoin(csv_directory, metadata_file_name)
         with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
             reader = DictReader(inputfile)
@@ -3862,7 +3640,7 @@ def acoustic_space_updates(download_updates=False, gui_logger=None):
         #finally, download latest metadata file and replace local file
         if updates_perf >=1: 
             url = "https://drive.google.com/file/d/14eX5wLiyMCuS4-2aYBfbWRMXFgYc6Bm-/view?usp=drive_link"
-            dl_file = pjoin(csv_directory, 'reverberation_metadata.csv')
+            dl_file = pjoin(csv_directory, CN.REV_METADATA_FILE_NAME)
             gdown.download(url, dl_file, fuzzy=True)
         
         

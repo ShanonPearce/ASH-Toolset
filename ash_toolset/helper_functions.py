@@ -42,137 +42,10 @@ from scipy.stats import linregress
 from os.path import exists
 import concurrent.futures
 from collections import Counter
+import ast
+import json
+from pathlib import Path
 
-#memory tracing
-if CN.LOG_MEMORY:
-    import gc
-    import psutil
-    import tracemalloc
-    #from pympler import muppy, summary  # pip install pympler
-    # Start tracemalloc once to avoid overhead later
-    if not tracemalloc.is_tracing():
-        tracemalloc.start()
-
-
-_last_snapshot = None  # Global snapshot for comparison
-
-
-def log_memory_usage(label="Memory Check", log_type=0, top_lines=10, top_arrays=5,
-                     compare_snapshots=False, filter_project="ash_toolset"):
-    """
-    Logs detailed memory diagnostics with optional snapshot comparison and project path filtering.
-    """
-    global _last_snapshot
-    gc.collect()
-    log_with_timestamp(f"{label} - New memory check...", log_type=log_type)
-
-    # Process memory info
-    process = psutil.Process(os.getpid())
-    rss = process.memory_info().rss / 1024 / 1024
-    vms = process.memory_info().vms / 1024 / 1024
-    log_with_timestamp(f"{label} - Total Memory Usage (RSS): {rss:.2f} MB", log_type=log_type)
-    log_with_timestamp(f"{label} - Virtual Memory Size (VMS): {vms:.2f} MB", log_type=log_type)
-
-    # NumPy array tracking
-    numpy_arrays = []
-    total_numpy_bytes = 0
-    skipped_arrays = 0
-
-    for obj in gc.get_objects():
-        try:
-            if isinstance(obj, np.ndarray):
-                total_numpy_bytes += obj.nbytes
-                numpy_arrays.append(obj)
-        except ReferenceError:
-            skipped_arrays += 1
-            continue
-        except Exception:
-            skipped_arrays += 1
-            continue
-
-    numpy_mb = total_numpy_bytes / 1024 / 1024
-    log_with_timestamp(f"{label} - NumPy Arrays Total Memory: {numpy_mb:.2f} MB", log_type=log_type)
-    if skipped_arrays:
-        log_with_timestamp(f"{label} - Skipped {skipped_arrays} NumPy objects due to inspection errors.", log_type=log_type)
-
-    if numpy_arrays:
-        safe_arrays = []
-        for arr in numpy_arrays:
-            try:
-                safe_arrays.append((arr.nbytes, arr))
-            except Exception:
-                continue
-
-        safe_arrays.sort(reverse=True, key=lambda x: x[0])
-        log_with_timestamp(f"{label} - Top {top_arrays} largest NumPy arrays:", log_type=log_type)
-        for i, (size_bytes, arr) in enumerate(safe_arrays[:top_arrays]):
-            try:
-                arr_mb = size_bytes / 1024 / 1024
-                summary_str = f"  {i+1}. Shape: {arr.shape}, Dtype: {arr.dtype}, Size: {arr_mb:.2f} MB"
-                if arr.size > 0:
-                    summary_str += f", Mean: {np.mean(arr):.3f}"
-                log_with_timestamp(summary_str, log_type=log_type)
-            except Exception as e:
-                log_with_timestamp(f"  {i+1}. <Error inspecting array>: {e}", log_type=1)
-
-    # GC stats
-    gen_counts = gc.get_count()
-    log_with_timestamp(f"{label} - GC Object Counts (gen0, gen1, gen2): {gen_counts}", log_type=log_type)
-
-    obj_types = Counter()
-    skipped_types = 0
-    for obj in gc.get_objects():
-        try:
-            obj_types[type(obj).__name__] += 1
-        except ReferenceError:
-            skipped_types += 1
-        except Exception:
-            skipped_types += 1
-
-    log_with_timestamp(f"{label} - Top 5 object types in gc:", log_type=log_type)
-    for i, (typename, count) in enumerate(obj_types.most_common(5)):
-        log_with_timestamp(f"  {i+1}. {typename}: {count}", log_type=log_type)
-    if skipped_types:
-        log_with_timestamp(f"{label} - Skipped {skipped_types} objects during type inspection.", log_type=log_type)
-
-    # # Pympler summary
-    # try:
-    #     all_objects = muppy.get_objects()
-    #     sum_obj = summary.summarize(all_objects)
-    #     log_with_timestamp(f"{label} - Pympler memory summary (top 5):", log_type=log_type)
-    #     for line in list(summary.format_(sum_obj))[:5]:
-    #         log_with_timestamp("  " + line.strip(), log_type=log_type)
-    # except Exception as e:
-    #     log_with_timestamp(f"{label} - Pympler summary skipped: {e}", log_type=1)
-
-    # Tracemalloc snapshot
-    snapshot = tracemalloc.take_snapshot()
-    top_stats = snapshot.statistics('lineno')
-    trace_count = len(snapshot.traces)
-    log_with_timestamp(f"{label} - Tracemalloc traces captured: {trace_count}", log_type=log_type)
-
-    log_with_timestamp(f"{label} - Top {top_lines} memory allocations:", log_type=log_type)
-    for i, stat in enumerate(top_stats[:top_lines]):
-        log_with_timestamp(f"  {i+1}. {stat}", log_type=log_type)
-
-    # Filter by project path
-    if filter_project:
-        project_stats = [s for s in top_stats if filter_project in str(s.traceback)]
-        log_with_timestamp(f"{label} - Top {top_lines} allocations filtered by '{filter_project}':", log_type=log_type)
-        if not project_stats:
-            log_with_timestamp("  None found in specified project path.", log_type=log_type)
-        else:
-            for i, stat in enumerate(project_stats[:top_lines]):
-                log_with_timestamp(f"  P{i+1}. {stat}", log_type=log_type)
-
-    # Snapshot diff
-    if compare_snapshots and _last_snapshot is not None:
-        log_with_timestamp(f"{label} - Comparing with previous snapshot...", log_type=log_type)
-        stats_diff = snapshot.compare_to(_last_snapshot, 'lineno')
-        for i, stat in enumerate(stats_diff[:top_lines]):
-            log_with_timestamp(f"  Δ{i+1}. {stat}", log_type=log_type)
-
-    _last_snapshot = snapshot
 
 
 
@@ -2025,23 +1898,7 @@ def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_dep
     sf.write(file_name, data, samplerate, bit_depth)
     
     
-# def read_wav_file(audiofilename):
-#     """
-#     function to open a wav file
-#     """
-    
-#     samplerate, x = wavfile.read(audiofilename)  # x is a numpy array of integers, representing the samples 
-#     # scale to -1.0 -- 1.0
-#     if x.dtype == 'int16':
-#         nb_bits = 16  # -> 16-bit wav files
-#     elif x.dtype == 'int32':
-#         nb_bits = 32  # -> 32-bit wav files
-#     max_nb_bit = float(2 ** (nb_bits - 1))
-#     samples = x / (max_nb_bit + 1)  # samples is a numpy array of floats representing the samples 
-    
-#     #print(x.dtype)
-    
-#     return samplerate, samples
+
     
 def read_wav_file(audiofilename):
     """
@@ -2814,8 +2671,87 @@ def build_min_phase_filter(
 
     return impulse
 
+def build_min_phase_filter_intrp(
+    smoothed_mag,
+    freq_axis=None,
+    fs=44100,
+    n_fft=65536,
+    truncate_len=4096,
+    f_min=20,
+    f_max=20000,
+    band_limit=False,
+    normalize=False,
+    norm_freq_range=(60, 300),
+    norm_target=0.5
+):
+    """
+    Build a minimum-phase FIR filter from a magnitude spectrum (half or full).
 
-    
+    Parameters:
+        smoothed_mag (np.ndarray): Measured magnitude spectrum in linear scale.
+        freq_axis (np.ndarray): Frequencies corresponding to smoothed_mag (Hz).
+        fs (int): Sampling frequency in Hz.
+        n_fft (int): FFT size for minimum-phase conversion.
+        truncate_len (int): Length of the output FIR.
+        f_min (float): Minimum frequency for band-limiting.
+        f_max (float): Maximum frequency for band-limiting.
+        band_limit (bool): Whether to zero out frequencies outside [f_min, f_max].
+        normalize (bool): Whether to normalize magnitude before time-domain conversion.
+        norm_freq_range (tuple): Frequency range (Hz) to compute mean for normalization.
+        norm_target (float): Target magnitude after normalization (scales mean to this).
+
+    Returns:
+        np.ndarray: Minimum-phase FIR impulse response.
+    """
+
+    # FFT frequency bins
+    fft_freqs = np.fft.rfftfreq(n_fft, 1 / fs)
+
+    # Interpolate smoothed_mag onto FFT bins if freq_axis is provided
+    if freq_axis is not None:
+        mag_interp = np.interp(fft_freqs, freq_axis, smoothed_mag)
+    else:
+        mag_interp = np.abs(smoothed_mag[:n_fft // 2 + 1])
+
+    # Optional band-limiting
+    if band_limit:
+        band_mask = (fft_freqs >= f_min) & (fft_freqs <= f_max)
+        mag = np.zeros_like(mag_interp)
+        mag[band_mask] = mag_interp[band_mask]
+        mag[fft_freqs < f_min] = mag_interp[np.argmax(fft_freqs >= f_min)]
+        mag[fft_freqs > f_max] = mag_interp[np.argmax(fft_freqs > f_max) - 1]
+    else:
+        mag = mag_interp.copy()
+
+    # Optional normalization in specified frequency range
+    if normalize:
+        norm_mask = (fft_freqs >= norm_freq_range[0]) & (fft_freqs <= norm_freq_range[1])
+        mean_val = np.mean(mag[norm_mask])
+        if mean_val > 0:
+            mag = mag / mean_val * norm_target
+
+    # Avoid log(0)
+    log_mag = np.log(np.maximum(mag, 1e-8))
+
+    # Real cepstrum
+    cepstrum = np.fft.irfft(log_mag, n=n_fft)
+
+    # Enforce minimum-phase symmetry
+    cepstrum[1:n_fft // 2] *= 2
+    cepstrum[n_fft // 2 + 1:] = 0
+
+    # Rebuild min-phase spectrum
+    min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
+
+    # Time-domain impulse response
+    impulse = np.fft.irfft(min_phase_spec, n=n_fft)
+
+    # Truncate and fade
+    impulse = impulse[:truncate_len]
+    fade_out = np.hanning(2 * truncate_len)[truncate_len:]
+    impulse *= fade_out
+
+    return impulse
 
 def level_spectrum_ends(
     data,
@@ -3243,7 +3179,26 @@ def summarize_array(arr):
 
     return summary    
     
+# --- Safety fallback for empty or None lists ---
+def safe_list(lst):
+    """Return a list with one empty string if None or empty."""
+    return lst if lst and isinstance(lst, list) else [""] 
     
+def ensure_valid_selection(list_data, loaded_value):
+    """
+    Ensures the loaded_value is valid for GUI dropdowns.
+    Returns a tuple (valid_list, valid_value).
+    """
+    # Replace None or empty list with a single empty string element
+    if not list_data:
+        return [""], ""
+
+    # If loaded_value is not in the list, fall back to the first entry
+    if loaded_value not in list_data:
+        return list_data, list_data[0]
+
+    return list_data, loaded_value
+
 def sanitize_filename(filename):
     """
     Sanitizes a filename by replacing invalid Windows characters with underscores.
@@ -3259,7 +3214,9 @@ def sanitize_filename(filename):
     sanitized_filename = re.sub(invalid_chars, '_', filename)
     return sanitized_filename    
     
-    
+def format_name_for_file(name: str) -> str:
+    """Replace spaces with underscores for a filename-friendly string."""
+    return name.replace(" ", "_")
 
 def update_gui_progress(report_progress, progress=None, message=''):
     """
@@ -3397,7 +3354,7 @@ def download_file(url, save_location, gui_logger=None):
         log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error  
         return False
     
-    
+
 
 def get_files_with_extension(directory, extension):
     """
@@ -3796,3 +3753,90 @@ def remove_leading_singletons(arr):
     if first_non_singleton > 0:
         return arr.reshape(shape[first_non_singleton:])
     return arr
+
+
+
+
+
+def validate_choice(loaded_value, valid_list):
+    """
+    Ensure the loaded_value is present in valid_list.
+    If not, return the first item in the list and log a fallback message.
+    """
+    # Ensure valid_list is iterable
+    if not valid_list:
+        logging.warning(f"validate_choice: No valid list provided. Cannot validate '{loaded_value}'.")
+        return "Not Found"
+
+    if loaded_value in valid_list:
+        return loaded_value
+    else:
+        fallback = valid_list[0]
+        logging.info(f"validate_choice: '{loaded_value}' is not valid. Falling back to '{fallback}'.")
+        return fallback
+
+
+
+
+def safe_get(config, key, expected_type, default):
+    """Safely get a value from config with fallback and type casting.
+    Supports bool, list, dict, tuple via automatic parsing from JSON or Python literals.
+    """
+    try:
+        val = config['DEFAULT'].get(key, default)
+        
+        # If the value already matches the expected type (and expected_type is a type), return it
+        if isinstance(expected_type, type) and isinstance(val, expected_type):
+            return val
+
+        if expected_type == bool:
+            if isinstance(val, str):
+                lowered = val.strip().lower()
+                if lowered in ('true', 'false'):
+                    return lowered == 'true'
+            return bool(ast.literal_eval(str(val)))
+
+        if expected_type in (list, dict, tuple):
+            if isinstance(val, str):
+                try:
+                    parsed = json.loads(val)
+                except (json.JSONDecodeError, TypeError):
+                    parsed = ast.literal_eval(val)
+                return parsed if isinstance(parsed, expected_type) else default
+            elif isinstance(val, expected_type):
+                return val
+            else:
+                return default
+
+        # Special case for ast.literal_eval as expected_type
+        if expected_type == ast.literal_eval:
+            if val is None or (isinstance(val, str) and val.strip() == ''):
+                return default
+            return ast.literal_eval(val)
+
+        # For other types (int, float, str, etc.), cast
+        if callable(expected_type):
+            return expected_type(val)
+
+        # Fallback for unexpected expected_type
+        logging.info(f"safe_get: Expected type for key '{key}' is not callable. Using raw value.")
+        return val
+
+    except Exception as e:
+        logging.info(f"safe_get: Failed to load key '{key}' – {e}. Using default: {default}")
+        return default
+       
+def check_write_permissions(path, gui_logger=None):
+    """Check if the process has write access to the specified path."""
+    try:
+        test_file = Path(path) / ".perm_check.tmp"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.touch(exist_ok=True)
+        test_file.unlink()  # remove the temp file
+        return True
+    except PermissionError:
+        msg = f"Insufficient privileges to write to '{path}'. Please run as administrator or choose a different output folder."
+        print(msg)
+        if gui_logger:
+            log_with_timestamp(msg, gui_logger)
+        return False    

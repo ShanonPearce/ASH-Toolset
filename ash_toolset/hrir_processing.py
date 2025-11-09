@@ -11,7 +11,6 @@ from ash_toolset import helper_functions as hf
 from ash_toolset import constants as CN
 from ash_toolset import brir_export
 from csv import DictReader
-import numpy as np
 import os
 import gdown
 from math import sqrt
@@ -20,6 +19,10 @@ import threading
 import scipy as sp
 import dearpygui.dearpygui as dpg
 import logging
+from scipy.signal import correlate
+from scipy.interpolate import Rbf
+from joblib import Parallel, delayed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 log_info=1
@@ -51,7 +54,7 @@ def get_listener_list(listener_type="", dataset_name="", max_res_only=False, gui
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -83,11 +86,13 @@ def get_listener_list(listener_type="", dataset_name="", max_res_only=False, gui
                     listener_list = CN.HRTF_BASE_LIST_FAV
             else:
                 listener_list = CN.HRTF_BASE_LIST_FAV
+            # Sort the list alphabetically
+            listener_list.sort()
             
         else:
             listener_list=get_listener_list_user()
             if not listener_list:
-                listener_list = ['No SOFA files found']
+                listener_list = [CN.HRTF_USER_SOFA_DEFAULT]
             
     except Exception as ex:
         log_string=f"Error occurred: {ex}"
@@ -158,7 +163,7 @@ def get_name_short(listener_type="", dataset_name="", name_gui="", gui_logger=No
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -203,7 +208,7 @@ def get_hrtf_info_from_name_short(name_short: str = "", gui_logger=None) -> tupl
             try:
                 # directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
-                metadata_file_name = "hrir_metadata.csv"
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
 
                 with open(metadata_file, encoding="utf-8-sig", newline="") as inputfile:
@@ -253,7 +258,7 @@ def get_sofa_url(listener_type="", dataset_name="", name_gui="", gui_logger=None
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -304,7 +309,7 @@ def get_alternative_url(listener_type="", dataset_name="", name_gui="", gui_logg
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -356,7 +361,7 @@ def get_flip_azim_flag(listener_type="", dataset_name="", name_gui="", gui_logge
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -406,7 +411,7 @@ def get_polarity(listener_type="", dataset_name="", name_gui="", gui_logger=None
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -457,7 +462,7 @@ def get_gdrive_url_max(listener_type="", dataset_name="", name_gui="", gui_logge
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -508,7 +513,7 @@ def get_gdrive_url_high(listener_type="", dataset_name="", name_gui="", gui_logg
                 #directories
                 csv_directory = CN.DATA_DIR_HRIR_NPY
                 #read metadata from csv. Expects reverberation_metadata.csv
-                metadata_file_name = 'hrir_metadata.csv'
+                metadata_file_name = CN.HRIR_METADATA_NAME
                 metadata_file = pjoin(csv_directory, metadata_file_name)
                 with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
                     reader = DictReader(inputfile)
@@ -555,7 +560,7 @@ def hrir_metadata_updates(download_updates=False, gui_logger=None):
         #directories
         csv_directory = CN.DATA_DIR_HRIR_NPY
         #read metadata from csv. Expects reverberation_metadata.csv 
-        metadata_file_name = 'hrir_metadata.csv'
+        metadata_file_name = CN.HRIR_METADATA_NAME
         metadata_file = pjoin(csv_directory, metadata_file_name)
         with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
             reader = DictReader(inputfile)
@@ -648,7 +653,7 @@ def hrir_metadata_updates(download_updates=False, gui_logger=None):
     
 
 
-def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir_hrtf_short, report_progress=0, gui_logger=None, spatial_res=2):
+def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short, report_progress=0, gui_logger=None, spatial_res=2):
     """ 
     Function peforms the following workflow:
         try loading specified sofa object
@@ -675,8 +680,16 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
             hrir_dir_base = CN.DATA_DIR_SOFA
         elif brir_hrtf_type == 'Dummy Head / Head & Torso Simulator':
             hrir_dir_base = CN.DATA_DIR_SOFA
-        else:
+        elif brir_hrtf_type == 'Favourites':
+            log_string = 'Invalid HRTF type: Favourites'
+            hf.log_with_timestamp(log_string, gui_logger)
+            return status
+        elif brir_hrtf_type == 'User SOFA Input':
             hrir_dir_base = CN.DATA_DIR_SOFA_USER
+        else:
+            log_string = 'Invalid HRTF type'
+            hf.log_with_timestamp(log_string, gui_logger)
+            return status
         #form sofa file name
         sofa_local_fname = pjoin(hrir_dir_base, f"{brir_hrtf_short}.sofa")
             
@@ -703,7 +716,10 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
                 return status
             
             #get URL
-            url = get_sofa_url(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=gui_logger)
+            url = get_sofa_url(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf_gui, gui_logger=gui_logger)
+            
+            #print(url)
+            
             #external sofa directory already formed above, download and save to that location
             response = hf.download_file(url=url, save_location=sofa_local_fname, gui_logger=gui_logger)
             
@@ -719,7 +735,7 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
                 hf.log_with_timestamp(log_string, gui_logger)
                 
                 #try again with alternative link
-                url = get_alternative_url(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=None)
+                url = get_alternative_url(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf_gui, gui_logger=None)
                 response = hf.download_file(url=url, save_location=sofa_local_fname, gui_logger=gui_logger)
                 
                 if response == True:
@@ -756,7 +772,7 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         sofa_source_positions = loadsofa['sofa_source_positions']    
         
         #extract data and place into npy array (resample if required)
-        #flip_azimuths_fb = get_flip_azim_flag(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf, gui_logger=None)
+        #flip_azimuths_fb = get_flip_azim_flag(listener_type=brir_hrtf_type, dataset_name=brir_hrtf_dataset, name_gui=brir_hrtf_gui, gui_logger=None)
         hrir_out = sofa_dataset_transform(convention_name=convention_name, sofa_data_ir=sofa_data_ir, sofa_samplerate=sofa_samplerate, sofa_source_positions=sofa_source_positions, flip_azimuths_fb=False, reverse_azim_rot=False, gui_logger=gui_logger)
         
         #exit if stop thread flag is true
@@ -776,13 +792,13 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf, brir
         fr_flat = hf.mag2db(fr_flat_mag)
         #coordinate system and dimensions
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
+            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
             elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
             elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         else:
             raise ValueError('Invalid spatial resolution')
@@ -1030,13 +1046,13 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
         
         #coordinate system and dimensions
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX[spatial_res] 
+            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
+            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
             elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
             elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST[spatial_res] #as per hrir dataset
+            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST[spatial_res] 
+            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         else:
             raise ValueError('Invalid spatial resolution')
@@ -1061,20 +1077,7 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
             log_string = 'Resampling dataset'
             hf.log_with_timestamp(log_string, gui_logger)
             
-        # #retrieve sample as reference for shifting
-        # sample_elev_deg = 0
-        # sample_azim_deg=0
-        # #get nearest direction
-        # nearest_dir_idx = sofa_find_nearest_direction(sofa_source_positions=sofa_source_positions, target_elevation=sample_elev_deg, target_azimuth=sample_azim_deg, flip_azimuths_fb=flip_azimuths_fb, reverse_azim_rot=reverse_azim_rot)
-        # #grab sample HRIR
-        # for chan in range(total_chan_hrir):
-        #     query_sofa_data(convention_name,hrir_sample,sofa_data_ir,nearest_dir_idx,chan)
-        # #resample if samp_freq is not 44100
-        # if sofa_samplerate != samp_freq_ash:
-        #     hrir_sample = hf.resample_signal(hrir_sample, original_rate = sofa_samplerate, new_rate = samp_freq_ash, axis=1, scale=True)
-        # #shift
-        # hrir_sample=shift_2d_impulse_response(hrir_sample, lp_sos, target_index=57)#46
-                
+
         #for each direction in output array
         #for each elev and az
         for elev in range(output_elevs):
@@ -1271,3 +1274,274 @@ def shift_2d_impulse_response_cc(arr, hrir_sample, lp_sos, max_shift_samples=100
         shifted_arr[:, :-lag] = 0
 
     return shifted_arr
+
+
+
+
+
+
+
+
+
+
+def build_averaged_listener_from_sets(hrir_sets, gui_logger=None, 
+                                      interp_mode='rbf', align_itd=False,
+                                      sample_rate=CN.SAMP_FREQ,
+                                      n_jobs=-1):
+    """
+    Fast, HRIR averaging using either RBF or linear interpolation across listeners.
+    Includes per-listener spectral leveling to ensure equal weighting.
+    """
+    """
+    Build an averaged HRIR dataset by interpolating across listeners in the
+    frequency domain, compensating for interaural time delays.
+
+    Parameters
+    ----------
+    hrir_sets : list[np.ndarray]
+        List of HRIR datasets, each shaped [elev, azim, ch, samples].
+    gui_logger : callable or object
+        GUI logger instance to display logs.
+    interp_mode : {'rbf', 'linear'}
+        Interpolation type used across listeners per frequency bin.
+    align_itd : bool
+        Whether to align direct sound peaks (ITD correction).
+    sample_rate : int
+        Sampling rate (Hz).
+
+    Returns
+    -------
+    hrir_avg : np.ndarray or None
+        Averaged HRIR array [1, elev, azim, ch, samples] or None if failed.
+    """
+    try:
+        lp_sos = hf.get_filter_sos(cutoff=10000, fs=CN.FS, order=8, b_type='low')
+
+        hf.log_with_timestamp("Validating input HRIR datasets", gui_logger)
+        if not isinstance(hrir_sets, list) or len(hrir_sets) == 0:
+            raise ValueError("hrir_sets must be a non-empty list of NumPy arrays")
+        shapes = [h.shape for h in hrir_sets]
+        if len(set(shapes)) != 1:
+            raise ValueError(f"Inconsistent HRIR shapes: {shapes}")
+
+        n_list = len(hrir_sets)
+        elev_n, azim_n, ch_n, N = hrir_sets[0].shape
+        freqs = np.fft.rfftfreq(N, d=1/sample_rate)
+
+        # --- Automatic interpolation mode selection ---
+        if interp_mode == 'auto':
+            interp_mode = 'rbf' if n_list == 2 else 'linear'
+            hf.log_with_timestamp(f"Auto-selected interpolation mode: {interp_mode}", gui_logger)
+
+        # --- Stage 1: Intra-listener ITD alignment ---
+        if align_itd:
+            hf.log_with_timestamp("Performing intra-listener alignment (ITD)...", gui_logger)
+            for i in range(n_list):
+                for el in range(elev_n):
+                    for az in range(azim_n):
+                        hrir_sets[i][el, az, :2, :] = shift_2d_impulse_response(
+                            hrir_sets[i][el, az, :2, :], lp_sos, target_index=55
+                        )
+
+        # --- Stage 2: Inter-listener global alignment ---
+        global_ref = hrir_sets[0][elev_n // 2, 0, 0]
+        for i in range(1, n_list):
+            local_ref = hrir_sets[i][elev_n // 2, 0, 0]
+            corr = correlate(local_ref, global_ref, mode='full')
+            delay = np.argmax(corr) - len(local_ref) + 1
+            if np.isfinite(delay):
+                hf.log_with_timestamp(f"Aligning listener {i} globally (shift={delay} samples)", gui_logger)
+                hrir_sets[i] = np.roll(hrir_sets[i], -int(delay), axis=-1)
+        hf.log_with_timestamp("Global alignment done.", gui_logger)
+
+        # --- Stage 3: Spectral leveling per listener ---
+        hf.log_with_timestamp("Applying per-listener spectral leveling...", gui_logger)
+        mag_range_a, mag_range_b, n_fft = CN.SPECT_SNAP_M_F0, CN.SPECT_SNAP_M_F1, CN.N_FFT
+        subset_idx = [(el, az) for el in np.linspace(0, elev_n - 1, 3, dtype=int)
+                                 for az in np.linspace(0, azim_n - 1, 5, dtype=int)]
+        for i in range(n_list):
+            mag_sum = 0.0
+            for el, az in subset_idx:
+                padded = hf.padarray(hrir_sets[i][el, az, 0, :], n_fft)
+                mag_sum += np.mean(np.abs(np.fft.fft(padded)[mag_range_a:mag_range_b]))
+            hrir_sets[i] /= (mag_sum / len(subset_idx))
+
+        # --- Stage 4: FFT Transform ---
+        hf.log_with_timestamp("Converting HRIRs to frequency domain...", gui_logger)
+        hrtf_sets = np.array([np.fft.rfft(hrir, axis=-1) for hrir in hrir_sets], dtype=np.complex128)
+
+        # --- Stage 5: Interpolation worker (optimized) ---
+        hf.log_with_timestamp(f"Interpolating across listeners using {interp_mode}...", gui_logger)
+        if interp_mode == 'rbf':
+            hf.log_with_timestamp("This may take some time to complete...", gui_logger)
+        listener_idx = np.arange(n_list)
+        mean_listener = np.mean(listener_idx)
+
+        hrtf_avg = np.empty((elev_n, azim_n, ch_n, hrtf_sets.shape[-1]), dtype=np.complex128)
+
+        for el in range(elev_n):
+            for az in range(azim_n):
+                for ch in range(ch_n):
+                    mag = np.abs(hrtf_sets[:, el, az, ch])
+                    phase = np.unwrap(np.angle(hrtf_sets[:, el, az, ch]))
+                    n_freqs = mag.shape[1]
+
+                    mag_interp = np.empty(n_freqs, dtype=np.float64)
+                    phase_interp = np.empty(n_freqs, dtype=np.float64)
+
+                    for k in range(n_freqs):
+                        if interp_mode == 'rbf':
+                            mag_db = 20 * np.log10(np.maximum(mag[:, k], 1e-12))
+                            mag_rbf = Rbf(listener_idx, mag_db, function='multiquadric', smooth=0.1)
+                            phase_rbf = Rbf(listener_idx, phase[:, k], function='multiquadric', smooth=0.1)
+                            mag_interp[k] = 10**(mag_rbf(mean_listener)/20)
+                            phase_interp[k] = phase_rbf(mean_listener)
+                        else:  # linear
+                            mag_interp[k] = np.mean(mag[:, k])
+                            phase_interp[k] = np.mean(phase[:, k])
+
+                    hrtf_avg[el, az, ch] = mag_interp * np.exp(1j * phase_interp)
+
+        # --- Stage 6: Inverse FFT ---
+        hf.log_with_timestamp("Converting averaged HRTF back to time domain...", gui_logger)
+        hrir_avg = np.fft.irfft(hrtf_avg, n=N, axis=-1)
+
+        # --- Stage 7: Final dataset-level leveling ---
+        hf.log_with_timestamp("Applying final dataset-level normalization...", gui_logger)
+        mag_sum = 0.0
+        for el, az in subset_idx:
+            padded = hf.padarray(hrir_avg[el, az, 0, :], n_fft)
+            mag_sum += np.mean(np.abs(np.fft.fft(padded)[mag_range_a:mag_range_b]))
+        hrir_avg /= (mag_sum / len(subset_idx))
+
+        # --- Stage 8: Finalize shape ---
+        if hrir_avg.ndim == 4:
+            hrir_avg = np.expand_dims(hrir_avg, axis=0)
+        elif hrir_avg.ndim != 5:
+            raise ValueError(f"Unexpected HRIR shape: {hrir_avg.shape}")
+
+        # --- Stage 9: Save output ---
+        npy_fname = pjoin(CN.DATA_DIR_HRIR_NPY_INTRP, CN.HRTF_AVERAGED_NAME_FILE + ".npy")
+        Path(npy_fname).parent.mkdir(exist_ok=True, parents=True)
+        if hrir_avg.dtype == np.float64:
+            hrir_avg = hrir_avg.astype(np.float32)
+        np.save(npy_fname, hrir_avg)
+        hf.log_with_timestamp(f"Saved npy dataset: {npy_fname}", gui_logger)
+        hf.log_with_timestamp("HRIR averaging complete.", gui_logger)
+
+        return hrir_avg
+
+    except Exception as e:
+        hf.log_with_timestamp(f"Error building averaged listener: {e}", gui_logger)
+        return None
+
+
+
+
+
+
+
+def load_hrirs_list(hrtf_list, gui_logger=None):
+    """
+    Load a list of HRIR datasets, either from local .npy files or via the SOFA workflow.
+
+    Parameters
+    ----------
+    hrtf_list : list[str]
+        List of HRTF short names to load.
+    gui_logger : object, optional
+        GUI logger for hf.log_with_timestamp.
+
+    Returns
+    -------
+    hrir_list_loaded : list[np.ndarray]
+        List of loaded HRIR arrays (each shaped [elev, azim, ch, samples])
+    """
+
+    try:
+        hrir_list_loaded = []
+
+        if not hrtf_list:
+            hf.log_with_timestamp("No HRIRs provided to load.", gui_logger)
+            return [], 1  # 1 = empty input warning
+
+        for hrtf in hrtf_list:
+
+            # --- Lookup HRTF metadata ---
+            if hrtf.startswith(CN.HRTF_USER_SOFA_PREFIX):
+                #special case, user sofa under favourites
+                brir_hrtf_type = 'User SOFA Input'
+                brir_hrtf_dataset = CN.HRTF_DATASET_LIST_CUSTOM[0]
+                brir_hrtf_gui = hrtf.removeprefix(CN.HRTF_USER_SOFA_PREFIX)
+                brir_hrtf_short = brir_hrtf_gui
+            else:
+                hrtf_type, dataset, name_gui = get_hrtf_info_from_name_short(name_short=hrtf)
+                brir_hrtf_type = hrtf_type
+                brir_hrtf_dataset = dataset
+                brir_hrtf_short = hrtf
+                brir_hrtf_gui = name_gui
+
+            hf.log_with_timestamp(f"Loading HRTF data: {brir_hrtf_gui}", gui_logger)
+
+            # --- Determine base directory ---
+            if brir_hrtf_type == 'Human Listener':
+                hrir_dir_base = CN.DATA_DIR_HRIR_NPY_HL
+            elif brir_hrtf_type == 'Dummy Head / Head & Torso Simulator':
+                hrir_dir_base = CN.DATA_DIR_HRIR_NPY_DH
+            elif brir_hrtf_type == 'Favourites':
+                raise ValueError("Invalid HRTF type")
+            elif brir_hrtf_type == 'User SOFA Input':
+                hrir_dir_base = CN.DATA_DIR_HRIR_NPY_USER  # user sofa npy set
+            else:
+                raise ValueError("Invalid HRTF type")
+
+            # Build full path
+            sub_directory = 'h'  # spatial resolution subfolder
+            hrir_dir = pjoin(hrir_dir_base, sub_directory)
+            if brir_hrtf_type != 'User SOFA Input':
+                hrir_dir = pjoin(hrir_dir, brir_hrtf_dataset)
+            npy_fname = pjoin(hrir_dir, f"{brir_hrtf_short}.npy")
+
+            # --- Load HRIR dataset ---
+            try:
+                hrir_list = hf.load_convert_npy_to_float64(npy_fname)
+            except Exception as e:
+                hf.log_with_timestamp(f"Local HRIR dataset not found: {e}. Proceeding with SOFA workflow.", gui_logger)
+                status_subroutine = sofa_workflow_new_dataset(
+                    brir_hrtf_type=brir_hrtf_type,
+                    brir_hrtf_dataset=brir_hrtf_dataset,
+                    brir_hrtf_gui=brir_hrtf_gui,
+                    brir_hrtf_short=brir_hrtf_short,
+                    gui_logger=gui_logger
+                )
+                if status_subroutine == 0:  # success
+                    hrir_list = hf.load_convert_npy_to_float64(npy_fname)
+                elif status_subroutine == 2:  # cancelled
+                    hf.log_with_timestamp(f"SOFA workflow cancelled for {brir_hrtf_gui}", gui_logger)
+                    return [], 2
+                else:
+                    raise ValueError(f"HRIR processing failed for {brir_hrtf_gui} via SOFA workflow")
+
+            # --- Select first dimension (unitary) ---
+            hrir_selected = hrir_list[0]
+            hrir_list_loaded.append(hrir_selected)
+
+            # --- Optional logging of dimensions ---
+            total_elev_hrir = hrir_selected.shape[0]
+            total_azim_hrir = hrir_selected.shape[1]
+            total_chan_hrir = hrir_selected.shape[2]
+            total_samples_hrir = hrir_selected.shape[3]
+            hf.log_with_timestamp(
+                f"Loaded {brir_hrtf_gui}: Elev={total_elev_hrir}, Azim={total_azim_hrir}, "
+                f"Ch={total_chan_hrir}, Samples={total_samples_hrir}",
+                gui_logger
+            )
+
+        # --- Finished loading all HRIRs ---
+        hf.log_with_timestamp(f"All {len(hrir_list_loaded)} HRIR datasets loaded.", gui_logger)
+        return hrir_list_loaded, 0  # 0 = success
+
+    except Exception as e:
+        # Catch-all fallback for any unexpected errors
+        hf.log_with_timestamp(f"Error loading HRIRs: {e}", gui_logger)
+        return [], 1  # -1 = general failure

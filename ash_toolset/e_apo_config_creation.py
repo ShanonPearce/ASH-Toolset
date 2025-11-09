@@ -27,220 +27,9 @@ log_info=1
 
 
 
-def write_e_apo_configs_brirs(brir_name, primary_path):
-    """
-    Function creates equalizer APO configuration files for specified brir name
-    :param brir_name: string, name of brir
-    :param primary_path: string, base path to save files to
-    :return: None
-    """ 
-    
-    # get the start time
-    st = time.time()
 
-
-    try:
-    
-        brir_folder = brir_name
-        output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS_BRIR,brir_folder)
-        
-        conv_brir_rel_dir = 'Convolution: ..\\..\\..\\BRIRs\\'+brir_name+'\\'
-        brir_part_b = 'BRIR'
-        brir_part_c = '_E0_'
-        brir_part_d = '.wav'
-        
-        elev_range = ['','_Elevated_Front']
-        
-        #for every speaker config, write file
-        for m in elev_range:
-            
-            if m == '_Elevated_Front':
-                elev='15'
-            else:
-                elev='0'
-                    
-            for n in range(CN.NUM_SPEAK_CONFIGS):
-                
-                out_file_name = CN.CHANNEL_CONFIGS[n][0] +m+ '_Config.txt'
-                out_file_path = pjoin(output_config_path, out_file_name)
-                
-                #create dir if doesnt exist
-                output_file = Path(out_file_path)
-                output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-                #write to txt file
-                with open(out_file_path, 'w') as f:
-                    f.write('BRIR convolution configuration for Equalizer APO')
-                    f.write('\n')
-                    f.write('Speaker setup: ' + CN.CHANNEL_CONFIGS[n][2])
-                    f.write('\n')
-                    f.write('Dated: ' + today)
-                    f.write('\n')
-                    f.write('\n')
-                    f.write('Channel: ALL')
-                    f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '2.0' or CN.CHANNEL_CONFIGS[n][1] == '2.0W' or CN.CHANNEL_CONFIGS[n][1] == '2.0N':
-                        copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R'
-                    elif CN.CHANNEL_CONFIGS[n][1] == '7.1N':
-                        copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R C_INPUT_L_EAR=C+SUB C_INPUT_R_EAR=C+SUB RL_INPUT_L_EAR=RL RL_INPUT_R_EAR=RL RR_INPUT_L_EAR=RR RR_INPUT_R_EAR=RR SL_INPUT_L_EAR=SL SL_INPUT_R_EAR=SL SR_INPUT_L_EAR=SR SR_INPUT_R_EAR=SR'
-                    elif CN.CHANNEL_CONFIGS[n][1] == '7.1W':
-                        copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R C_INPUT_L_EAR=C+SUB C_INPUT_R_EAR=C+SUB RL_INPUT_L_EAR=RL RL_INPUT_R_EAR=RL RR_INPUT_L_EAR=RR RR_INPUT_R_EAR=RR SL_INPUT_L_EAR=SL SL_INPUT_R_EAR=SL SR_INPUT_L_EAR=SR SR_INPUT_R_EAR=SR'
-                    elif CN.CHANNEL_CONFIGS[n][1] == '5.1':
-                        copy_string = 'Copy: L_INPUT_L_EAR=L L_INPUT_R_EAR=L R_INPUT_L_EAR=R R_INPUT_R_EAR=R C_INPUT_L_EAR=C+SUB C_INPUT_R_EAR=C+SUB RL_INPUT_L_EAR=RL RL_INPUT_R_EAR=RL RR_INPUT_L_EAR=RR RR_INPUT_R_EAR=RR'
-                    f.write(copy_string)
-                    f.write('\n')
-                    f.write('Channel: L_INPUT_L_EAR L_INPUT_R_EAR')
-                    f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '2.0W':
-                        f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['WIDE_FL'] + brir_part_d)
-                    elif CN.CHANNEL_CONFIGS[n][1] == '2.0N':
-                        f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['NARROW_FL'] + brir_part_d)
-                    else:
-                        f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['FL'] + brir_part_d)
-                    f.write('\n')
-                    f.write('Channel: R_INPUT_L_EAR R_INPUT_R_EAR')
-                    f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '2.0W':
-                        f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['WIDE_FR'] + brir_part_d)
-                    elif CN.CHANNEL_CONFIGS[n][1] == '2.0N':
-                        f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['NARROW_FR'] + brir_part_d)
-                    else:
-                        f.write(conv_brir_rel_dir + brir_part_b + '_E' + elev +'_A' + CN.AZIM_DICT['FR'] + brir_part_d)
-                    f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '7.1N' or CN.CHANNEL_CONFIGS[n][1] == '7.1W' or CN.CHANNEL_CONFIGS[n][1] == '5.1':
-                        f.write('Channel: C_INPUT_L_EAR C_INPUT_R_EAR')
-                        f.write('\n')
-                        f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['FC'] + brir_part_d)
-                        f.write('\n')
-                    
-                        f.write('Channel: RL_INPUT_L_EAR RL_INPUT_R_EAR')
-                        f.write('\n')
-                        if CN.CHANNEL_CONFIGS[n][1] == '5.1':
-                            f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['WIDEST_BL'] + brir_part_d)
-                        elif CN.CHANNEL_CONFIGS[n][1] == '7.1W':
-                            f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['WIDE_BL'] + brir_part_d)
-                        elif CN.CHANNEL_CONFIGS[n][1] == '7.1N':
-                            f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['NARROW_BL'] + brir_part_d)
-                        f.write('\n')
-                        f.write('Channel: RR_INPUT_L_EAR RR_INPUT_R_EAR')
-                        f.write('\n')
-                        if CN.CHANNEL_CONFIGS[n][1] == '5.1':
-                            f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['WIDEST_BR'] + brir_part_d)
-                        elif CN.CHANNEL_CONFIGS[n][1] == '7.1W':
-                            f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['WIDE_BR'] + brir_part_d)
-                        elif CN.CHANNEL_CONFIGS[n][1] == '7.1N':
-                            f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['NARROW_BR'] + brir_part_d)
-                        f.write('\n')
-                    if CN.CHANNEL_CONFIGS[n][1] == '7.1N' or CN.CHANNEL_CONFIGS[n][1] == '7.1W':
-                        f.write('Channel: SL_INPUT_L_EAR SL_INPUT_R_EAR')
-                        f.write('\n')
-                        f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['SL'] + brir_part_d)
-                        f.write('\n')
-                        
-                        f.write('Channel: SR_INPUT_L_EAR SR_INPUT_R_EAR')
-                        f.write('\n')
-                        f.write(conv_brir_rel_dir + brir_part_b + brir_part_c +'A' + CN.AZIM_DICT['SR'] + brir_part_d)
-                        f.write('\n')
-                        
-                    
-                    if CN.CHANNEL_CONFIGS[n][1] == '2.0' or CN.CHANNEL_CONFIGS[n][1] == '2.0W' or CN.CHANNEL_CONFIGS[n][1] == '2.0N':
-                        copy_string = 'Copy: L=L_INPUT_L_EAR+R_INPUT_L_EAR R=L_INPUT_R_EAR+R_INPUT_R_EAR'
-                    elif CN.CHANNEL_CONFIGS[n][1] == '7.1N':
-                        copy_string = 'Copy: L=L_INPUT_L_EAR+R_INPUT_L_EAR+C_INPUT_L_EAR+RL_INPUT_L_EAR+RR_INPUT_L_EAR+SL_INPUT_L_EAR+SR_INPUT_L_EAR R=L_INPUT_R_EAR+R_INPUT_R_EAR+C_INPUT_R_EAR+RL_INPUT_R_EAR+RR_INPUT_R_EAR+SL_INPUT_R_EAR+SR_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0*SL SR=0*SR SUB=0*SUB'
-                    elif CN.CHANNEL_CONFIGS[n][1] == '7.1W':
-                        copy_string = 'Copy: L=L_INPUT_L_EAR+R_INPUT_L_EAR+C_INPUT_L_EAR+RL_INPUT_L_EAR+RR_INPUT_L_EAR+SL_INPUT_L_EAR+SR_INPUT_L_EAR R=L_INPUT_R_EAR+R_INPUT_R_EAR+C_INPUT_R_EAR+RL_INPUT_R_EAR+RR_INPUT_R_EAR+SL_INPUT_R_EAR+SR_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0*SL SR=0*SR SUB=0*SUB'
-                    elif CN.CHANNEL_CONFIGS[n][1] == '5.1':
-                        copy_string = 'Copy: L=L_INPUT_L_EAR+R_INPUT_L_EAR+C_INPUT_L_EAR+RL_INPUT_L_EAR+RR_INPUT_L_EAR R=L_INPUT_R_EAR+R_INPUT_R_EAR+C_INPUT_R_EAR+RL_INPUT_R_EAR+RR_INPUT_R_EAR C=0*C RL=0*RL RR=0*RR SL=0 SR=0 SUB=0*SUB'
-                    f.write(copy_string)
-        
-
-        log_string = 'Equalizer APO Configurations saved to: ' + str(output_config_path)
-        hf.log_with_timestamp(log_string)
-
-        
-    except Exception as ex:
-        log_string = 'Error occurred'
-        hf.log_with_timestamp(log_string=log_string, log_type = 2, exception=ex)#log error
-            
-    # get the end time
-    et = time.time()
-    
-    # get the execution time
-    elapsed_time = et - st
-    log_string = 'Execution time:' + str(elapsed_time) + ' seconds'
-    hf.log_with_timestamp(log_string)
-        
-
-def write_e_apo_configs_hpcfs(brand, headphone, sample, primary_path):
-    """
-    Function creates equalizer APO configuration files for specified hpcf name
-    :param brand: string, headphone brand
-    :param headphone: string, name of headphone
-    :param sample: string, name of sample
-    :param primary_path: string, base path to save files to
-    :return: None
-    """ 
-
-    # get the start time
-    st = time.time()
-
-
-    try:
-    
-        #hpcf wav directory
-        out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs',brand)
-        hpcf_name_wav = headphone + ' ' + sample + '.wav'
-        hpcf_name_wav = hpcf_name_wav.replace(" ", "_")
-    
-        #hpcf EAPO config path
-        output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS_HPCF,brand)
-    
-        out_file_name = headphone + ' ' + sample + '.txt'
-        out_file_name = out_file_name.replace(" ", "_")
-        out_file_path = pjoin(output_config_path, out_file_name)
-        
-        #create dir if doesnt exist
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        conv_hpcf_rel_dir = 'Convolution: ..\\..\\..\\HpCFs\\FIRs\\'+brand+'\\'
-        
-        #write to txt file
-        with open(out_file_path, 'w') as f:
-            f.write('HpCF convolution configuration for Equalizer APO')
-            f.write('\n')
-            f.write('Headphone: ' + headphone)
-            f.write('\n')
-            f.write('Sample: ' + sample)
-            f.write('\n')
-            f.write('Dated: ' + today)
-            f.write('\n')
-            f.write('Channel: ALL')
-            f.write('\n')
-            f.write('Preamp: 6 dB')#also adjust gain
-            f.write('\n')
-            f.write(conv_hpcf_rel_dir + hpcf_name_wav)
-        
-        
-        log_string = 'Equalizer APO Configurations saved to: ' + str(output_config_path)
-        hf.log_with_timestamp(log_string)
-
-        
-    except Exception as ex:
-        log_string = 'Error occurred'
-        hf.log_with_timestamp(log_string=log_string, log_type = 2, exception=ex)#log error
-            
-    # get the end time
-    et = time.time()
-    
-    # get the execution time
-    elapsed_time = et - st
  
-    log_string = 'Execution time:' + str(elapsed_time) + ' seconds'
-    hf.log_with_timestamp(log_string)
-        
- 
-def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, gain_override=None, spatial_res=1, upmix_method='Method A', side_delay=0, rear_delay=0, gui_logger=None):
+def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, gain_adjustment=None, spatial_res=1, upmix_method='Method A', side_delay=0, rear_delay=0, gui_logger=None):
     """
     Function creates equalizer APO configuration file to perform relevant convolution commands. This file needs to be loaded into config.txt
     :param primary_path: string, base path to save files to
@@ -248,7 +37,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
     :param brir_dict: dict, dictionary containing brir related metadata
     :param primary_path: string, selected audio channel configuration
     :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
-    :param gain_override: float, a value to replace gain with
+    :param gain_adjustment: float, a value to adjust gain with
     :param upmix_method: int, upmixing method if applicable
     :return: float containing overall gain
     """ 
@@ -260,7 +49,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
     impulse[0]=1
     fr_flat_mag = np.abs(np.fft.fft(impulse))
     fr_flat = hf.mag2db(fr_flat_mag)
-    gain_overall=0.0
+    preamp=0.0
     
     if upmix_method == 'Method A':
         gain_adjust_upmix = 0.8128
@@ -357,11 +146,16 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
   
   
         #find brand name and file name for headphone - search through hpcf folder
+        # Ensure safe strings
+        headphone = headphone or ""
+        sample = sample or ""
+        brand = brand or ""
         hpcf_name_formatted = headphone.replace(" ", "_")
         sample_name_formatted = sample.replace(" ", "_")
         brand_formatted = brand.replace(" ", "_")
         hpcf_name_wav = hpcf_name_formatted + '_' + sample_name_formatted + '.wav'
-        hpcf_name_wav=hf.sanitize_filename(hpcf_name_wav)#sanitize file name in case of invalid windows characters
+        hpcf_name_wav = hf.sanitize_filename(hpcf_name_wav)#sanitize file name in case of invalid windows characters
+        hpcf_name_wav = hf.format_name_for_file(hpcf_name_wav)#safety check to replace space with underscore
             
         #hpcf EAPO config path
         output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS)
@@ -384,23 +178,15 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
         if enable_hpcf_conv == True:
             #assume -6dB is peak for all hpcfs
             max_level_db=max_level_db-6
-        if enable_brir_conv == True:
-            #find gain to apply based on HATS -> 3.1.0 obsolete
-        
-            #find gain to apply based on acoustic space
-            as_gain = get_as_gain_from_dir(brir_set_name)*-1
-                    
-            max_level_db = max_level_db + as_gain
-        if enable_hpcf_conv == False and enable_brir_conv == False:
-            max_level_db=max_level_db+0
+  
         max_level_db = max_level_db + additional_gain
-        gain_overall=gain_overall-max_level_db+gain_oa
+        preamp=preamp-max_level_db+gain_oa
         #override gain if a value is passed into function
-        if gain_override is not None:
-            gain_overall=gain_overall+gain_override
-        gain_overall = round(gain_overall,1)
-        if gain_overall > 50 or gain_overall < -100:
-            log_string = 'invalid gains calculated: ' + str(gain_overall)
+        if gain_adjustment is not None:
+            preamp=preamp+gain_adjustment
+        preamp = round(preamp,1)
+        if preamp > 50 or preamp < -100:
+            log_string = 'invalid gains calculated: ' + str(preamp)
             hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1)#log warning
 
         
@@ -422,7 +208,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
             #section to apply gains
             f.write('Channel: ALL')
             f.write('\n')
-            f.write('Preamp: '+ str(gain_overall) +' dB')#also adjust gain
+            f.write('Preamp: '+ str(preamp) +' dB')#also adjust gain
             f.write('\n')
             f.write('\n')
             
@@ -559,7 +345,7 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
             
         return CN.EAPO_ERROR_CODE
             
-    return gain_overall
+    return preamp
     
     
 def include_ash_e_apo_config(primary_path, enabled=False):
@@ -636,7 +422,7 @@ def include_ash_e_apo_config(primary_path, enabled=False):
             raise ValueError('config.txt not modified. file not found: '+ str(custom_file))
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)  
         return CN.EAPO_ERROR_CODE
     
     return status_code
@@ -673,7 +459,7 @@ def get_exported_brir_list(primary_path):
         return sorted(directory_list, key=str.casefold)
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)  
         return []
     
 def get_spatial_res_from_dir(primary_path, brir_set):
@@ -719,7 +505,7 @@ def get_spatial_res_from_dir(primary_path, brir_set):
             spatial_res=0
 
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)   
         
     return spatial_res
     
@@ -749,7 +535,7 @@ def get_hrtf_type_from_dir(brir_set, spatial_res=1):
                     hrtf_index=idx
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)   
     
     return hrtf_type
     
@@ -775,79 +561,69 @@ def get_as_gain_from_dir(brir_set):
                     gain=CN.AC_SPACE_GAINS[idx]
     
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)   
     
     return gain
      
     
-def get_exported_hp_list(primary_path):
-    """
-    Function reads HpCF folders in output directory and returns list of headphones.
-    :param primary_path: string, base path to save files to
-    :return: None
-    """    
-    #delimiters
-    delimiter_a = '_Sample'
-    delimiter_b = '_Average'
 
-    hpcf_fir_path = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs')
     
-    hpcf_file_list = []
-    hpcf_hp_list = []
-    
-    try:
-    
-        for root, dirs, files in os.walk(hpcf_fir_path):
-            for filename in files:
-                if '.wav' in filename:
-                    hpcf_file_list.append(filename)
-                    
-                    name_before_a = filename.split(delimiter_a)[0]
-                    name_before_a_b = name_before_a.split(delimiter_b)[0]
-                    extracted_hp_name =  name_before_a_b.replace("_", " ")
-                    
-                    hpcf_hp_list.append(extracted_hp_name)
-        
-        return sorted(list(set(hpcf_hp_list)), key=str.casefold)
-    
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)  
-        return []
-    
-def get_exported_sample_list(headphone, primary_path):
+def get_exported_hp_list(primary_path, delimiters, gui_logger=None):
     """
-    Function reads HpCF folders in output directory for a specified headphone and returns list of samples.
-    :param primary_path: string, base path to save files to
-    :return: None
-    """    
+    Reads HpCF FIR folders and returns a distinct, sorted list of headphone names.
+    Uses provided delimiters (e.g., sample names) to extract names before those substrings.
+    Matching is case-insensitive, and separators ('_' or ' ') before delimiters are trimmed.
+    Filenames that don't match any delimiter are logged via hf.log_with_timestamp.
     
-    #hpcf_name_formatted = headphone.replace(" ", "_")
-    hpcf_name_formatted = headphone.replace(" ", "_")+'_'
-                
-    hpcf_fir_path = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs')
-    
-    hpcf_file_list = []
-    hpcf_sample_list = []
-    delimiter_a = '.wav'
-    
+    :param primary_path: str, base directory containing the HpCF 'FIRs' folder
+    :param delimiters: list[str], list of substrings used to split filenames (e.g., ['SampleA', 'Average'])
+    :param gui_logger: optional GUI logger object to pass to hf.log_with_timestamp
+    :return: list[str], sorted unique list of headphone names
+    """
+    hpcf_fir_path = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS, "FIRs")
+    hpcf_hp_list = []
+
     try:
-    
-        for root, dirs, files in os.walk(hpcf_fir_path):
+        # Normalize delimiters: replace spaces with underscores, lowercase
+        delimiters_norm = [d.replace(" ", "_").lower() for d in delimiters if d]
+
+        for root, _, files in os.walk(hpcf_fir_path):
             for filename in files:
-                if hpcf_name_formatted in filename:
-                    hpcf_file_list.append(filename)
-                    
-                    name_after_hp = filename.split(hpcf_name_formatted)[1]
-                    name_before_a = name_after_hp.split(delimiter_a)[0]
-                    extracted_sample_name =  name_before_a.replace("_", " ")
-                    
-                    if extracted_sample_name.startswith('Sample ') or extracted_sample_name.startswith('sample ') or extracted_sample_name.startswith('Average') or extracted_sample_name.startswith('average'):
-                        hpcf_sample_list.append(extracted_sample_name)
+                if not filename.lower().endswith(".wav"):
+                    continue
+
+                # Remove file extension
+                name = os.path.splitext(filename)[0]
+                name_lower = name.lower()
+
+                matched = False
+
+                # Try to find and strip at the first matching delimiter (case-insensitive)
+                for d_norm in delimiters_norm:
+                    idx = name_lower.find(d_norm)
+                    if idx != -1:
+                        # Trim up to character *before* the matched delimiter
+                        name = name[:idx].rstrip("_ ").strip()
+                        matched = True
+                        break
+
+                # Replace underscores with spaces and tidy up
+                name = name.replace("_", " ").strip()
+
+                if name:
+                    hpcf_hp_list.append(name)
+                elif not matched and gui_logger:
+                    log_string = f"Filename '{filename}' could not be matched to any delimiter."
+                    hf.log_with_timestamp(log_string, gui_logger)
         
-        return sorted(hpcf_sample_list, key=str.casefold)
-    
+        # Debug print of final headphone list
+        #print("Normalized delimiters:", delimiters_norm)
+        #print("Extracted headphone list:", sorted(set(hpcf_hp_list), key=str.casefold))
+        
+        return sorted(set(hpcf_hp_list), key=str.casefold)
+
     except Exception as ex:
-        logging.error("Error occurred", exc_info = ex) 
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)
         return []
     
 def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_config=0, calc_mode=0, channel_config = '2.0 Stereo', freq_mode='default'):
@@ -944,8 +720,16 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
             out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs',brand_formatted)
             hpcf_name_wav = headphone_formatted + '_' + sample_formatted + '.wav'
             out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
-            samplerate, data = wavfile.read(out_file_path)
-            fir_array = data / (2.**31)
+            # if not os.path.exists(out_file_path):
+            #     print("Missing file:", out_file_path)
+            # else:
+            #     print("Found file:", out_file_path, "Size:", os.path.getsize(out_file_path))
+            try: 
+                samplerate, data = hf.read_wav_file(out_file_path)
+                fir_array = data
+            except:
+                samplerate, data = wavfile.read(out_file_path)
+                fir_array = data / (2.**31)
             data_pad=np.zeros(n_fft)
             data_pad[0:(CN.HPCF_FIR_LENGTH-1)]=fir_array[0:(CN.HPCF_FIR_LENGTH-1)]
             data_fft = np.fft.fft(data_pad)
@@ -1069,8 +853,8 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
         
         
 
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+    except Exception as ex:  
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)
         
     return peak_gain
 
@@ -1148,7 +932,7 @@ def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config = 
             all_brirs_found = True
         
 
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)   
+    except Exception as ex:   
+        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)
         
     return all_brirs_found
