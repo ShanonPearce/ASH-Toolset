@@ -45,7 +45,7 @@ from collections import Counter
 import ast
 import json
 from pathlib import Path
-
+from scipy.signal import resample_poly
 
 
 
@@ -1918,7 +1918,7 @@ def read_wav_file(audiofilename):
     return samplerate, samples
 
     
-def resample_signal(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis=0, scale=False):
+def resample_signal_slow(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis=0, scale=False):
     """
     function to resample a signal. By default will upsample from 44100Hz to 48000Hz
     """  
@@ -1934,6 +1934,18 @@ def resample_signal(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis
     
     
     return resampled_signal
+
+
+def resample_signal(signal, original_rate=CN.SAMP_FREQ, new_rate=48000, axis=0, scale=False, mode='fast'):
+    """
+    function to resample a signal. By default will upsample from 44100Hz to 48000Hz
+    """  
+    if original_rate == new_rate:
+        return signal
+    if mode == 'best':
+        return librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=axis, scale=scale )
+    else:
+        return resample_poly(signal, new_rate, original_rate, axis=axis, window=('kaiser', 5.0))
 
     
 def normalize_array(ir):

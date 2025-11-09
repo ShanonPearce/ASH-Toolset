@@ -76,25 +76,11 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         #get relevant information from dict
         if brir_dict:
             if brir_name == CN.FOLDER_BRIRS_LIVE: 
-                # brir_hrtf_type=brir_dict.get('qc_brir_hrtf_type')
-                # brir_hrtf_dataset=brir_dict.get('qc_brir_hrtf_dataset')
-                # brir_hrtf = brir_dict.get('qc_brir_hrtf')
-                # brir_hrtf_short=brir_dict.get('qc_brir_hrtf_short')
-                # room_target = brir_dict.get("qc_room_target")
                 direct_gain_db = brir_dict.get("qc_direct_gain_db")
-                # acoustic_space= brir_dict.get("qc_ac_space_src")
-                # pinna_comp = brir_dict.get("qc_pinna_comp")
                 samp_freq = brir_dict.get("qc_samp_freq_int")
                 bit_depth = brir_dict.get("qc_bit_depth")
             else:
-                # brir_hrtf_type=brir_dict.get('fde_brir_hrtf_type')
-                # brir_hrtf_dataset=brir_dict.get('fde_brir_hrtf_dataset')
-                # brir_hrtf = brir_dict.get('fde_brir_hrtf')
-                # brir_hrtf_short=brir_dict.get('fde_brir_hrtf_short')
-                # room_target = brir_dict.get("fde_room_target")
                 direct_gain_db = brir_dict.get("fde_direct_gain_db")
-                # acoustic_space= brir_dict.get("fde_ac_space_src")
-                # pinna_comp = brir_dict.get("fde_pinna_comp")
                 samp_freq = brir_dict.get("fde_samp_freq_int")
                 bit_depth = brir_dict.get("fde_bit_depth")
             
@@ -183,9 +169,10 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                                     
                                     #resample if samp_freq is not 44100
                                     if samp_freq != CN.SAMP_FREQ:
-                                        out_wav_array = hf.resample_signal(out_wav_array, new_rate = samp_freq)
-                                    
-                                    hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
+                                        out_wav_resampled = hf.resample_signal(out_wav_array, new_rate=samp_freq)
+                                        hf.write2wav(file_name=out_file_path, data=out_wav_resampled, bit_depth=bit_depth, samplerate=samp_freq)
+                                    else:
+                                        hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
             #normal process, use full dataset
             else:
                 #removal of old files
@@ -227,7 +214,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                             out_wav_array[:samples_to_use, :] = brir_chunk[:, :samples_to_use].T * (reduction_gain/max_amp)
                             
                             
-                        if direction_matrix_store[elev][azim][0][0] == 1:  
+                        if direction_matrix_store[elev][azim][0][0] == 1 and brir_name == CN.FOLDER_BRIRS_LIVE: 
                             # Create a dictionary with the required variables
                             data_dict = {
                                 "elev_deg_wav": elev_deg_wav,
@@ -250,9 +237,10 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                             
                             #resample if samp_freq is not 44100
                             if samp_freq != CN.SAMP_FREQ:
-                                out_wav_array = hf.resample_signal(out_wav_array, new_rate = samp_freq)
-                            
-                            hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
+                                out_wav_resampled = hf.resample_signal(out_wav_array, new_rate=samp_freq)
+                                hf.write2wav(file_name=out_file_path, data=out_wav_resampled, bit_depth=bit_depth, samplerate=samp_freq)
+                            else:
+                                hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
                             
   
             #finished
@@ -335,6 +323,13 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         
                 # Resample to 48 kHz
                 data_pad_48k = hf.resample_signal(data_pad, new_rate=48000)
+                
+                # Enforce exact target length
+                target_len = out_wav_samples_48
+                if data_pad_48k.shape[0] > target_len:
+                    data_pad_48k = data_pad_48k[:target_len, :]
+                elif data_pad_48k.shape[0] < target_len:
+                    data_pad_48k = np.pad(data_pad_48k, ((0, target_len - data_pad_48k.shape[0]), (0, 0)))
         
                 # Assign to HESUVI channels
                 ch_left, ch_right = src["he_channels"]
@@ -786,6 +781,14 @@ def export_sofa_brir(primary_path, brir_arr, brir_set_name, spatial_res, output_
                     #resample if samp_freq is not 44100
                     if samp_freq != CN.SAMP_FREQ:
                         pos_brir_array = hf.resample_signal(pos_brir_array, new_rate = samp_freq)
+                        
+                    # --- FIX: ensure length consistency ---
+                    if pos_brir_array.shape[0] != output_samples_re:
+                        if pos_brir_array.shape[0] > output_samples_re:
+                            pos_brir_array = pos_brir_array[:output_samples_re, :]
+                        else:
+                            pad_len = output_samples_re - pos_brir_array.shape[0]
+                            pos_brir_array = np.pad(pos_brir_array, ((0, pad_len), (0, 0)))
                     
                     #populate data IR array
                     data_ir_array[source_pos_id,0,0:output_samples_re] = pos_brir_array[0:output_samples_re,0]#L
@@ -1026,6 +1029,14 @@ def export_sofa_ir(primary_path, ir_arr, ir_set_name, spatial_res=2, output_samp
 
                 if samp_freq != CN.SAMP_FREQ:
                     ir_pair = hf.resample_signal(ir_pair, new_rate=samp_freq)
+                    
+                # --- FIX: ensure length consistency ---
+                if ir_pair.shape[0] != output_samples_re:
+                    if ir_pair.shape[0] > output_samples_re:
+                        ir_pair = ir_pair[:output_samples_re, :]
+                    else:
+                        pad_len = output_samples_re - ir_pair.shape[0]
+                        ir_pair = np.pad(ir_pair, ((0, pad_len), (0, 0)))
 
                 # Transpose from (samples, channels) → (channels, samples) for SOFA format
                 data_ir_array[src_idx, :, :output_samples_re] = ir_pair[:output_samples_re, :].T
