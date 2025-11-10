@@ -368,11 +368,6 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 - A folder is created for each filter type and for each headphone brand that has an exported filter
 - The filters are named as per the headphone name
 
-**Equalizer APO Configurations (deprecated)**
-- Equalizer APO configurations are saved within the ASH-Outputs\E-APO-Configs folder
-- Folders follow the same naming as above filters and binaural datasets
-- A set of IR convolution configuration files are created for each binaural dataset and for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
-- A set of IR convolution configuration files are created for each headphone correction filter
 
 ---
 ## Supporting Information <a name="Supporting-Information"></a> 
