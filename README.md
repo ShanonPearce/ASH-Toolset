@@ -133,7 +133,7 @@ python C:\sample-location\ASH-Toolset\ash_toolset.py
 The app contains the following tabs:
 - The 'Quick Configuration’ tab can be used to directly apply headphone correction and binaural room simulation in Equalizer APO
 - The ‘Filter & Dataset export’ tab can be used to export correction filters and binaural datasets to a local directory
-- The ‘Acoustic Space Import’ tab can be used to import acoustic impulse responses and use them as acoustic spaces in the binaural simulations
+- The ‘Acoustic Space Import’ tab can be used to import acoustic impulse response files as new acoustic spaces in the binaural simulations
 - The ‘Room target Generator’ tab can be used to create customised room target responses
 - The ‘Additional Tools & Settings’ tab contains some miscellaneous options and log messages
 
