@@ -227,7 +227,7 @@ In the ‘Filter & Dataset export’ tab, this is used to export a customised bi
 
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
-### Apply Filters and Simulations in Equalizer APO (new method)
+### Apply Filters and Simulations in Equalizer APO
 V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will auto-configure 'config.txt' to apply selected filters and binaural simulations in Equalizer APO. Ensure 'Enable Headphone Correction' and/or 'Enable Binaural Room Simulation' are ticked for the changes to apply. The audio channels can be configured in the 'Channel Configuration' tab on the right side of the app.
 
 ![Equalizer APO example](docs/images/e_apo_steps.png)
@@ -236,25 +236,6 @@ V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will 
 - The estimated peak gain table can be used to identify potential clipping that may occur for different input channel configurations. Max. peak gain is the highest peak gain across the left and right channels whereas average peak gain is the average peak gain of the left and right channels. 
 - The input audio channel configuration can be selected using the drop down. The selected channel configuration must be supported by the sound device. An option to upmix 2.0 stereo to 7.1 is included. The upmix has available 2 methods: Method A which is a simple channel duplication and Method B which also includes Mid/Side channel separation.
 - The gains and source directions of each audio channel can be configured separately.
-
-
-### Apply Filters and Simulations in Equalizer APO (old method - V2.0.0 to V2.4.0)
-V2.0.0 to V2.4.0 of the toolset includes a section to browse exported filters and auto-configure 'config.txt' to apply selected filters in Equalizer APO. This method removes the need for manual interaction with the configuration editor.
-
-1. Select a headphone from the list of exported filters. 
-2. Select a specific sample to apply headphone correction.
-3. Select a binaural dataset from list of generated datasets to apply binaural room simulation. 
-4. Select audio channel configuration. The selected channel configuration must be supported by the sound device.
-5. Configure the gain and source direction of each audio channel.
-
-
-### Apply Filters and Simulations in Equalizer APO (old method - V1.0.0 to V1.2.0)
-
-1. In the Windows sound settings, set the default format of the output sound device to the sample rate of the generated filters. In Windows 11 the playback device settings can be found in Settings -> System -> Sound -> (your output device) -> Properties. The sample rate of the sound device must match the sample rate of the filters.
-2. Generated filters will be saved in the Equalizer APO config directory (e.g. C:\Program Files\EqualizerAPO\config\ASH-Outputs) by default. Move the ASH-Outputs folder to this location if it was saved elsewhere.
-3. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Outputs\E-APO-Configs\HpCF-Convolution` folder and select the desired configuration file for headphone correction.
-4. In the configuration editor, add a new `Include` command to your `config.txt` file, then navigate to the `EqualizerAPO\config\ASH-Outputs\E-APO-Configs\BRIR-Convolution` folder and select the desired configuration file for binaural room simulation.
-5. To swap out a filter or binaural dataset, simply load a different configuration file.
 
 
 ### 7.1 Surround Virtualisation
@@ -408,47 +389,53 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 
 ### Acoustic Spaces
 
-| Name               | Estimated RT60 (ms) | Name             | Estimated RT60 (ms) | Name           | Estimated RT60 (ms) |
-|--------------------|---------------------|------------------|---------------------|----------------|---------------------|
-| Atrium A           | 2894                | Conference Room  | 467                 | Outdoors A     | 1935                |
-| Atrium B           | 1282                | Control Room     | 260                 | Outdoors B     | 1183                |
-| Audio Lab A        | 305                 | Courtyard        | 1496                | Outdoors C     | 1199                |
-| Audio Lab B        | 413                 | Foyer            | 1215                | Recording Room | 284                 |
-| Audio Lab C        | 508                 | Hall A           | 1418                | Seminar Room A | 839                 |
-| Audio Lab D        | 193                 | Hall B           | 949                 | Seminar Room B | 710                 |
-| Audio Lab E        | 442                 | Hall C           | 1052                | Seminar Room C | 705                 |
-| Audio Lab F        | 631                 | Hall D           | 1078                | Seminar Room D | 685                 |
-| Audio Lab G        | 360                 | Hall E           | 1414                | Small Room A   | 500                 |
-| Audio Lab H        | 528                 | Kiln             | 777                 | Small Room B   | 467                 |
-| Audio Lab I        | 539                 | Large Room       | 624                 | Small Room C   | 476                 |
-| Auditorium A       | 1455                | Lecture Room A   | 704                 | Small Theatre  | 950                 |
-| Auditorium B       | 901                 | Lecture Room B   | 728                 | Smoking Room   | 654                 |
-| Auditorium C       | 418                 | Listening Room A | 221                 | Stairway       | 876                 |
-| Auditorium D       | 1246                | Listening Room B | 379                 | Studio A       | 398                 |
-| Broadcast Studio A | 1183                | Listening Room C | 562                 | Studio B       | 351                 |
-| Broadcast Studio B | 1241                | Listening Room D | 312                 | Studio C       | 723                 |
-| Chamber A          | 1408                | Listening Room E | 824                 | Studio D       | 739                 |
-| Chamber B          | 780                 | Listening Room F | 771                 | Tatami Room    | 513                 |
-| Classroom          | 1147                | Listening Room G | 233                 | Tennis Court A | 1432                |
-| Concert Hall A     | 1599                | Lobby            | 735                 | Tennis Court B | 1273                |
-| Concert Hall B     | 1585                | Meeting Room     | 458                 | Theatre        | 959                 |
-| Concert Hall C     | 1526                | Office A         | 408                 | Tunnel         | 1404                |
-| Concert Hall D     | 1461                | Office B         | 496                 |                |                     |
+|Name              |Estimated RT60 (ms)|Name              |Estimated RT60 (ms)|Name              |Estimated RT60 (ms)|
+|------------------|-------------------|------------------|-------------------|------------------|-------------------|
+|Atrium A          |2894               |Courtyard         |1496               |Outdoors A        |1935               |
+|Atrium B          |1282               |Foyer             |1246               |Outdoors B        |1183               |
+|Audio Lab A       |305                |Hall A            |1418               |Outdoors C        |1199               |
+|Audio Lab B       |413                |Hall B            |949                |Recording Room    |284                |
+|Audio Lab C       |508                |Hall C            |1052               |Recording Studio A|723                |
+|Audio Lab D       |193                |Hall D            |1069               |Recording Studio B|739                |
+|Audio Lab E       |442                |Hall E            |1414               |Seminar Room A    |839                |
+|Audio Lab F       |631                |Kiln              |777                |Seminar Room B    |710                |
+|Audio Lab G       |360                |Large Treated Room|624                |Seminar Room C    |705                |
+|Audio Lab H       |528                |Lecture Hall A    |901                |Small Room A      |500                |
+|Audio Lab I       |539                |Lecture Hall B    |685                |Small Room B      |467                |
+|Auditorium A      |1455               |Lecture Room A    |704                |Small Room C      |476                |
+|Auditorium B      |346                |Lecture Room B    |728                |Small Theatre     |920                |
+|Auditorium C      |1213               |Lecture Room C    |794                |Smoking Room      |660                |
+|Broadcast Studio A|1183               |Listening Room A  |221                |Stairway          |876                |
+|Broadcast Studio B|1241               |Listening Room B  |379                |Studio A          |398                |
+|Broadcast Studio C|914                |Listening Room C  |562                |Studio B          |351                |
+|Chamber A         |1408               |Listening Room D  |312                |Tatami Room       |513                |
+|Chamber B         |730                |Listening Room E  |824                |Tennis Court A    |1432               |
+|Classroom         |1147               |Listening Room F  |771                |Tennis Court B    |1273               |
+|Concert Hall A    |1599               |Listening Room G  |233                |Tennis Court C    |1345               |
+|Concert Hall B    |1386               |Living Room       |967                |Theatre           |884                |
+|Concert Hall C    |1526               |Lobby A           |735                |Treated Room      |178                |
+|Concert Hall D    |1461               |Lobby B           |859                |Tunnel            |1404               |
+|Conference Room A |467                |Meeting Room      |458                |Yoga Studio       |1325               |
+|Conference Room B |541                |Office A          |408                |                  |                   |
+|Control Room      |260                |Office B          |496                |                  |                   |
+
 
 ### Low-frequency Responses
 
-| Name                     | Acoustic space   | Estimated rt60 | Comments                        | Frequency Range | Tolerance           | Measurement Dataset                      | Source Type | Listener Type |
-|--------------------------|------------------|----------------|---------------------------------|-----------------|---------------------|------------------------------------------|-------------|---------------|
-| Low-frequency Response A | Audio Lab        | 320            | Primary response used in v3.1.2 | 3Hz-150Hz       | 20Hz-120Hz +/-0.8dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response B | Audio Lab        | 340            | Newly added in v3.2.0           | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response C | Listening Room   | 350            | Newly added in v3.2.0           | 5Hz-150Hz       | 20Hz-120Hz +/-1.4dB | ASH-Listening-Set                        | Subwoofer   | Binaural      |
-| Low-frequency Response D | Studio           | 240            | Newly added in v3.2.0           | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response E | Audio Lab        | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response F | Studio live room | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-2.0dB | BBC Maida Vale Impulse Response Dataset  | Loudspeaker | Binaural      |
-| Low-frequency Response G | Listening Room   | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response H | Listening Room   | 600            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-4.0dB | The ISOBEL Sound Field Dataset           | Subwoofer   | Binaural      |
-| Low-frequency Response I | Recording Studio | 700            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-2.0dB | RSoANU: RIR Dataset                      | Loudspeaker | Binaural      |
-| Low-frequency Response J | Listening Room   | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | The ISOBEL Sound Field Dataset           | Subwoofer   | Binaural      |
+|Name                                                |Estimated rt60|Comments                       |Frequency Range|Tolerance          |Measurement Dataset                     |Source Type|Listener Type|
+|----------------------------------------------------|--------------|-------------------------------|---------------|-------------------|----------------------------------------|-----------|-------------|
+|Low-frequency Response A - Audio Lab, smooth        |320           |Primary response used in v3.1.2|3Hz-150Hz      |20Hz-120Hz +/-0.8dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response B - Audio Lab, smooth        |340           |Newly added in v3.2.0          |0Hz-150Hz      |20Hz-120Hz +/-1.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response C - Listening Room, natural  |350           |Newly added in v3.2.0          |5Hz-150Hz      |20Hz-120Hz +/-1.4dB|ASH-Listening-Set                       |Subwoofer  |Binaural     |
+|Low-frequency Response D - Studio, fast & smooth    |240           |Newly added in v3.2.0          |0Hz-150Hz      |20Hz-120Hz +/-1.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response E - Audio Lab, resonant      |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response F - Studio Live Room, natural|350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-2.0dB|BBC Maida Vale Impulse Response Dataset |Loudspeaker|Binaural     |
+|Low-frequency Response G - Listening Room, slow     |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response H - Listening Room, boomy    |600           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-4.0dB|The ISOBEL Sound Field Dataset          |Subwoofer  |Binaural     |
+|Low-frequency Response I - Recording Studio, slow   |700           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-2.0dB|RSoANU: RIR Dataset                     |Loudspeaker|Binaural     |
+|Low-frequency Response J - Listening Room, boomy    |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|The ISOBEL Sound Field Dataset          |Subwoofer  |Binaural     |
+|Low-frequency Response K - Studio, boomy            |400           |Newly added in v3.6.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+
 
 ---
 ## License <a name="License"></a> 
