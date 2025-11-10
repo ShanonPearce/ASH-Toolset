@@ -30,9 +30,11 @@ The Audio Spatialisation for Headphones Toolset is a set of tools for headphone 
 Run the application as administrator to launch the GUI. It may take a few seconds for it to launch.
 
 ### GUI Overview
-The app contains the following 3 tabs:
+The app contains the following tabs:
 - The 'Quick Configuration’ tab can be used to directly apply headphone correction and binaural room simulation in Equalizer APO
 - The ‘Filter & Dataset export’ tab can be used to export correction filters and binaural datasets to a local directory
+- The ‘Acoustic Space Import’ tab can be used to import acoustic impulse responses and use them as acoustic spaces in the binaural simulations
+- The ‘Room target Generator’ tab can be used to create customised room target responses
 - The ‘Additional Tools & Settings’ tab contains some miscellaneous options and log messages
 
 
@@ -41,19 +43,19 @@ In the 'Quick Configuration’ tab, this tool is used to apply headphone correct
 
 ![hpcf steps](docs/images/hpcf_steps.png)
 
-1. **Select a headphone brand** to filter down on the headphone list.
-2. **Select a specific headphone**.
-3. **Select a specific sample**. Note that in the ‘Filter & Dataset export’ tab, all samples will be exported for the selected headphone.
-4. (‘Filter & Dataset export’ tab only) Select which files to include in the export.
+1. **Select a headphone database** containing correction filters. The ‘ASH Filters’ option is the main database which has a structured Brand/Headphone/Sample hierarchy and the ‘Compilation’ option contains additional filters derived from various measurement datasets and has a Type/Headphone/Dataset hierarchy.
+2. **Select a headphone brand or type** to filter down on the headphone list.
+3. **Select a specific headphone**.
+4. **Select a specific sample or dataset**. Note that in the ‘Filter & Dataset export’ tab, all samples/datasets will be exported for the selected headphone.
+5. (‘Filter & Dataset export’ tab only) Select which files to include in the export.
    - FIR Filters: Minimum phase FIRs in WAV format for convolution. 1 channel at specified sample rate and bit depth. This is filter type is required for the app to auto-configure 'config.txt' in Equalizer APO.
    - Stereo FIR Filters: Minimum phase FIRs in WAV format for convolution. 2 channels at specified sample rate and bit depth.
-   - E-APO Configuration files: configuration files that can be loaded into Equalizer APO to perform convolution with the FIR filters. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
    - Graphic EQ Filters (127 bands): Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
    - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
    - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
-5. **Select a sample rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated fitlers should match the sample rate of the sound device.
-6. **Select a bit depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-7. **Click the 'Apply Selection' button** to apply the selected filter in Equalizer APO or **click the 'Process' button** to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Outputs` but can be changed using the change folder option.
+6. **Select a sample rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated fitlers should match the sample rate of the sound device.
+7. **Select a bit depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
+8. **Click the 'Apply Selection' button** to apply the selected filter in Equalizer APO or **click the 'Process' button** to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Outputs` but can be changed using the change folder option.
 
 ---
 ###  Binaural Room Simulation over Headphones
@@ -65,15 +67,17 @@ In the 'Quick Configuration’ tab, this tool is used to apply customised binaur
 1. **Select Acoustic Space** from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
 2. **Select Gain for Direct Sound** in dB. Select a value between -10dB and 10dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
 3. **Select Room Target** from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
-4. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+4. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength or None if sound localisation or timbre is compromised.
    - In-Ear Headphones, high strength
    - In-Ear Headphones, low strength
    - Over-Ear/On-Ear Headphones, high strength
    - Over-Ear/On-Ear Headphones, low strength
+   - None
 5. **Select Listener Type** from below options.
    - Dummy Head / Head & Torso Simulator
    - Human Listener
    - User SOFA Input
+   - Favourites
 6. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
 7. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`. Additional SOFA files can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files).
 8. **(optional) Select Low-frequency Integration Crossover Frequency** between 20Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner Low-frequency response and original room response. Higher values may result in a smoother bass response. 
@@ -91,20 +95,21 @@ In the ‘Filter & Dataset export’ tab, this is used to export a customised bi
 1. **Select Acoustic Space** from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
 2. **Select Gain for Direct Sound** in dB. Select a value between -10dB and 10dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
 3. **Select Room Target** from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
-4. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength if sound localisation or timbre is compromised.
+4. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength or None if sound localisation or timbre is compromised.
    - In-Ear Headphones, high strength
    - In-Ear Headphones, low strength
    - Over-Ear/On-Ear Headphones, high strength
    - Over-Ear/On-Ear Headphones, low strength
+   - None
 5. **Select Spatial Resolution** from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size. Low' is recommended unless additional directions or SOFA export is required.
    - Low: Elevation angles ranging from -30 to 30 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
    - Medium: Elevation angles ranging from -45 to 45 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
    - High: Elevation angles ranging from -50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps. Azimuth angles ranging from 0 to 360 degrees in 5 degree steps.
-   - Max: Elevation angles ranging from -40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps. Azimuth angles ranging from 0 to 360 degrees in 2 degree steps.
 6. **Select Listener Type** from below options.
    - Dummy Head / Head & Torso Simulator
    - Human Listener
    - User SOFA Input
+   - Favourites
 7. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
 8. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`. Additional SOFA files can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files).
 9.  **(optional) Select Low-frequency Integration Crossover Frequency** between 20Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner Low-frequency response and original room response. Higher values may result in a smoother bass response. 
@@ -115,8 +120,8 @@ In the ‘Filter & Dataset export’ tab, this is used to export a customised bi
 14. Select which files to include in the export.
     - Direction specific WAV BRIRs: Binaural Room Impulse Responses (BRIRs) in WAV format for convolution. One file for each source direction and 2 channels per file at specified sample rate and bit depth. This is file type is required for the app to auto-configure 'config.txt' in Equalizer APO.
     - True Stereo WAV BRIRs: True Stereo BRIR in WAV format for convolution. One file with 4 channels representing L and R speakers (LL LR RL RR) at specified sample rate and bit depth.
-    - HeSuVi WAV BRIRs: BRIRs in HeSuVi compatible WAV format. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz. The directions of the channels can be configured in the 'HeSuVi Channel Configuration' tab on the right.
-    - E-APO Configuration Files: configuration files that can be loaded into Equalizer APO to perform convolution with BRIRs. This feature is deprecated from V2.0.0 onwards due to inclusion of auto-configure 'config.txt' feature.
+    - HeSuVi WAV BRIRs: BRIRs in HeSuVi compatible WAV format. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz. The directions of the channels can be configured in the 'HeSuVi & Multichannel Configuration' tab on the right.
+    - 16 Channel WAV BRIRs: BRIRs in FFMPEG compatible WAV format. 16 channels at specified sample rate and bit depth. Channel mapping can be configured in the 'HeSuVi & Multichannel Configuration' tab on the right.
     - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format. The SOFA convention can be selected in the Misc. Settings section under 'Additional Tools & Settings' tab.
 15. **Click the 'Process' button** to export the binaural dataset to the output directory.
 
@@ -263,11 +268,6 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 - A folder is created for each filter type and for each headphone brand that has an exported filter
 - The filters are named as per the headphone name
 
-**Equalizer APO Configurations (deprecated)**
-- Equalizer APO configurations are saved within the ASH-Outputs\E-APO-Configs folder
-- Folders follow the same naming as above filters and binaural datasets
-- A set of IR convolution configuration files are created for each binaural dataset and for a range of common speaker configurations including Stereo, 5.1 surround, & 7.1 surround.
-- A set of IR convolution configuration files are created for each headphone correction filter
 
 ---
 ## Supporting Information <a name="Supporting-Information"></a> 
@@ -289,51 +289,68 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 
 ### Acoustic Spaces
 
-| Name               | Estimated RT60 (ms) | Name             | Estimated RT60 (ms) | Name           | Estimated RT60 (ms) |
-|--------------------|---------------------|------------------|---------------------|----------------|---------------------|
-| Atrium A           | 2894                | Conference Room  | 467                 | Outdoors A     | 1935                |
-| Atrium B           | 1282                | Control Room     | 260                 | Outdoors B     | 1183                |
-| Audio Lab A        | 305                 | Courtyard        | 1496                | Outdoors C     | 1199                |
-| Audio Lab B        | 413                 | Foyer            | 1215                | Recording Room | 284                 |
-| Audio Lab C        | 508                 | Hall A           | 1418                | Seminar Room A | 839                 |
-| Audio Lab D        | 193                 | Hall B           | 949                 | Seminar Room B | 710                 |
-| Audio Lab E        | 442                 | Hall C           | 1052                | Seminar Room C | 705                 |
-| Audio Lab F        | 631                 | Hall D           | 1078                | Seminar Room D | 685                 |
-| Audio Lab G        | 360                 | Hall E           | 1414                | Small Room A   | 500                 |
-| Audio Lab H        | 528                 | Kiln             | 777                 | Small Room B   | 467                 |
-| Audio Lab I        | 539                 | Large Room       | 624                 | Small Room C   | 476                 |
-| Auditorium A       | 1455                | Lecture Room A   | 704                 | Small Theatre  | 950                 |
-| Auditorium B       | 901                 | Lecture Room B   | 728                 | Smoking Room   | 654                 |
-| Auditorium C       | 418                 | Listening Room A | 221                 | Stairway       | 876                 |
-| Auditorium D       | 1246                | Listening Room B | 379                 | Studio A       | 398                 |
-| Broadcast Studio A | 1183                | Listening Room C | 562                 | Studio B       | 351                 |
-| Broadcast Studio B | 1241                | Listening Room D | 312                 | Studio C       | 723                 |
-| Chamber A          | 1408                | Listening Room E | 824                 | Studio D       | 739                 |
-| Chamber B          | 780                 | Listening Room F | 771                 | Tatami Room    | 513                 |
-| Classroom          | 1147                | Listening Room G | 233                 | Tennis Court A | 1432                |
-| Concert Hall A     | 1599                | Lobby            | 735                 | Tennis Court B | 1273                |
-| Concert Hall B     | 1585                | Meeting Room     | 458                 | Theatre        | 959                 |
-| Concert Hall C     | 1526                | Office A         | 408                 | Tunnel         | 1404                |
-| Concert Hall D     | 1461                | Office B         | 496                 |                |                     |
+|Name              |Estimated RT60 (ms)|Name              |Estimated RT60 (ms)|Name              |Estimated RT60 (ms)|
+|------------------|-------------------|------------------|-------------------|------------------|-------------------|
+|Atrium A          |2894               |Courtyard         |1496               |Outdoors A        |1935               |
+|Atrium B          |1282               |Foyer             |1246               |Outdoors B        |1183               |
+|Audio Lab A       |305                |Hall A            |1418               |Outdoors C        |1199               |
+|Audio Lab B       |413                |Hall B            |949                |Recording Room    |284                |
+|Audio Lab C       |508                |Hall C            |1052               |Recording Studio A|723                |
+|Audio Lab D       |193                |Hall D            |1069               |Recording Studio B|739                |
+|Audio Lab E       |442                |Hall E            |1414               |Seminar Room A    |839                |
+|Audio Lab F       |631                |Kiln              |777                |Seminar Room B    |710                |
+|Audio Lab G       |360                |Large Treated Room|624                |Seminar Room C    |705                |
+|Audio Lab H       |528                |Lecture Hall A    |901                |Small Room A      |500                |
+|Audio Lab I       |539                |Lecture Hall B    |685                |Small Room B      |467                |
+|Auditorium A      |1455               |Lecture Room A    |704                |Small Room C      |476                |
+|Auditorium B      |346                |Lecture Room B    |728                |Small Theatre     |920                |
+|Auditorium C      |1213               |Lecture Room C    |794                |Smoking Room      |660                |
+|Broadcast Studio A|1183               |Listening Room A  |221                |Stairway          |876                |
+|Broadcast Studio B|1241               |Listening Room B  |379                |Studio A          |398                |
+|Broadcast Studio C|914                |Listening Room C  |562                |Studio B          |351                |
+|Chamber A         |1408               |Listening Room D  |312                |Tatami Room       |513                |
+|Chamber B         |730                |Listening Room E  |824                |Tennis Court A    |1432               |
+|Classroom         |1147               |Listening Room F  |771                |Tennis Court B    |1273               |
+|Concert Hall A    |1599               |Listening Room G  |233                |Tennis Court C    |1345               |
+|Concert Hall B    |1386               |Living Room       |967                |Theatre           |884                |
+|Concert Hall C    |1526               |Lobby A           |735                |Treated Room      |178                |
+|Concert Hall D    |1461               |Lobby B           |859                |Tunnel            |1404               |
+|Conference Room A |467                |Meeting Room      |458                |Yoga Studio       |1325               |
+|Conference Room B |541                |Office A          |408                |                  |                   |
+|Control Room      |260                |Office B          |496                |                  |                   |
+
 
 ### Low-frequency Responses
 
-| Name                     | Acoustic space   | Estimated rt60 | Comments                        | Frequency Range | Tolerance           | Measurement Dataset                      | Source Type | Listener Type |
-|--------------------------|------------------|----------------|---------------------------------|-----------------|---------------------|------------------------------------------|-------------|---------------|
-| Low-frequency Response A | Audio Lab        | 320            | Primary response used in v3.1.2 | 3Hz-150Hz       | 20Hz-120Hz +/-0.8dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response B | Audio Lab        | 340            | Newly added in v3.2.0           | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response C | Listening Room   | 350            | Newly added in v3.2.0           | 5Hz-150Hz       | 20Hz-120Hz +/-1.4dB | ASH-Listening-Set                        | Subwoofer   | Binaural      |
-| Low-frequency Response D | Studio           | 240            | Newly added in v3.2.0           | 0Hz-150Hz       | 20Hz-120Hz +/-1.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response E | Audio Lab        | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response F | Studio live room | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-2.0dB | BBC Maida Vale Impulse Response Dataset  | Loudspeaker | Binaural      |
-| Low-frequency Response G | Listening Room   | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | Derived from multiple RIR Datasets       | Mixed       | Binaural      |
-| Low-frequency Response H | Listening Room   | 600            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-4.0dB | The ISOBEL Sound Field Dataset           | Subwoofer   | Binaural      |
-| Low-frequency Response I | Recording Studio | 700            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-2.0dB | RSoANU: RIR Dataset                      | Loudspeaker | Binaural      |
-| Low-frequency Response J | Listening Room   | 350            | Newly added in v3.4.0           | 0Hz-150Hz       | 20Hz-120Hz +/-3.0dB | The ISOBEL Sound Field Dataset           | Subwoofer   | Binaural      |
+|Name                                                |Estimated rt60|Comments                       |Frequency Range|Tolerance          |Measurement Dataset                     |Source Type|Listener Type|
+|----------------------------------------------------|--------------|-------------------------------|---------------|-------------------|----------------------------------------|-----------|-------------|
+|Low-frequency Response A - Audio Lab, smooth        |320           |Primary response used in v3.1.2|3Hz-150Hz      |20Hz-120Hz +/-0.8dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response B - Audio Lab, smooth        |340           |Newly added in v3.2.0          |0Hz-150Hz      |20Hz-120Hz +/-1.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response C - Listening Room, natural  |350           |Newly added in v3.2.0          |5Hz-150Hz      |20Hz-120Hz +/-1.4dB|ASH-Listening-Set                       |Subwoofer  |Binaural     |
+|Low-frequency Response D - Studio, fast & smooth    |240           |Newly added in v3.2.0          |0Hz-150Hz      |20Hz-120Hz +/-1.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response E - Audio Lab, resonant      |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response F - Studio Live Room, natural|350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-2.0dB|BBC Maida Vale Impulse Response Dataset |Loudspeaker|Binaural     |
+|Low-frequency Response G - Listening Room, slow     |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
+|Low-frequency Response H - Listening Room, boomy    |600           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-4.0dB|The ISOBEL Sound Field Dataset          |Subwoofer  |Binaural     |
+|Low-frequency Response I - Recording Studio, slow   |700           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-2.0dB|RSoANU: RIR Dataset                     |Loudspeaker|Binaural     |
+|Low-frequency Response J - Listening Room, boomy    |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|The ISOBEL Sound Field Dataset          |Subwoofer  |Binaural     |
+|Low-frequency Response K - Studio, boomy            |400           |Newly added in v3.6.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
 
 
 ---
 ## Changelog <a name="Changelog"></a> 
+
+Version 3.6.0:
+- Added new database selection under headphone correction section. The ‘ASH Filters’ option is the main database and the ‘Compilation’ option contains filters derived from measurements from various datasets.
+- Added option for FFMPEG compatible 16 channel WAV BRIR export
+- Added new tab under quick configuration to save and load presets
+- Added function to create averaged listener. User can click ‘Create Average’ under listener list when favourites are selected to generate the average.
+- Added option “None” under headphone compensation
+- Added new acoustic spaces: Conference Room B, Living Room, Treated Room, Tennis Court C, Broadcast Studio C, Yoga Studio, Lobby B, Lecture Room C. 
+- Regenerated some existing acoustic spaces. 
+- Renamed existing acoustic spaces: Studio C -> Recording Studio A, Studio D -> Recording Studio B, Auditorium B -> Lecture Hall A, Auditorium C -> Auditorium B, Auditorium D -> Auditorium C, Large Room -> Large Treated Room, Seminar Room D -> Lecture Hall B
+- Added new low frequency response: Low-frequency Response K. Included descriptive labels.
+- Fixed issue causing some correction filters to be unable to be located by the app after applying filters
 
 Version 3.5.0:
 - Added favourites selection to listener selection tab. ‘Add favourite’ button has been added below listener list to add selected listener to favourites list.
