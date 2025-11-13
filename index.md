@@ -340,6 +340,11 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 ---
 ## Changelog <a name="Changelog"></a> 
 
+Version 3.6.1:
+- Fixed issue causing headphone correction filters to not be rewritten after changing sampling rate or bit depth in quick configuration and filter export tabs
+- Fixed issue causing BRIR export to fail when switching directions in quick configuration tab
+- Optimised HRTF averaging method used for averaged listener creation
+
 Version 3.6.0:
 - Added new database selection under headphone correction section. The ‘ASH Filters’ option is the main database and the ‘Compilation’ option contains filters derived from measurements from various datasets.
 - Added option for FFMPEG compatible 16 channel WAV BRIR export
