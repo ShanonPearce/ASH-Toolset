@@ -1088,6 +1088,7 @@ def process_hpcfs(sender=None, app_data=None, user_data=None):
             hesuvi_export=hesuvi_export,
             gui_logger=logz,
             report_progress=2,
+            force_output=True
         )
     
         save_settings()
@@ -1108,6 +1109,7 @@ def qc_apply_hpcf_params(sender=None, app_data=None):
     hpcf_name_full = calc_hpcf_name(full_name=True)
     hpcf_name = calc_hpcf_name(full_name=False)
     sel_hpcf_set=dpg.get_value('qc_e_apo_sel_hpcf')
+
     if hpcf_name in sel_hpcf_set:#if only sample rate or bit depth changed, force write output
         force_output=True
     #if matching, enable hpcf conv in config
@@ -2493,7 +2495,7 @@ def calc_hpcf_name(full_name=True):
     sample_rate = dpg.get_value('qc_wav_sample_rate')
     bit_depth = dpg.get_value('qc_wav_bit_depth')
     if full_name==True:
-        filter_name = headphone + ' ' + sample + ' ' + sample_rate + ' ' + bit_depth
+        filter_name = headphone + ', ' + sample + ', ' + sample_rate + ', ' + bit_depth
     else:
         filter_name = headphone + ', ' + sample
 
@@ -3389,7 +3391,8 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
             dpg.configure_item("e_apo_gain_avg_7_1", show=True)
 
     except Exception as e:
-        print(f"An error occurred: {e}")  # Log the error
+        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
+        
         
     #finally rewrite config file
     if aquire_config == True:#custom parameter will be none if called by gui
@@ -4642,7 +4645,7 @@ def get_avg_hrtf_timestamp(metadata_dir=CN.DATA_DIR_HRIR_NPY_INTRP):
             metadata = json.load(f)
         return metadata.get("timestamp", fallback)
     except Exception as e:
-        print(f"Error reading metadata file: {e}")
+        hf.log_with_timestamp(f"Error reading metadata file: {e}")
         return fallback      
   
 #
