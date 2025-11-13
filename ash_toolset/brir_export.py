@@ -57,10 +57,11 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         log_string = 'Preparing BRIRs for export'
         hf.log_with_timestamp(log_string, gui_logger) 
         
-        if not isinstance(brir_arr, np.ndarray) or brir_arr.ndim != 4:
-            raise ValueError("brir_arr must be a 4D NumPy array [elev, azim, channels, samples]")
+        
     
         if use_stored_brirs == False:#standard mode
+            if not isinstance(brir_arr, np.ndarray) or brir_arr.ndim != 4:
+                raise ValueError("brir_arr must be a 4D NumPy array [elev, azim, channels, samples]")
             total_samples_brir = len(brir_arr[0][0][0])    
             #gain adjustment
             max_amp = np.max(np.abs(brir_arr))
@@ -259,237 +260,229 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
         #
         ## write set of HESUVI WAVs or True stereo WAVs or 16 Channel WAVs
         #
+        
+        if use_stored_brirs == False:
   
-        if (brir_ts_export or hesuvi_export or multichan_export) and not use_stored_brirs:
-        
-            # Validate spatial resolution
-            if 0 <= spatial_res < CN.NUM_SPATIAL_RES:
-                elev_min = CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res]
-                elev_nearest = CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res]
-                azim_nearest = CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res]
-            else:
-                raise ValueError('Invalid spatial resolution')
-        
-            # Output directories
-            out_file_dir_wav_44 = pjoin(hesuvi_path, 'hrir', '44')
-            out_file_dir_wav_48 = pjoin(hesuvi_path, 'hrir')
-        
-            # Base sources
-            SOURCES_DICT = [
-                {"name": "FC",  "dict_keys": ("h_elev_c", "h_azim_c"), "default_az": 0,  "he_channels": (6, 13)},
-                {"name": "FL",  "dict_keys": ("h_elev_fl", "h_azim_fl"), "default_az": 30, "he_channels": (0, 1), "ts_channels": (0, 1)},
-                {"name": "FR",  "dict_keys": ("h_elev_fr", "h_azim_fr"), "default_az": 330,"he_channels": (8, 7), "ts_channels": (2, 3)},
-                {"name": "SL",  "dict_keys": ("h_elev_sl", "h_azim_sl"), "default_az": 90, "he_channels": (2, 3)},
-                {"name": "SR",  "dict_keys": ("h_elev_sr", "h_azim_sr"), "default_az": 270,"he_channels": (10, 9)},
-                {"name": "BL",  "dict_keys": ("h_elev_rl", "h_azim_rl"), "default_az": 135,"he_channels": (4, 5)},
-                {"name": "BR",  "dict_keys": ("h_elev_rr", "h_azim_rr"), "default_az": 225,"he_channels": (12, 11)},
-            ]
-        
-            # Initialize arrays
-            brir_out_16ch   = np.zeros((CN.NUM_OUT_CHANNELS_MC, out_wav_samples_44))
-            brir_out_44_he  = np.zeros((CN.NUM_OUT_CHANNELS_HE, out_wav_samples_44))
-            brir_out_48_he  = np.zeros((CN.NUM_OUT_CHANNELS_HE, out_wav_samples_48))
-            brir_out_44_ts  = np.zeros((CN.NUM_OUT_CHANNELS_TS, out_wav_samples_44))
-        
-            # --- Dynamic 16-channel mapping ---
-            mapping_order = multichan_mapping.split("|")  # e.g., ['FL','FR','FC','LFE','SL','SR','BL','BR']
+            if (brir_ts_export or hesuvi_export or multichan_export):
             
-            # Identify LFE channels safely
-            lfe_channels = None
-            if "LFE" in mapping_order:
-                lfe_idx = mapping_order.index("LFE")
-                lfe_channels = (lfe_idx * 2, lfe_idx * 2 + 1)
-        
-            # Assign 16-channel indices dynamically for sources present
-            for src in SOURCES_DICT:
-                if src["name"] in mapping_order:
-                    idx = mapping_order.index(src["name"])
-                    src["ch16"] = (idx * 2, idx * 2 + 1)
-        
-            # --- Loop over sources ---
-            for src in SOURCES_DICT:
-        
-                # Elevation and azimuth from GUI dict or defaults
-                if brir_dict:
-                    selected_elev = int(brir_dict.get(src["dict_keys"][0], 0))
-                    selected_az   = int(brir_dict.get(src["dict_keys"][1], 0))
-                    dezired_az= 0-selected_az if selected_az<=0 else 360-selected_az
+                # Validate spatial resolution
+                if 0 <= spatial_res < CN.NUM_SPATIAL_RES:
+                    elev_min = CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res]
+                    elev_nearest = CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res]
+                    azim_nearest = CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res]
                 else:
-                    selected_elev = 0
-                    dezired_az = src["default_az"]
-        
-                # Convert to array indices
-                elev_id = int((selected_elev - elev_min) / elev_nearest)
-                azim_id = int(dezired_az / azim_nearest)
-        
-                # Load BRIR into zero-padded array
-                data_pad = np.zeros((out_wav_samples_44, 2))
-                data_pad[:, 0] = brir_arr[elev_id][azim_id][0, :out_wav_samples_44] * reduction_gain_he / max_amp
-                data_pad[:, 1] = brir_arr[elev_id][azim_id][1, :out_wav_samples_44] * reduction_gain_he / max_amp
-        
-                # Resample to 48 kHz
-                data_pad_48k = hf.resample_signal(data_pad, new_rate=48000)
+                    raise ValueError('Invalid spatial resolution')
+            
+                # Output directories
+                out_file_dir_wav_44 = pjoin(hesuvi_path, 'hrir', '44')
+                out_file_dir_wav_48 = pjoin(hesuvi_path, 'hrir')
+            
+                # Base sources
+                SOURCES_DICT = [
+                    {"name": "FC",  "dict_keys": ("h_elev_c", "h_azim_c"), "default_az": 0,  "he_channels": (6, 13)},
+                    {"name": "FL",  "dict_keys": ("h_elev_fl", "h_azim_fl"), "default_az": 30, "he_channels": (0, 1), "ts_channels": (0, 1)},
+                    {"name": "FR",  "dict_keys": ("h_elev_fr", "h_azim_fr"), "default_az": 330,"he_channels": (8, 7), "ts_channels": (2, 3)},
+                    {"name": "SL",  "dict_keys": ("h_elev_sl", "h_azim_sl"), "default_az": 90, "he_channels": (2, 3)},
+                    {"name": "SR",  "dict_keys": ("h_elev_sr", "h_azim_sr"), "default_az": 270,"he_channels": (10, 9)},
+                    {"name": "BL",  "dict_keys": ("h_elev_rl", "h_azim_rl"), "default_az": 135,"he_channels": (4, 5)},
+                    {"name": "BR",  "dict_keys": ("h_elev_rr", "h_azim_rr"), "default_az": 225,"he_channels": (12, 11)},
+                ]
+            
+                # Initialize arrays
+                brir_out_16ch   = np.zeros((CN.NUM_OUT_CHANNELS_MC, out_wav_samples_44))
+                brir_out_44_he  = np.zeros((CN.NUM_OUT_CHANNELS_HE, out_wav_samples_44))
+                brir_out_48_he  = np.zeros((CN.NUM_OUT_CHANNELS_HE, out_wav_samples_48))
+                brir_out_44_ts  = np.zeros((CN.NUM_OUT_CHANNELS_TS, out_wav_samples_44))
+            
+                # --- Dynamic 16-channel mapping ---
+                mapping_order = multichan_mapping.split("|")  # e.g., ['FL','FR','FC','LFE','SL','SR','BL','BR']
                 
-                # Enforce exact target length
-                target_len = out_wav_samples_48
-                if data_pad_48k.shape[0] > target_len:
-                    data_pad_48k = data_pad_48k[:target_len, :]
-                elif data_pad_48k.shape[0] < target_len:
-                    data_pad_48k = np.pad(data_pad_48k, ((0, target_len - data_pad_48k.shape[0]), (0, 0)))
-        
-                # Assign to HESUVI channels
-                ch_left, ch_right = src["he_channels"]
-                brir_out_44_he[ch_left, :] = data_pad[:, 0]
-                brir_out_44_he[ch_right, :] = data_pad[:, 1]
-                brir_out_48_he[ch_left, :] = data_pad_48k[:, 0]
-                brir_out_48_he[ch_right, :] = data_pad_48k[:, 1]
-        
-                # Assign to True Stereo if defined
-                if "ts_channels" in src:
-                    ts_left, ts_right = src["ts_channels"]
-                    brir_out_44_ts[ts_left, :] = data_pad[:, 0]
-                    brir_out_44_ts[ts_right, :] = data_pad[:, 1]
-        
-                # Assign to 16-channel array dynamically
-                if "ch16" in src:
-                    ch16_left, ch16_right = src["ch16"]
-                    brir_out_16ch[ch16_left, :] = data_pad[:, 0]
-                    brir_out_16ch[ch16_right, :] = data_pad[:, 1]
-        
-                # Copy FC data to LFE channels if both exist
-                if lfe_channels and src["name"] == "FC":
-                    brir_out_16ch[lfe_channels[0], :] = data_pad[:, 0]
-                    brir_out_16ch[lfe_channels[1], :] = data_pad[:, 1]
-                        
-
-        
-        
-        
-        
-        
-        
-      
+                # Identify LFE channels safely
+                lfe_channels = None
+                if "LFE" in mapping_order:
+                    lfe_idx = mapping_order.index("LFE")
+                    lfe_channels = (lfe_idx * 2, lfe_idx * 2 + 1)
             
+                # Assign 16-channel indices dynamically for sources present
+                for src in SOURCES_DICT:
+                    if src["name"] in mapping_order:
+                        idx = mapping_order.index(src["name"])
+                        src["ch16"] = (idx * 2, idx * 2 + 1)
             
+                # --- Loop over sources ---
+                for src in SOURCES_DICT:
             
-        if brir_ts_export == True and use_stored_brirs == False:
-            #
-            #true stereo
-            #
-            output_wav_ts = brir_out_44_ts
-            output_wav_ts = output_wav_ts.transpose()
-            out_file_name = 'BRIR_True_Stereo.wav'
+                    # Elevation and azimuth from GUI dict or defaults
+                    if brir_dict:
+                        selected_elev = int(brir_dict.get(src["dict_keys"][0], 0))
+                        selected_az   = int(brir_dict.get(src["dict_keys"][1], 0))
+                        dezired_az= 0-selected_az if selected_az<=0 else 360-selected_az
+                    else:
+                        selected_elev = 0
+                        dezired_az = src["default_az"]
             
-            out_file_path = pjoin(out_file_dir_wav,out_file_name)
-            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
-                # Skip exporting or raise exception
-                return brir_data
+                    # Convert to array indices
+                    elev_id = int((selected_elev - elev_min) / elev_nearest)
+                    azim_id = int(dezired_az / azim_nearest)
             
-            #create dir if doesnt exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
+                    # Load BRIR into zero-padded array
+                    data_pad = np.zeros((out_wav_samples_44, 2))
+                    data_pad[:, 0] = brir_arr[elev_id][azim_id][0, :out_wav_samples_44] * reduction_gain_he / max_amp
+                    data_pad[:, 1] = brir_arr[elev_id][azim_id][1, :out_wav_samples_44] * reduction_gain_he / max_amp
             
-            #resample if samp_freq is not 44100
-            if samp_freq != CN.SAMP_FREQ:
-                output_wav_ts = hf.resample_signal(output_wav_ts, new_rate = samp_freq)
+                    # Resample to 48 kHz
+                    data_pad_48k = hf.resample_signal(data_pad, new_rate=48000)
+                    
+                    # Enforce exact target length
+                    target_len = out_wav_samples_48
+                    if data_pad_48k.shape[0] > target_len:
+                        data_pad_48k = data_pad_48k[:target_len, :]
+                    elif data_pad_48k.shape[0] < target_len:
+                        data_pad_48k = np.pad(data_pad_48k, ((0, target_len - data_pad_48k.shape[0]), (0, 0)))
             
-            hf.write2wav(file_name=out_file_path, data=output_wav_ts, bit_depth=bit_depth, samplerate=samp_freq)
-        
-            log_string = 'BRIR WAV True stereo saved to: ' + str(out_file_dir_wav)
-            hf.log_with_timestamp(log_string, gui_logger) 
-        
-        if hesuvi_export == True and use_stored_brirs == False:
+                    # Assign to HESUVI channels
+                    ch_left, ch_right = src["he_channels"]
+                    brir_out_44_he[ch_left, :] = data_pad[:, 0]
+                    brir_out_44_he[ch_right, :] = data_pad[:, 1]
+                    brir_out_48_he[ch_left, :] = data_pad_48k[:, 0]
+                    brir_out_48_he[ch_right, :] = data_pad_48k[:, 1]
             
-            #
-            #hesuvi 44khz
-            #
-            output_wav_he_44 = brir_out_44_he
-            output_wav_he_44 = output_wav_he_44.transpose()
-            out_file_name = '_'+brir_name + '.wav'
+                    # Assign to True Stereo if defined
+                    if "ts_channels" in src:
+                        ts_left, ts_right = src["ts_channels"]
+                        brir_out_44_ts[ts_left, :] = data_pad[:, 0]
+                        brir_out_44_ts[ts_right, :] = data_pad[:, 1]
             
-            out_file_path = pjoin(out_file_dir_wav_44, out_file_name)
-            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
-                # Skip exporting or raise exception
-                return brir_data
-            #create dir if doesnt exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
+                    # Assign to 16-channel array dynamically
+                    if "ch16" in src:
+                        ch16_left, ch16_right = src["ch16"]
+                        brir_out_16ch[ch16_left, :] = data_pad[:, 0]
+                        brir_out_16ch[ch16_right, :] = data_pad[:, 1]
             
-            hf.write2wav(file_name=out_file_path, data=output_wav_he_44, bit_depth=bit_depth, samplerate=44100)
-            
-            #
-            #hesuvi 48khz
-            #
-            output_wav_he_48 = brir_out_48_he
-
-            output_wav_he_48 = output_wav_he_48.transpose()
-            out_file_name = '_'+brir_name + '.wav'
-            
-            out_file_path = pjoin(out_file_dir_wav_48, out_file_name)
-            
-            #create dir if doesnt exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
-   
-            hf.write2wav(file_name=out_file_path, data=output_wav_he_48, bit_depth=bit_depth, samplerate=48000)
-        
-            log_string = 'BRIR HESUVI WAV saved to: ' + str(out_file_dir_wav_48)
-            hf.log_with_timestamp(log_string, gui_logger) 
-        
-        if multichan_export and not use_stored_brirs:
-            #
-            # 16-channel BRIR
-            #
-            output_wav_16ch = brir_out_16ch.transpose()  # shape (samples, channels)
-            out_file_name = 'BRIR_16ch_' + brir_name + '.wav'
-            out_file_path = pjoin(out_file_dir_wav, out_file_name)
-            
-            if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
-                return brir_data
-            
-            # create dir if it doesn't exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-            # resample if samp_freq is not internal rate
-            if samp_freq != CN.SAMP_FREQ:
-                output_wav_16ch = hf.resample_signal(output_wav_16ch, new_rate=samp_freq)
-        
-            # Write 16-channel WAV
-            hf.write2wav(file_name=out_file_path, data=output_wav_16ch, bit_depth=bit_depth, samplerate=samp_freq)
-            hf.log_with_timestamp('BRIR WAV 16-channel saved to: ' + str(out_file_dir_wav), gui_logger)
-        
-            # --- Write channel mapping to text file ---
-            mapping_file_name = 'BRIR_16ch_channel_mapping.txt'
-            mapping_file_path = pjoin(out_file_dir_wav, mapping_file_name)
-        
-            mapping_lines = []
-            mapping_lines.append(f"Export order: {multichan_mapping}")
-            mapping_lines.append("\nAssigned channel indices:")
-        
-            for src in SOURCES_DICT:
-                if "ch16" in src:
-                    ch_left, ch_right = src["ch16"]
-                    mapping_lines.append(f"{src['name']}: left={ch_left}, right={ch_right}")
-            if lfe_channels:
-                mapping_lines.append(f"LFE: left={lfe_channels[0]}, right={lfe_channels[1]}")
-        
-            with open(mapping_file_path, "w") as f:
-                f.write("\n".join(mapping_lines))
-        
-            hf.log_with_timestamp('16-channel mapping saved to: ' + str(mapping_file_path), gui_logger)
-
-
-        
-        
-        
-        #
-        ## write SOFA file
-        #
-         
-        if sofa_export == True and use_stored_brirs == False:
-            export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
+                    # Copy FC data to LFE channels if both exist
+                    if lfe_channels and src["name"] == "FC":
+                        brir_out_16ch[lfe_channels[0], :] = data_pad[:, 0]
+                        brir_out_16ch[lfe_channels[1], :] = data_pad[:, 1]
+                            
     
+                
+                
+            if brir_ts_export == True:
+                #
+                #true stereo
+                #
+                output_wav_ts = brir_out_44_ts
+                output_wav_ts = output_wav_ts.transpose()
+                out_file_name = 'BRIR_True_Stereo.wav'
+                
+                out_file_path = pjoin(out_file_dir_wav,out_file_name)
+                if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                    # Skip exporting or raise exception
+                    return brir_data
+                
+                #create dir if doesnt exist
+                output_file = Path(out_file_path)
+                output_file.parent.mkdir(exist_ok=True, parents=True)
+                
+                #resample if samp_freq is not 44100
+                if samp_freq != CN.SAMP_FREQ:
+                    output_wav_ts = hf.resample_signal(output_wav_ts, new_rate = samp_freq)
+                
+                hf.write2wav(file_name=out_file_path, data=output_wav_ts, bit_depth=bit_depth, samplerate=samp_freq)
+            
+                log_string = 'BRIR WAV True stereo saved to: ' + str(out_file_dir_wav)
+                hf.log_with_timestamp(log_string, gui_logger) 
+            
+            if hesuvi_export == True:
+                
+                #
+                #hesuvi 44khz
+                #
+                output_wav_he_44 = brir_out_44_he
+                output_wav_he_44 = output_wav_he_44.transpose()
+                out_file_name = '_'+brir_name + '.wav'
+                
+                out_file_path = pjoin(out_file_dir_wav_44, out_file_name)
+                if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                    # Skip exporting or raise exception
+                    return brir_data
+                #create dir if doesnt exist
+                output_file = Path(out_file_path)
+                output_file.parent.mkdir(exist_ok=True, parents=True)
+                
+                hf.write2wav(file_name=out_file_path, data=output_wav_he_44, bit_depth=bit_depth, samplerate=44100)
+                
+                #
+                #hesuvi 48khz
+                #
+                output_wav_he_48 = brir_out_48_he
+    
+                output_wav_he_48 = output_wav_he_48.transpose()
+                out_file_name = '_'+brir_name + '.wav'
+                
+                out_file_path = pjoin(out_file_dir_wav_48, out_file_name)
+                
+                #create dir if doesnt exist
+                output_file = Path(out_file_path)
+                output_file.parent.mkdir(exist_ok=True, parents=True)
+       
+                hf.write2wav(file_name=out_file_path, data=output_wav_he_48, bit_depth=bit_depth, samplerate=48000)
+            
+                log_string = 'BRIR HESUVI WAV saved to: ' + str(out_file_dir_wav_48)
+                hf.log_with_timestamp(log_string, gui_logger) 
+            
+            if multichan_export:
+                #
+                # 16-channel BRIR
+                #
+                output_wav_16ch = brir_out_16ch.transpose()  # shape (samples, channels)
+                out_file_name = 'BRIR_16ch_' + brir_name + '.wav'
+                out_file_path = pjoin(out_file_dir_wav, out_file_name)
+                
+                if not hf.check_write_permissions(out_file_dir_wav, gui_logger):
+                    return brir_data
+                
+                # create dir if it doesn't exist
+                output_file = Path(out_file_path)
+                output_file.parent.mkdir(exist_ok=True, parents=True)
+            
+                # resample if samp_freq is not internal rate
+                if samp_freq != CN.SAMP_FREQ:
+                    output_wav_16ch = hf.resample_signal(output_wav_16ch, new_rate=samp_freq)
+            
+                # Write 16-channel WAV
+                hf.write2wav(file_name=out_file_path, data=output_wav_16ch, bit_depth=bit_depth, samplerate=samp_freq)
+                hf.log_with_timestamp('BRIR WAV 16-channel saved to: ' + str(out_file_dir_wav), gui_logger)
+            
+                # --- Write channel mapping to text file ---
+                mapping_file_name = 'BRIR_16ch_channel_mapping.txt'
+                mapping_file_path = pjoin(out_file_dir_wav, mapping_file_name)
+            
+                mapping_lines = []
+                mapping_lines.append(f"Export order: {multichan_mapping}")
+                mapping_lines.append("\nAssigned channel indices:")
+            
+                for src in SOURCES_DICT:
+                    if "ch16" in src:
+                        ch_left, ch_right = src["ch16"]
+                        mapping_lines.append(f"{src['name']}: left={ch_left}, right={ch_right}")
+                if lfe_channels:
+                    mapping_lines.append(f"LFE: left={lfe_channels[0]}, right={lfe_channels[1]}")
+            
+                with open(mapping_file_path, "w") as f:
+                    f.write("\n".join(mapping_lines))
+            
+                hf.log_with_timestamp('16-channel mapping saved to: ' + str(mapping_file_path), gui_logger)
+    
+  
+            
+            #
+            ## write SOFA file
+            #
+             
+            if sofa_export == True:
+                export_sofa_brir(primary_path=primary_path,brir_arr=brir_arr, brir_set_name=brir_name, output_samples=out_wav_samples_44, spatial_res=spatial_res, samp_freq=samp_freq, sofa_conv=sofa_conv, gui_logger=gui_logger)
+        
     
  
     

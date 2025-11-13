@@ -1285,7 +1285,7 @@ def shift_2d_impulse_response_cc(arr, hrir_sample, lp_sos, max_shift_samples=100
 
 
 def build_averaged_listener_from_sets(hrir_sets, gui_logger=None, 
-                                      interp_mode='rbf', align_itd=False,
+                                      interp_mode='rbf', align_directions=True, align_listeners=False,
                                       sample_rate=CN.SAMP_FREQ,
                                       n_jobs=-1):
     """
@@ -1334,8 +1334,8 @@ def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,
             hf.log_with_timestamp(f"Auto-selected interpolation mode: {interp_mode}", gui_logger)
 
         # --- Stage 1: Intra-listener ITD alignment ---
-        if align_itd:
-            hf.log_with_timestamp("Performing intra-listener alignment (ITD)...", gui_logger)
+        if align_directions:
+            hf.log_with_timestamp("Performing intra-listener alignment ...", gui_logger)
             for i in range(n_list):
                 for el in range(elev_n):
                     for az in range(azim_n):
@@ -1343,16 +1343,17 @@ def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,
                             hrir_sets[i][el, az, :2, :], lp_sos, target_index=55
                         )
 
-        # --- Stage 2: Inter-listener global alignment ---
-        global_ref = hrir_sets[0][elev_n // 2, 0, 0]
-        for i in range(1, n_list):
-            local_ref = hrir_sets[i][elev_n // 2, 0, 0]
-            corr = correlate(local_ref, global_ref, mode='full')
-            delay = np.argmax(corr) - len(local_ref) + 1
-            if np.isfinite(delay):
-                hf.log_with_timestamp(f"Aligning listener {i} globally (shift={delay} samples)", gui_logger)
-                hrir_sets[i] = np.roll(hrir_sets[i], -int(delay), axis=-1)
-        hf.log_with_timestamp("Global alignment done.", gui_logger)
+        # --- Stage 2: Inter-listener global alignment --- TODO: Replace with above method
+        if align_listeners:
+            global_ref = hrir_sets[0][elev_n // 2, 0, 0]
+            for i in range(1, n_list):
+                local_ref = hrir_sets[i][elev_n // 2, 0, 0]
+                corr = correlate(local_ref, global_ref, mode='full')
+                delay = np.argmax(corr) - len(local_ref) + 1
+                if np.isfinite(delay):
+                    hf.log_with_timestamp(f"Aligning listener {i} globally (shift={delay} samples)", gui_logger)
+                    hrir_sets[i] = np.roll(hrir_sets[i], -int(delay), axis=-1)
+            hf.log_with_timestamp("Global alignment done.", gui_logger)
 
         # --- Stage 3: Spectral leveling per listener ---
         hf.log_with_timestamp("Applying per-listener spectral leveling...", gui_logger)
