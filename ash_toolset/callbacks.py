@@ -1899,6 +1899,7 @@ def sync_wav_sample_rate(sender, app_data):
     #reset progress bar
     qc_reset_progress()
     reset_brir_progress()
+    reset_hpcf_progress()
     
     save_settings()
 
@@ -1912,6 +1913,7 @@ def sync_wav_bit_depth(sender, app_data):
     #reset progress bar
     qc_reset_progress()
     reset_brir_progress()
+    reset_hpcf_progress()
     
     save_settings()
 
