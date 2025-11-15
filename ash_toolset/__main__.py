@@ -236,8 +236,10 @@ def main():
             dpg.configure_item('fde_hpcf_headphone', width=290)
             dpg.configure_item('fde_hpcf_sample', width=140)
         
+        #update audio device text
+        hf.update_default_output_text(reset_sd=False)
 
-
+            
 
 
       
@@ -247,6 +249,7 @@ def main():
     #program code
     #
     
+
     #code to get gui width based on windows resolution
     gui_win_width_default=1722
     gui_win_height_default=717
@@ -1283,13 +1286,13 @@ def main():
                             dpg.add_text(tag='qc_selected_folder_base', show=False)
                             dpg.set_value('qc_selected_folder_base', qc_primary_path)
                             #Section for wav settings
-                            with dpg.child_window(width=590, height=90):
+                            with dpg.child_window(width=590, height=166):
                                 title_4 = dpg.add_text("IR Format", tag='qc_export_title')
                                 with dpg.tooltip("qc_export_title"):
                                     dpg.add_text("Configure sample rate and bit depth of exported impulse responses")
                                     dpg.add_text("This should align with the format of the playback audio device")
                                 dpg.bind_item_font(title_4, bold_font)
-                                dpg.add_separator()
+                                #dpg.add_separator()
                                 with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
                                     borders_outerH=True, borders_innerH=True, no_host_extendX=True,
                                     borders_outerV=True, borders_innerV=True, delay_search=True):
@@ -1312,13 +1315,31 @@ def main():
                                                         dpg.add_text("  ")
                                                         dpg.add_radio_button(CN.BIT_DEPTH_LIST, horizontal=True, tag= "qc_wav_bit_depth", default_value=loaded_values["qc_wav_bit_depth"], callback=cb.sync_wav_bit_depth)
                                                         dpg.add_text("  ")
-                            with dpg.child_window(width=590, height=72):
-                                dpg.add_text("Audio Device Configuration", tag='qc_ad_title')
-                                with dpg.tooltip("qc_ad_title"):
-                                    dpg.add_text("Ensure the playback audio device sample rate aligns with the IR sample rate above")
+      
                                 dpg.add_separator()
-                                dpg.add_button(label="Open Sound Control Panel", callback=cb.open_sound_control_panel)
-
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Audio Device Configuration", tag='qc_device_config_title')
+                                    dpg.bind_item_font(dpg.last_item(), bold_font)
+                                    with dpg.tooltip("qc_device_config_title"):
+                                        dpg.add_text("Ensure the playback audio device sample rate aligns with the IR sample rate above")
+                                        #dpg.add_text("Requires restart to refresh below table")
+                                    dpg.add_text("                                                                                  ")
+                                    dpg.add_button(label="Open Sound Control Panel", callback=cb.open_sound_control_panel)
+                
+                                with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit, resizable=False,
+                                    borders_outerH=True, borders_innerH=True, no_host_extendX=True,
+                                    borders_outerV=True, borders_innerV=True, delay_search=True):
+                                    #dpg.bind_item_font(dpg.last_item(), bold_font)
+                                    dpg.add_table_column(label="Default Playback Device Name  ", init_width_or_weight=350)
+                                    dpg.add_table_column(label="Default Playback Sample Rate  ", init_width_or_weight=180)
+                                    for i in range(1):
+                                        with dpg.table_row():
+                                            for j in range(2):
+                                                if j == 0:#device name
+                                                    dpg.add_text(" ", tag= "qc_def_pb_device_name")
+                                                elif j == 1:#Sample Rate
+                                                    dpg.add_text(" ", tag= "qc_def_pb_device_sr")
+                                                    
                             
      
 

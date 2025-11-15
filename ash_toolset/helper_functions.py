@@ -8,7 +8,6 @@ Created on Sun Aug  6 14:02:51 2023
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal as sps
-from scipy.io import wavfile
 import soundfile as sf
 from scipy.signal import butter
 import scipy as sp
@@ -33,20 +32,17 @@ import random
 import math
 from scipy.signal import savgol_filter, medfilt, correlate
 from scipy.ndimage import gaussian_filter1d
-import noisereduce as nr
-import queue
 import threading
 import time
 import scipy.signal as signal
 from scipy.stats import linregress
 from os.path import exists
 import concurrent.futures
-from collections import Counter
 import ast
 import json
 from pathlib import Path
 from scipy.signal import resample_poly
-
+import sounddevice as sd
 
 
 def sort_names_by_values(names, values, descending=False):
@@ -3777,14 +3773,16 @@ def validate_choice(loaded_value, valid_list):
     """
     # Ensure valid_list is iterable
     if not valid_list:
-        logging.warning(f"validate_choice: No valid list provided. Cannot validate '{loaded_value}'.")
+        msg = f"validate_choice: No valid list provided. Cannot validate '{loaded_value}'."
+        log_with_timestamp(msg)
         return "Not Found"
 
     if loaded_value in valid_list:
         return loaded_value
     else:
         fallback = valid_list[0]
-        logging.info(f"validate_choice: '{loaded_value}' is not valid. Falling back to '{fallback}'.")
+        msg = f"validate_choice: '{loaded_value}' is not valid. Falling back to '{fallback}'."
+        log_with_timestamp(msg)
         return fallback
 
 
@@ -3831,11 +3829,13 @@ def safe_get(config, key, expected_type, default):
             return expected_type(val)
 
         # Fallback for unexpected expected_type
-        logging.info(f"safe_get: Expected type for key '{key}' is not callable. Using raw value.")
+        msg = f"safe_get: Expected type for key '{key}' is not callable. Using raw value."
+        log_with_timestamp(msg)
         return val
 
     except Exception as e:
-        logging.info(f"safe_get: Failed to load key '{key}' – {e}. Using default: {default}")
+        msg = f"safe_get: Failed to load key '{key}' – {e}. Using default: {default}"
+        log_with_timestamp(msg)
         return default
        
 def check_write_permissions(path, gui_logger=None):
@@ -3848,7 +3848,52 @@ def check_write_permissions(path, gui_logger=None):
         return True
     except PermissionError:
         msg = f"Insufficient privileges to write to '{path}'. Please run as administrator or choose a different output folder."
-        print(msg)
-        if gui_logger:
-            log_with_timestamp(msg, gui_logger)
+        #print(msg)
+        log_with_timestamp(msg, gui_logger)
         return False    
+    
+    
+
+
+def get_default_output_info():
+    """Return default output device name and sample rate (truncated by PortAudio/Windows if long)."""
+    try:
+        info = sd.query_devices(kind='output')  # always get current default output
+        device_name = info['name']
+        device_samplerate = int(info['default_samplerate'])
+        return device_name, device_samplerate
+    except Exception:
+        return "Unknown device", 0
+    
+def update_default_output_text(reset_sd=True):
+    """Update DPG text elements showing the default playback device and its sample rate."""
+    try:
+        # Reset PortAudio host API/device info
+        if reset_sd:
+            sd._terminate()
+            sd._initialize()
+        
+        device_name, device_samplerate = get_default_output_info()
+
+        # If sample rate is 0, display as "Unknown"
+        sr_text = f"{device_samplerate} Hz" if device_samplerate != 0 else "Unknown"
+
+        if dpg.does_item_exist("qc_def_pb_device_name"):
+            dpg.set_value(
+                "qc_def_pb_device_name", 
+                f"{device_name}"
+            )
+
+        if dpg.does_item_exist("qc_def_pb_device_sr"):
+            dpg.set_value(
+                "qc_def_pb_device_sr", 
+                f"{sr_text}"
+            )
+    except Exception as e:
+        # fallback text if anything goes wrong
+        if dpg.does_item_exist("qc_def_pb_device_name"):
+            dpg.set_value("qc_def_pb_device_name", "Default playback device: Unknown")
+        if dpg.does_item_exist("qc_def_pb_device_sr"):
+            dpg.set_value("qc_def_pb_device_sr", "Default sample rate: Unknown")
+        msg = f"[Warning] Could not update default output info: {e}"
+        log_with_timestamp(msg)

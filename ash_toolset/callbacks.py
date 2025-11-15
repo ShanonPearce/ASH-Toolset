@@ -39,6 +39,7 @@ import subprocess
 import json
 import urllib.request
 
+
 #
 #
 ## Settings related
@@ -443,8 +444,8 @@ def save_settings(update_hpcf_pars=False, update_brir_pars=False, preset_name=No
         logging.error(log_string)
         hf.log_with_timestamp(log_string=log_string, gui_logger=logz)
 
-
-
+    #rerun audio device text update for regular refresh
+    hf.update_default_output_text()
 
 
 
@@ -4853,3 +4854,4 @@ def qc_delete_selected_preset_callback(sender, app_data):
         except Exception as e:
             hf.log_with_timestamp(f"Failed to delete preset '{preset_name}': {e}", gui_logger=logz)
     dpg.configure_item("qc_del_preset_popup", show=False)
+
