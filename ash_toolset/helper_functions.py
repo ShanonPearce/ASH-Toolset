@@ -3864,31 +3864,38 @@ def get_default_output_info():
         return device_name, device_samplerate
     except Exception:
         return "Unknown device", 0
-    
+
+
 def update_default_output_text(reset_sd=True):
-    """Update DPG text elements showing the default playback device and its sample rate."""
+    """Update DPG text elements showing the default playback device and its sample rate,
+    and indicate if it mismatches the selected WAV sample rate."""
     try:
         # Reset PortAudio host API/device info
         if reset_sd:
             sd._terminate()
             sd._initialize()
         
+        # Get current default playback device info
         device_name, device_samplerate = get_default_output_info()
 
-        # If sample rate is 0, display as "Unknown"
-        sr_text = f"{device_samplerate} Hz" if device_samplerate != 0 else "Unknown"
+        # Convert to kHz for display
+        sr_text = f"{device_samplerate / 1000:.1f} kHz" if device_samplerate != 0 else "Unknown"
 
+        # Get currently selected WAV sample rate
+        qc_samp_freq_str = dpg.get_value('qc_wav_sample_rate')
+        qc_samp_freq_int = CN.SAMPLE_RATE_DICT.get(qc_samp_freq_str, 0)
+
+        # Compare sample rates (both in Hz)
+        if device_samplerate != 0 and qc_samp_freq_int != 0 and qc_samp_freq_int != device_samplerate:
+            sr_text += " (Mismatch)"
+
+        # Update GUI text elements
         if dpg.does_item_exist("qc_def_pb_device_name"):
-            dpg.set_value(
-                "qc_def_pb_device_name", 
-                f"{device_name}"
-            )
+            dpg.set_value("qc_def_pb_device_name", f"{device_name}")
 
         if dpg.does_item_exist("qc_def_pb_device_sr"):
-            dpg.set_value(
-                "qc_def_pb_device_sr", 
-                f"{sr_text}"
-            )
+            dpg.set_value("qc_def_pb_device_sr", f"{sr_text}")
+
     except Exception as e:
         # fallback text if anything goes wrong
         if dpg.does_item_exist("qc_def_pb_device_name"):

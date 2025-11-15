@@ -1318,7 +1318,7 @@ def main():
       
                                 dpg.add_separator()
                                 with dpg.group(horizontal=True):
-                                    dpg.add_text("Audio Device Configuration", tag='qc_device_config_title')
+                                    dpg.add_text("Audio Device Format", tag='qc_device_config_title')
                                     dpg.bind_item_font(dpg.last_item(), bold_font)
                                     with dpg.tooltip("qc_device_config_title"):
                                         dpg.add_text("Ensure the playback audio device sample rate aligns with the IR sample rate above")
