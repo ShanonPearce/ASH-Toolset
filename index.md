@@ -340,6 +340,11 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 ---
 ## Changelog <a name="Changelog"></a> 
 
+Version 3.6.2:
+- Included default playback device information in the quick configuration tab
+- Improved quality and speed of create average listener function
+- Fixed WAV file writing issue potentially causing some older WAV files to not be overwritten when applying new parameters
+
 Version 3.6.1:
 - Fixed issue causing headphone correction filters to not be rewritten after changing sampling rate or bit depth in quick configuration and filter export tabs
 - Fixed issue causing BRIR export to fail when switching directions in quick configuration tab
