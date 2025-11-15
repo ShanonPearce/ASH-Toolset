@@ -75,6 +75,7 @@ pip install sofar==1.1.3
 pip install SOFASonix==1.0.7
 pip install soundfile==0.12.1
 pip install thefuzz==0.22.1
+pip install sounddevice==0.5.3
   ```
 Data files:
 
