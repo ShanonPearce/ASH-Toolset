@@ -181,19 +181,32 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                                         hf.write2wav(file_name=out_file_path, data=out_wav_array, bit_depth=bit_depth, samplerate=samp_freq)
             #normal process, use full dataset
             else:
-                #removal of old files
-                if reduce_dataset == True:
-                    #case for reduced dataset, remove previous files
+     
+                        
+                # removal of old files
+                if reduce_dataset:
                     if os.path.exists(out_file_dir_wav):
-                        try:
-                            files = glob.glob(pjoin(out_file_dir_wav, '*')) #get all files in directory
-                            for f in files:
-                                os.remove(f) #delete each file.
-                            log_string = f"Cleared existing files from directory: {out_file_dir_wav}"
-                            hf.log_with_timestamp(log_string, gui_logger) 
-                        except Exception as e:
-                            log_string = f"Error clearing files from directory: {e}"
-                            hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1, exception=e)#log warning
+                        files = glob.glob(pjoin(out_file_dir_wav, '*'))  # get all files in directory
+                        deleted = 0
+                        failed = 0
+                        for f in files:
+                            try:
+                                os.remove(f)
+                                deleted += 1
+                            except Exception as e:
+                                failed += 1
+                                hf.log_with_timestamp(
+                                    f"Warning: Could not delete file '{f}': {e}",
+                                    gui_logger,
+                                    log_type=1,
+                                    exception=e
+                                )
+                        # summary log
+                        hf.log_with_timestamp(
+                            f"Cleared directory: {out_file_dir_wav} "
+                            f"(deleted={deleted}, failed={failed})",
+                            gui_logger
+                        )
                     else:
                         os.makedirs(out_file_dir_wav)
   

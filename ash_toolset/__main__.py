@@ -861,7 +861,6 @@ def main():
                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_k")
                                                 with dpg.tooltip("qc_hrtf_average_favourite"):
                                                     dpg.add_text("Creates an averaged HRTF by interpolating across favourite listeners")
-                                                    dpg.add_text("Uses higher quality interpolation and will take longer to run when no. listeners = 2")
                                                 dpg.add_button(label="Open Folder", tag="qc_open_user_sofa_folder", callback=cb.open_user_sofa_folder,show=qc_sofa_folder_button_show)
                                                 
                                 with dpg.tab(label="Low-frequency Extension",tag='qc_lfe_tab', parent="qc_brir_tab_bar"): 
@@ -1483,7 +1482,6 @@ def main():
                                                 dpg.bind_item_theme(dpg.last_item(), "__theme_l")
                                                 with dpg.tooltip("hrtf_average_favourite"):
                                                     dpg.add_text("Creates an averaged HRTF by interpolating across favourite listeners")
-                                                    dpg.add_text("Uses higher quality interpolation and will take longer to run when no. listeners = 2")
                                                 dpg.add_button(label="Open Folder", tag="open_user_sofa_folder", callback=cb.open_user_sofa_folder,show=sofa_folder_button_show)
                                         
                                 with dpg.tab(label="Low-frequency Extension",tag='lfe_tab', parent="brir_tab_bar"): 

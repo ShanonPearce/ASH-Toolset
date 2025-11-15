@@ -1284,58 +1284,65 @@ def shift_2d_impulse_response_cc(arr, hrir_sample, lp_sos, max_shift_samples=100
 
 
 
-def build_averaged_listener_from_sets(hrir_sets, gui_logger=None, 
-                                      interp_mode='rbf', align_directions=True, align_listeners=False,
+
+def circular_mean(phases):
+    """
+    Compute circular mean of phase (in radians) across listeners.
+    phases: array [..., n_listeners]
+    """
+    return np.arctan2(
+        np.mean(np.sin(phases), axis=0),
+        np.mean(np.cos(phases), axis=0)
+    )
+
+
+def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,
+                                      interp_mode='modular',
+                                      align_directions=True,
+                                      align_listeners=False,
                                       sample_rate=CN.SAMP_FREQ,
                                       n_jobs=-1):
     """
-    Fast, HRIR averaging using either RBF or linear interpolation across listeners.
-    Includes per-listener spectral leveling to ensure equal weighting.
-    """
-    """
     Build an averaged HRIR dataset by interpolating across listeners in the
-    frequency domain, compensating for interaural time delays.
+    frequency domain. Supports:
+        - complex interpolation (real/imag)  [recommended]
+        - modular phase interpolation (circular mean)
 
     Parameters
     ----------
     hrir_sets : list[np.ndarray]
-        List of HRIR datasets, each shaped [elev, azim, ch, samples].
-    gui_logger : callable or object
-        GUI logger instance to display logs.
-    interp_mode : {'rbf', 'linear'}
-        Interpolation type used across listeners per frequency bin.
-    align_itd : bool
-        Whether to align direct sound peaks (ITD correction).
-    sample_rate : int
-        Sampling rate (Hz).
-
-    Returns
-    -------
-    hrir_avg : np.ndarray or None
-        Averaged HRIR array [1, elev, azim, ch, samples] or None if failed.
+        List of HRIR datasets shaped [elev, azim, ch, samples].
+    interp_mode : {'complex', 'modular'}
+        Phase interpolation mode.
+    align_directions : bool
+        Per-direction ITD alignment within listener.
+    align_listeners : bool
+        Global cross-listener alignment.
     """
-    try:
-        lp_sos = hf.get_filter_sos(cutoff=10000, fs=CN.FS, order=8, b_type='low')
 
+    try:
         hf.log_with_timestamp("Validating input HRIR datasets", gui_logger)
+
+        # ------------ Input Validation ------------
         if not isinstance(hrir_sets, list) or len(hrir_sets) == 0:
-            raise ValueError("hrir_sets must be a non-empty list of NumPy arrays")
+            raise ValueError("hrir_sets must be a non-empty list.")
+
         shapes = [h.shape for h in hrir_sets]
         if len(set(shapes)) != 1:
             raise ValueError(f"Inconsistent HRIR shapes: {shapes}")
 
         n_list = len(hrir_sets)
         elev_n, azim_n, ch_n, N = hrir_sets[0].shape
-        freqs = np.fft.rfftfreq(N, d=1/sample_rate)
+        freqs = np.fft.rfftfreq(N, d=1 / sample_rate)
 
-        # --- Automatic interpolation mode selection ---
-        if interp_mode == 'auto':
-            interp_mode = 'rbf' if n_list == 2 else 'linear'
-            hf.log_with_timestamp(f"Auto-selected interpolation mode: {interp_mode}", gui_logger)
+        # ------------ Filters ------------
+        lp_sos = hf.get_filter_sos(
+            cutoff=10000, fs=CN.FS, order=8, b_type='low'
+        )
 
-        # --- Stage 1: Intra-listener ITD alignment ---
+        # ------------ Stage 1: Per-listener direction alignment ------------
         if align_directions:
-            hf.log_with_timestamp("Performing intra-listener alignment ...", gui_logger)
+            hf.log_with_timestamp("Performing intra-listener alignment...", gui_logger)
             for i in range(n_list):
                 for el in range(elev_n):
                     for az in range(azim_n):
@@ -1343,89 +1350,120 @@ def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,
                             hrir_sets[i][el, az, :2, :], lp_sos, target_index=55
                         )
 
-        # --- Stage 2: Inter-listener global alignment --- TODO: Replace with above method
+        # ------------ Stage 2: Global alignment across listeners ------------
         if align_listeners:
+            hf.log_with_timestamp("Performing inter-listener alignment...", gui_logger)
             global_ref = hrir_sets[0][elev_n // 2, 0, 0]
             for i in range(1, n_list):
                 local_ref = hrir_sets[i][elev_n // 2, 0, 0]
                 corr = correlate(local_ref, global_ref, mode='full')
                 delay = np.argmax(corr) - len(local_ref) + 1
                 if np.isfinite(delay):
-                    hf.log_with_timestamp(f"Aligning listener {i} globally (shift={delay} samples)", gui_logger)
+                    hf.log_with_timestamp(
+                        f"Aligning listener {i} globally (shift={delay} samples)",
+                        gui_logger
+                    )
                     hrir_sets[i] = np.roll(hrir_sets[i], -int(delay), axis=-1)
             hf.log_with_timestamp("Global alignment done.", gui_logger)
 
-        # --- Stage 3: Spectral leveling per listener ---
+        # ------------ Stage 3: Spectral leveling per listener ------------
         hf.log_with_timestamp("Applying per-listener spectral leveling...", gui_logger)
-        mag_range_a, mag_range_b, n_fft = CN.SPECT_SNAP_M_F0, CN.SPECT_SNAP_M_F1, CN.N_FFT
-        subset_idx = [(el, az) for el in np.linspace(0, elev_n - 1, 3, dtype=int)
-                                 for az in np.linspace(0, azim_n - 1, 5, dtype=int)]
+        mag_a, mag_b, n_fft = CN.SPECT_SNAP_M_F0, CN.SPECT_SNAP_M_F1, CN.N_FFT
+
+        subset_idx = [(el, az)
+                      for el in np.linspace(0, elev_n - 1, 3, dtype=int)
+                      for az in np.linspace(0, azim_n - 1, 5, dtype=int)]
+
         for i in range(n_list):
             mag_sum = 0.0
             for el, az in subset_idx:
                 padded = hf.padarray(hrir_sets[i][el, az, 0, :], n_fft)
-                mag_sum += np.mean(np.abs(np.fft.fft(padded)[mag_range_a:mag_range_b]))
+                mag_sum += np.mean(
+                    np.abs(np.fft.fft(padded)[mag_a:mag_b])
+                )
             hrir_sets[i] /= (mag_sum / len(subset_idx))
 
-        # --- Stage 4: FFT Transform ---
+        # ------------ Stage 4: Convert to frequency domain ------------
         hf.log_with_timestamp("Converting HRIRs to frequency domain...", gui_logger)
-        hrtf_sets = np.array([np.fft.rfft(hrir, axis=-1) for hrir in hrir_sets], dtype=np.complex128)
+        hrtf_sets = np.array(
+            [np.fft.rfft(hrir, axis=-1) for hrir in hrir_sets],
+            dtype=np.complex128
+        )   # shape: [n_list, elev, azim, ch, freq]
 
-        # --- Stage 5: Interpolation worker (optimized) ---
-        hf.log_with_timestamp(f"Interpolating across listeners using {interp_mode}...", gui_logger)
-        if interp_mode == 'rbf':
-            hf.log_with_timestamp("This may take some time to complete...", gui_logger)
-        listener_idx = np.arange(n_list)
-        mean_listener = np.mean(listener_idx)
+        # ------------ Stage 5: Interpolation ------------
+        hf.log_with_timestamp(f"Interpolating across listeners (mode={interp_mode})...",
+                              gui_logger)
 
-        hrtf_avg = np.empty((elev_n, azim_n, ch_n, hrtf_sets.shape[-1]), dtype=np.complex128)
+        hrtf_avg = np.empty((elev_n, azim_n, ch_n, hrtf_sets.shape[-1]),
+                            dtype=np.complex128)
 
         for el in range(elev_n):
             for az in range(azim_n):
                 for ch in range(ch_n):
-                    mag = np.abs(hrtf_sets[:, el, az, ch])
-                    phase = np.unwrap(np.angle(hrtf_sets[:, el, az, ch]))
-                    n_freqs = mag.shape[1]
 
-                    mag_interp = np.empty(n_freqs, dtype=np.float64)
-                    phase_interp = np.empty(n_freqs, dtype=np.float64)
+                    H = hrtf_sets[:, el, az, ch]   # shape: [n_list, n_freqs]
 
-                    for k in range(n_freqs):
-                        if interp_mode == 'rbf':
-                            mag_db = 20 * np.log10(np.maximum(mag[:, k], 1e-12))
-                            mag_rbf = Rbf(listener_idx, mag_db, function='multiquadric', smooth=0.1)
-                            phase_rbf = Rbf(listener_idx, phase[:, k], function='multiquadric', smooth=0.1)
-                            mag_interp[k] = 10**(mag_rbf(mean_listener)/20)
-                            phase_interp[k] = phase_rbf(mean_listener)
-                        else:  # linear
-                            mag_interp[k] = np.mean(mag[:, k])
-                            phase_interp[k] = np.mean(phase[:, k])
+                    if interp_mode == "complex":
+                        # Recommended: stable, smooth, correct ITD
+                        real_interp = np.mean(H.real, axis=0)
+                        imag_interp = np.mean(H.imag, axis=0)
+                        hrtf_avg[el, az, ch] = real_interp + 1j * imag_interp
 
-                    hrtf_avg[el, az, ch] = mag_interp * np.exp(1j * phase_interp)
+                    elif interp_mode == "modular_linear":
+                        mag = np.abs(H)
+                        phase = np.angle(H)
+                        mag_interp = np.mean(mag, axis=0)
+                        phase_interp = circular_mean(phase)
+                        hrtf_avg[el, az, ch] = mag_interp * np.exp(1j * phase_interp)
+                        
+                    elif interp_mode == "modular":
+                        # --- Magnitude (in dB) + Circular phase averaging ---
 
-        # --- Stage 6: Inverse FFT ---
+                        # Magnitude & phase
+                        mag = np.abs(H)
+                        phase = np.angle(H)
+                        # Convert magnitude to dB (amplitude dB)
+                        mag_db = 20 * np.log10(np.clip(mag, 1e-12, None))
+                        # Average magnitudes IN dB
+                        mag_db_interp = np.mean(mag_db, axis=0)
+                        # Convert back to linear magnitude
+                        mag_interp = 10 ** (mag_db_interp / 20)
+                        # Circular phase averaging (preserves wrapped phase)
+                        phase_interp = circular_mean(phase)
+                        # Reconstruct complex HRTF
+                        hrtf_avg[el, az, ch] = mag_interp * np.exp(1j * phase_interp)
+
+                    else:
+                        raise ValueError(f"Invalid interp_mode: {interp_mode}")
+
+        # ------------ Stage 6: Return to time domain ------------
         hf.log_with_timestamp("Converting averaged HRTF back to time domain...", gui_logger)
         hrir_avg = np.fft.irfft(hrtf_avg, n=N, axis=-1)
 
-        # --- Stage 7: Final dataset-level leveling ---
+        # ------------ Stage 7: Final dataset-level normalization ------------
         hf.log_with_timestamp("Applying final dataset-level normalization...", gui_logger)
         mag_sum = 0.0
         for el, az in subset_idx:
             padded = hf.padarray(hrir_avg[el, az, 0, :], n_fft)
-            mag_sum += np.mean(np.abs(np.fft.fft(padded)[mag_range_a:mag_range_b]))
+            mag_sum += np.mean(
+                np.abs(np.fft.fft(padded)[mag_a:mag_b])
+            )
         hrir_avg /= (mag_sum / len(subset_idx))
 
-        # --- Stage 8: Finalize shape ---
+        # ------------ Stage 8: Ensure final shape is [1, elev, azim, ch, N] ------------
         if hrir_avg.ndim == 4:
             hrir_avg = np.expand_dims(hrir_avg, axis=0)
         elif hrir_avg.ndim != 5:
             raise ValueError(f"Unexpected HRIR shape: {hrir_avg.shape}")
 
-        # --- Stage 9: Save output ---
-        npy_fname = pjoin(CN.DATA_DIR_HRIR_NPY_INTRP, CN.HRTF_AVERAGED_NAME_FILE + ".npy")
+        # ------------ Stage 9: Save output ------------
+        npy_fname = pjoin(CN.DATA_DIR_HRIR_NPY_INTRP,
+                          CN.HRTF_AVERAGED_NAME_FILE + ".npy")
         Path(npy_fname).parent.mkdir(exist_ok=True, parents=True)
+
         if hrir_avg.dtype == np.float64:
             hrir_avg = hrir_avg.astype(np.float32)
+
         np.save(npy_fname, hrir_avg)
         hf.log_with_timestamp(f"Saved npy dataset: {npy_fname}", gui_logger)
         hf.log_with_timestamp("HRIR averaging complete.", gui_logger)
@@ -1435,10 +1473,6 @@ def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,
     except Exception as e:
         hf.log_with_timestamp(f"Error building averaged listener: {e}", gui_logger)
         return None
-
-
-
-
 
 
 

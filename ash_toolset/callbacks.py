@@ -2317,12 +2317,6 @@ def qc_process_brirs(use_stored_brirs=False):
     force_use_brir_dict = dpg.get_item_user_data("qc_e_apo_curr_brir_set") or False
     
     # Decide which brir dict to use for output directions
-    # if not use_stored_brirs and not force_use_brir_dict:
-    #     brir_dict_out_config = get_brir_dict()#grab relevant config data from current gui elements
-    # else:
-    #     brir_dict_out_config = dpg.get_item_user_data("qc_e_apo_sel_brir_set") or {}#grab desired directions from previously stored values, in case of direction change where brirs dont exist
-    
-    # Decide which brir dict to use for output directions
     if use_stored_brirs == True or force_use_brir_dict == True:
         brir_dict_out_config = dpg.get_item_user_data("qc_e_apo_sel_brir_set") or {}#grab desired directions from previously stored values, in case of direction change where brirs dont exist
     else:
@@ -4569,8 +4563,7 @@ def create_hrtf_favourite_avg(sender, app_data):
             # --- 3. Perform interpolation & averaging ---
             hrir_avg = hrir_processing.build_averaged_listener_from_sets(
                 hrir_list_favs_loaded,
-                gui_logger=logz,
-                interp_mode='auto'
+                gui_logger=logz
             )
 
             if hrir_avg is None:
