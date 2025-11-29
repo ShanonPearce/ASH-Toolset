@@ -17,6 +17,8 @@ from ash_toolset import constants as CN
 from scipy.io import wavfile
 import numpy as np
 from ash_toolset import helper_functions as hf
+import dearpygui.dearpygui as dpg
+from datetime import datetime, timedelta
 
 today = str(date.today())
 
@@ -356,7 +358,7 @@ def include_ash_e_apo_config(primary_path, enabled=False):
     """    
     status_code=0
     try:
-        #hpcf EAPO config path
+        #EAPO config path
         output_config_path = pjoin(primary_path, CN.PROJECT_FOLDER_CONFIGS)
         
         #previously generated custom config file
@@ -860,79 +862,129 @@ def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_co
 
 
   
-def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config = '2.0 Stereo'):
+
+
+def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config='2.0 Stereo'):
     """
-    Function reads BRIR folders in output directory and returns bool indicating if all brirs were found in the folder
-    :param primary_path: string, base path
-    :param brir_set: string, name of brir set
-    :return: bool indicating if all brirs were found in the folder
-    """  
+    Function reads BRIR folders in output directory and returns bool indicating if all BRIRs 
+    were found AND are fresh based on timestamp comparison.
+    """
 
-    #default value
     all_brirs_found = False
-
     try:
-        enable_brir_conv = brir_dict.get('enable_conv')
+        enable_brir_conv = brir_dict.get("enable_conv")
 
-        elev_fl=brir_dict.get('elev_fl')
-        elev_fr=brir_dict.get('elev_fr')
-        elev_c=brir_dict.get('elev_c')
-        elev_sl=brir_dict.get('elev_sl')
-        elev_sr=brir_dict.get('elev_sr')
-        elev_rl=brir_dict.get('elev_rl')
-        elev_rr=brir_dict.get('elev_rr')
-        azim_fl=brir_dict.get('azim_fl')
-        azim_fr=brir_dict.get('azim_fr')
-        azim_c=brir_dict.get('azim_c')
-        azim_sl=brir_dict.get('azim_sl')
-        azim_sr=brir_dict.get('azim_sr')
-        azim_rl=brir_dict.get('azim_rl')
-        azim_rr=brir_dict.get('azim_rr')
+        # --- Build expected filenames ---
+        elev_fl = brir_dict.get("elev_fl")
+        elev_fr = brir_dict.get("elev_fr")
+        elev_c  = brir_dict.get("elev_c")
+        elev_sl = brir_dict.get("elev_sl")
+        elev_sr = brir_dict.get("elev_sr")
+        elev_rl = brir_dict.get("elev_rl")
+        elev_rr = brir_dict.get("elev_rr")
 
-        brir_name_wav_fl = 'BRIR' + '_E' + str(elev_fl) + '_A' + str(azim_fl) + '.wav'
-        brir_name_wav_fr = 'BRIR' + '_E' + str(elev_fr) + '_A' + str(azim_fr) + '.wav'
-        brir_name_wav_c = 'BRIR' + '_E' + str(elev_c) + '_A' + str(azim_c) + '.wav'
-        brir_name_wav_sl = 'BRIR' + '_E' + str(elev_sl) + '_A' + str(azim_sl) + '.wav'
-        brir_name_wav_sr = 'BRIR' + '_E' + str(elev_sr) + '_A' + str(azim_sr) + '.wav'
-        brir_name_wav_rl = 'BRIR' + '_E' + str(elev_rl) + '_A' + str(azim_rl) + '.wav'
-        brir_name_wav_rr = 'BRIR' + '_E' + str(elev_rr) + '_A' + str(azim_rr) + '.wav'
-        
-        if channel_config == '2.0 Stereo' or channel_config == '7.1 Downmix to Stereo':
+        azim_fl = brir_dict.get("azim_fl")
+        azim_fr = brir_dict.get("azim_fr")
+        azim_c  = brir_dict.get("azim_c")
+        azim_sl = brir_dict.get("azim_sl")
+        azim_sr = brir_dict.get("azim_sr")
+        azim_rl = brir_dict.get("azim_rl")
+        azim_rr = brir_dict.get("azim_rr")
+
+        wav_fl = f"BRIR_E{elev_fl}_A{azim_fl}.wav"
+        wav_fr = f"BRIR_E{elev_fr}_A{azim_fr}.wav"
+        wav_c  = f"BRIR_E{elev_c}_A{azim_c}.wav"
+        wav_sl = f"BRIR_E{elev_sl}_A{azim_sl}.wav"
+        wav_sr = f"BRIR_E{elev_sr}_A{azim_sr}.wav"
+        wav_rl = f"BRIR_E{elev_rl}_A{azim_rl}.wav"
+        wav_rr = f"BRIR_E{elev_rr}_A{azim_rr}.wav"
+
+        # Determine expected BRIR count
+        if channel_config in ("2.0 Stereo", "7.1 Downmix to Stereo"):
             expected_brirs = 2
-        elif channel_config == '5.1 Surround':
+            required_files = [wav_fl, wav_fr]
+        elif channel_config == "5.1 Surround":
             expected_brirs = 5
-        elif channel_config == '7.1 Surround' or channel_config == '2.0 Stereo Upmix to 7.1':
+            required_files = [wav_fl, wav_fr, wav_c, wav_rl, wav_rr]
+        elif channel_config in ("7.1 Surround", "2.0 Stereo Upmix to 7.1"):
             expected_brirs = 7
+            required_files = [wav_fl, wav_fr, wav_c, wav_sl, wav_sr, wav_rl, wav_rr]
         else:
             expected_brirs = 2
-        brirs_found=0
+            required_files = [wav_fl, wav_fr]
 
-        if enable_brir_conv == True:
-            #get max gain from BRIRs
-            #find file names for desired brirs
+        brirs_found = 0
+        missing_files = []
+        timestamp_mismatches = []
+
+        if enable_brir_conv:
             brir_set_formatted = brir_set.replace(" ", "_")
             brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
-            #find specific directions
-            for root, dirs, files in os.walk(brirs_path):
-                for filename in files:
-                    if channel_config == '2.0 Stereo' or channel_config == '5.1 Surround' or channel_config == '7.1 Surround'  or channel_config == '2.0 Stereo Upmix to 7.1'  or channel_config == '7.1 Downmix to Stereo':
-                        if filename == brir_name_wav_fl or filename == brir_name_wav_fr:
-                            brirs_found=brirs_found+1
-                    if channel_config == '5.1 Surround' or channel_config == '7.1 Surround' or channel_config == '2.0 Stereo Upmix to 7.1':
-                        if filename == brir_name_wav_c or filename == brir_name_wav_rl or filename == brir_name_wav_rr:#center
-                            brirs_found=brirs_found+1
-                    if channel_config == '7.1 Surround' or channel_config == '2.0 Stereo Upmix to 7.1':
-                        if filename == brir_name_wav_sl or filename == brir_name_wav_sr:
-                            brirs_found=brirs_found+1          
-            
-            #were all brirs found? compare count
-            if brirs_found >= expected_brirs:
-                all_brirs_found = True
+
+            # --- Check each required file exists ---
+            for fname in required_files:
+                fpath = os.path.join(brirs_path, fname)
+                if os.path.exists(fpath):
+                    brirs_found += 1
+                else:
+                    missing_files.append(fname)
+
+            # Log missing file summary
+            if missing_files:
+                hf.log_with_timestamp(
+                    f"[BRIR Check] Missing {len(missing_files)}/{expected_brirs} files in set '{brir_set}': {missing_files}",
+                    log_type=0
+                )
+
+            # Count mismatch = immediate fail
+            if brirs_found < expected_brirs:
+                hf.log_with_timestamp(
+                    f"[BRIR Check] Found {brirs_found}/{expected_brirs} required BRIR files → FAIL",
+                    log_type=0
+                )
+                return False
+
+            # --- Timestamp freshness check ---
+            try:
+                ts_str = dpg.get_value("qc_e_apo_sel_brir_set_ts")
+                if ts_str not in (None, "", "0"):
+                    run_ts = datetime.fromisoformat(ts_str)
+                    tolerance = timedelta(seconds=10)
+
+                    for fname in required_files:
+                        fpath = os.path.join(brirs_path, fname)
+                        if os.path.exists(fpath):
+                            modified = datetime.fromtimestamp(os.path.getmtime(fpath))
+                            if modified + tolerance < run_ts:
+                                timestamp_mismatches.append((fname, modified))
+
+                    if timestamp_mismatches:
+                        for fname, ts in timestamp_mismatches:
+                            hf.log_with_timestamp(
+                                f"[BRIR Timestamp] File '{fname}' is older ({ts}) than run timestamp ({run_ts}) → MISMATCH",
+                                log_type=0
+                            )
+
+                        hf.log_with_timestamp(
+                            f"[BRIR Timestamp] {len(timestamp_mismatches)} file(s) failed timestamp freshness check → FAIL",
+                            log_type=0
+                        )
+                        return False
+
+            except Exception as ex:
+                hf.log_with_timestamp(f"[BRIR Timestamp] Error checking timestamps: {ex}", log_type=2)
+
+            # If we reached here: all files exist + timestamps match
+            hf.log_with_timestamp(
+                f"[BRIR Check] All {expected_brirs} files found and fresh for set '{brir_set}' → OK",
+                log_type=0
+            )
+            all_brirs_found = True
+
         else:
             all_brirs_found = True
-        
 
-    except Exception as ex:   
+    except Exception as ex:
         hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)
-        
+
     return all_brirs_found

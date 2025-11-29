@@ -276,6 +276,11 @@ def main():
     database_comp = pjoin(CN.DATA_DIR_OUTPUT,'hpcf_compilation_database.db')
     conn_ash = hpcf_functions.create_connection(database_ash)
     conn_comp = hpcf_functions.create_connection(database_comp)
+    # Map database names to connections
+    db_map = {
+        CN.HPCF_DATABASE_LIST[0]: conn_ash,
+        CN.HPCF_DATABASE_LIST[1]: conn_comp
+    }
     
     #define hpcf defaults
     brands_list_default = hpcf_functions.get_brand_list(conn_ash)
@@ -361,44 +366,63 @@ def main():
     
     
 
-
-    #QC loaded hp and sample lists based on loaded brand and headphone
+        
+    # Ensure both tabs have the same active database
     qc_active_database = loaded_values['qc_hpcf_active_database']
-    loaded_values['fde_hpcf_active_database'] = loaded_values['qc_hpcf_active_database']#ensure both are aligned
-    # --- Validate lists and values ---
-    if qc_active_database == CN.HPCF_DATABASE_LIST[0]:#which database is active?
-        hpcf_db_dict['conn'] = conn_ash
+    loaded_values['fde_hpcf_active_database'] = qc_active_database
+    
+    #QC loaded hp and sample lists based on loaded brand and headphone
+    def load_db_values(active_db_name):
+        """Retrieve brands, headphones, samples, and ensure valid selection."""
+        conn = db_map[active_db_name]
+        hpcf_db_dict['conn'] = conn
+    
+        # QC tab
+        qc_brands = hpcf_functions.get_brand_list(conn)
+        qc_brands, loaded_values["qc_hpcf_brand"] = hf.ensure_valid_selection(
+            qc_brands, loaded_values.get("qc_hpcf_brand", "")
+        )
+        qc_hp_list = hpcf_functions.get_headphone_list(conn, loaded_values["qc_hpcf_brand"])
+        qc_hp_list, loaded_values["qc_hpcf_headphone"] = hf.ensure_valid_selection(
+            qc_hp_list, loaded_values.get("qc_hpcf_headphone", "")
+        )
+        qc_sample_list = hpcf_functions.get_samples_list(conn, loaded_values["qc_hpcf_headphone"])
+        qc_sample_list, loaded_values["qc_hpcf_sample"] = hf.ensure_valid_selection(
+            qc_sample_list, loaded_values.get("qc_hpcf_sample", "")
+        )
+    
+        # FDE tab
+        fde_brands = hpcf_functions.get_brand_list(conn)
+        fde_brands, loaded_values["fde_hpcf_brand"] = hf.ensure_valid_selection(
+            fde_brands, loaded_values.get("fde_hpcf_brand", "")
+        )
+        fde_hp_list = hpcf_functions.get_headphone_list(conn, loaded_values["fde_hpcf_brand"])
+        fde_hp_list, loaded_values["fde_hpcf_headphone"] = hf.ensure_valid_selection(
+            fde_hp_list, loaded_values.get("fde_hpcf_headphone", "")
+        )
+        fde_sample_list = hpcf_functions.get_samples_list(conn, loaded_values["fde_hpcf_headphone"])
+        fde_sample_list, loaded_values["fde_hpcf_sample"] = hf.ensure_valid_selection(
+            fde_sample_list, loaded_values.get("fde_hpcf_sample", "")
+        )
+    
+        return conn, qc_brands, qc_hp_list, qc_sample_list, fde_brands, fde_hp_list, fde_sample_list
+    
+    # First, try the current active database
+    conn = db_map.get(qc_active_database, conn_ash)
+    qc_brands_list = hpcf_functions.get_brand_list(conn)
+    
+    # Check if loaded brand exists in brand list; if not, switch database
+    if loaded_values.get("qc_hpcf_brand", "") not in qc_brands_list:
+        # Switch to the other database
+        new_db_name = CN.HPCF_DATABASE_LIST[1] if qc_active_database == CN.HPCF_DATABASE_LIST[0] else CN.HPCF_DATABASE_LIST[0]
+        qc_active_database = new_db_name
+        loaded_values['qc_hpcf_active_database'] = new_db_name
+        loaded_values['fde_hpcf_active_database'] = new_db_name
+        hf.log_with_timestamp("Previously applied HpCF not found in active headphone database. Switching database.")
+    
+    # Load all values from the active (or switched) database
+    conn, qc_brands_list_loaded, qc_hp_list_loaded, qc_sample_list_loaded, fde_brands_list_loaded, fde_hp_list_loaded, fde_sample_list_loaded = load_db_values(qc_active_database)
         
-        qc_brands_list_loaded = hpcf_functions.get_brand_list(conn_ash)
-        qc_brands_list_loaded, loaded_values["qc_hpcf_brand"] = hf.ensure_valid_selection( qc_brands_list_loaded, loaded_values.get("qc_hpcf_brand", ""))
-        qc_hp_list_loaded = hpcf_functions.get_headphone_list(conn_ash, loaded_values["qc_hpcf_brand"])#
-        qc_hp_list_loaded, loaded_values["qc_hpcf_headphone"] = hf.ensure_valid_selection(qc_hp_list_loaded, loaded_values.get("qc_hpcf_headphone", ""))
-        qc_sample_list_loaded = hpcf_functions.get_samples_list(conn_ash, loaded_values["qc_hpcf_headphone"])
-        qc_sample_list_loaded, loaded_values["qc_hpcf_sample"] = hf.ensure_valid_selection(qc_sample_list_loaded, loaded_values.get("qc_hpcf_sample", ""))
-        
-        fde_brands_list_loaded = hpcf_functions.get_brand_list(conn_ash)
-        fde_brands_list_loaded, loaded_values["fde_hpcf_brand"] = hf.ensure_valid_selection( fde_brands_list_loaded, loaded_values.get("fde_hpcf_brand", ""))
-        fde_hp_list_loaded = hpcf_functions.get_headphone_list(conn_ash, loaded_values["fde_hpcf_brand"])#
-        fde_hp_list_loaded, loaded_values["fde_hpcf_headphone"] = hf.ensure_valid_selection(fde_hp_list_loaded, loaded_values.get("fde_hpcf_headphone", ""))
-        fde_sample_list_loaded = hpcf_functions.get_samples_list(conn_ash, loaded_values["fde_hpcf_headphone"])
-        fde_sample_list_loaded, loaded_values["fde_hpcf_sample"] = hf.ensure_valid_selection(fde_sample_list_loaded, loaded_values.get("fde_hpcf_sample", ""))
-    else:
-        hpcf_db_dict['conn'] = conn_comp
-        
-        qc_brands_list_loaded = hpcf_functions.get_brand_list(conn_comp)
-        qc_brands_list_loaded, loaded_values["qc_hpcf_brand"] = hf.ensure_valid_selection( qc_brands_list_loaded, loaded_values.get("qc_hpcf_brand", ""))
-        qc_hp_list_loaded = hpcf_functions.get_headphone_list(conn_comp, loaded_values["qc_hpcf_brand"])#
-        qc_hp_list_loaded, loaded_values["qc_hpcf_headphone"] = hf.ensure_valid_selection(qc_hp_list_loaded, loaded_values.get("qc_hpcf_headphone", ""))
-        qc_sample_list_loaded = hpcf_functions.get_samples_list(conn_comp, loaded_values["qc_hpcf_headphone"])
-        qc_sample_list_loaded, loaded_values["qc_hpcf_sample"] = hf.ensure_valid_selection(qc_sample_list_loaded, loaded_values.get("qc_hpcf_sample", ""))
- 
-        
-        fde_brands_list_loaded = hpcf_functions.get_brand_list(conn_comp)
-        fde_brands_list_loaded, loaded_values["fde_hpcf_brand"] = hf.ensure_valid_selection( fde_brands_list_loaded, loaded_values.get("fde_hpcf_brand", ""))
-        fde_hp_list_loaded = hpcf_functions.get_headphone_list(conn_comp, loaded_values["fde_hpcf_brand"])#
-        fde_hp_list_loaded, loaded_values["fde_hpcf_headphone"] = hf.ensure_valid_selection(fde_hp_list_loaded, loaded_values.get("fde_hpcf_headphone", ""))
-        fde_sample_list_loaded = hpcf_functions.get_samples_list(conn_comp, loaded_values["fde_hpcf_headphone"])
-        fde_sample_list_loaded, loaded_values["fde_hpcf_sample"] = hf.ensure_valid_selection(fde_sample_list_loaded, loaded_values.get("fde_hpcf_sample", ""))
         
 
   
@@ -832,7 +856,8 @@ def main():
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_listbox(CN.HP_COMP_LIST, default_value=loaded_values["qc_brir_hp_type"], num_items=4, width=245, callback=cb.qc_select_hp_comp, tag='qc_brir_hp_type')
                                             with dpg.tooltip("qc_brir_hp_type_title"):
-                                                dpg.add_text("This should align with the listener's headphone type")
+                                                dpg.add_text("This will compensate typical interactions between the headphone and the outer ear")
+                                                dpg.add_text("Selection should align with the listener's headphone type")
                                                 dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised")
                                                 
                                 with dpg.tab(label="Listener Selection",tag='qc_listener_tab', parent="qc_brir_tab_bar"): 
@@ -936,6 +961,7 @@ def main():
                             dpg.bind_item_font(dpg.last_item(), bold_font)
                             dpg.bind_item_theme(dpg.last_item(), "__theme_f")
                             dpg.add_text(default_value=loaded_values["qc_e_apo_sel_brir_set"], tag='qc_e_apo_sel_brir_set',show=False, user_data={})#user data used for storing snapshot of BRIR dict 
+                            dpg.add_text(default_value=loaded_values["qc_e_apo_sel_brir_set_ts"], tag='qc_e_apo_sel_brir_set_ts',show=False)#timestamp of last brir dataset export
                     
                     #right most section
                     with dpg.group():    
@@ -1463,7 +1489,8 @@ def main():
                                             dpg.bind_item_font(dpg.last_item(), bold_font)
                                             dpg.add_listbox(CN.HP_COMP_LIST, default_value=loaded_values["fde_brir_hp_type"], num_items=4, width=235, callback=cb.select_hp_comp, tag='fde_brir_hp_type')
                                             with dpg.tooltip("brir_hp_type_title"):
-                                                dpg.add_text("This should align with the listener's headphone type")
+                                                dpg.add_text("This will compensate typical interactions between the headphone and the outer ear")
+                                                dpg.add_text("Selection should align with the listener's headphone type")
                                                 dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised")
                                                 
                                 with dpg.tab(label="Listener Selection",tag='listener_tab', parent="brir_tab_bar"): 
@@ -2273,7 +2300,7 @@ def main():
                         with dpg.group(horizontal=True):
 
                             #Section for database
-                            with dpg.child_window(width=200, height=150):
+                            with dpg.child_window(width=200, height=165):
                                 dpg.add_text("App")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
@@ -2285,7 +2312,7 @@ def main():
                                 dpg.add_button(label="Check for Updates",user_data="",tag="app_version_tag", callback=cb.check_app_version)
                                 with dpg.tooltip("app_version_tag"):
                                     dpg.add_text("This will check for updates to the app and show versions in the log")   
-                            with dpg.child_window(width=224, height=150):
+                            with dpg.child_window(width=224, height=165):
                                 dpg.add_text("Headphone Correction Filters")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
@@ -2299,7 +2326,7 @@ def main():
                                 dpg.add_button(label="Download Latest Datasets",user_data="",tag="hpcf_db_download_tag", callback=cb.download_latest_db)
                                 with dpg.tooltip("hpcf_db_download_tag"):
                                     dpg.add_text("This will download latest version of the datasets and replace local files")
-                            with dpg.child_window(width=224, height=150):
+                            with dpg.child_window(width=224, height=165):
                                 dpg.add_text("Acoustic Spaces")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
@@ -2313,7 +2340,7 @@ def main():
                                 dpg.add_button(label="Download Latest Datasets",user_data="",tag="as_download_tag", callback=cb.download_latest_as_sets)
                                 with dpg.tooltip("as_download_tag"):
                                     dpg.add_text("This will download any updates to acoustic space datasets and replace local versions")
-                            with dpg.child_window(width=224, height=150):
+                            with dpg.child_window(width=224, height=165):
                                 dpg.add_text("HRTF Datasets")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
@@ -2328,7 +2355,7 @@ def main():
                                 with dpg.tooltip("hrtf_download_tag"):
                                     dpg.add_text("This will download the latest list of HRTF datasets. Restart required if updates found")
                             #Section to reset settngs
-                            with dpg.child_window(width=190, height=150):
+                            with dpg.child_window(width=190, height=165):
                                 dpg.add_text("Inputs")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
@@ -2336,26 +2363,49 @@ def main():
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_button(label="Reset Settings",tag="reset_settings_tag", callback=cb.reset_settings)  
                                 dpg.add_text("Settings and Presets")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
                                 dpg.add_button(label="Open Folder", tag="open_settings_folder_button", callback=cb.open_user_settings_folder)
                                 with dpg.tooltip("open_settings_folder_button"):
                                     dpg.add_text("Opens the directory where the settings file is stored")
   
-                            with dpg.child_window(width=240, height=150):
+                            with dpg.child_window(width=240, height=165):
                                 dpg.add_text("Outputs")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()
-                                dpg.add_text("Delete All Exported Headphone Filters")
+                            
+                                # Delete Headphone Filters
+                                dpg.add_text("Delete All Exported Filters & Datasets")
                                 dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_button(label="Delete Headphone Filters",user_data="",tag="remove_hpcfs_tag", callback=cb.remove_hpcfs)
+                                dpg.add_button(label="Delete Headphone Filters", tag="remove_hpcfs_tag", callback=lambda: dpg.configure_item("del_hpcfs_popup", show=True))
                                 with dpg.tooltip("remove_hpcfs_tag"):
                                     dpg.add_text("Warning: this will delete all headphone filters that have been exported to the output directory")
-                                dpg.add_text("Delete All Exported Binaural Datasets")
-                                dpg.bind_item_font(dpg.last_item(), bold_font)
-                                dpg.add_button(label="Delete Binaural Datasets",user_data="",tag="remove_brirs_tag", callback=cb.remove_brirs)
+                            
+                                with dpg.popup("remove_hpcfs_tag", modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_hpcfs_popup"):
+                                    dpg.add_text("All exported Headphone Filters will be deleted.")
+                                    dpg.add_separator()
+                                    with dpg.group(horizontal=True):
+                                        dpg.add_button(label="OK", width=75, callback=cb.remove_hpcfs)
+                                        dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_hpcfs_popup", show=False))
+                            
+                                # Delete Binaural Datasets
+                                dpg.add_button(label="Delete Binaural Datasets", tag="remove_brirs_tag", callback=lambda: dpg.configure_item("del_brirs_popup", show=True))
                                 with dpg.tooltip("remove_brirs_tag"):
-                                    dpg.add_text("Warning: this will delete all BRIRs that have been generated and exported to the output directory")  
+                                    dpg.add_text("Warning: this will delete all BRIRs that have been generated and exported to the output directory")
+                            
+                                with dpg.popup("remove_brirs_tag", modal=True, mousebutton=dpg.mvMouseButton_Left, tag="del_brirs_popup"):
+                                    dpg.add_text("All exported Binaural Datasets will be deleted.")
+                                    dpg.add_separator()
+                                    with dpg.group(horizontal=True):
+                                        dpg.add_button(label="OK", width=75, callback=cb.remove_brirs)
+                                        dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_brirs_popup", show=False))
+                                
+                                dpg.add_text("Exported Files")
+                                dpg.bind_item_font(dpg.last_item(), bold_font)
+                                dpg.add_button(label="Open Folder", tag="open_output_folder_button", callback=cb.open_output_folder)
+                                        
+                                    
                             #Section for misc settings
-                            with dpg.child_window(width=340, height=150):
+                            with dpg.child_window(width=340, height=165):
                                 dpg.add_text("Misc. Settings")
                                 dpg.bind_item_font(dpg.last_item(), med_font)
                                 dpg.add_separator()    
@@ -2387,7 +2437,7 @@ def main():
                                             dpg.add_text("Reverberation is not modified") 
                                     
                 #section for logging
-                with dpg.child_window(width=1690, height=482, tag="console_window",user_data=None):
+                with dpg.child_window(width=1690, height=467, tag="console_window",user_data=None):
                     dpg.add_text("Primary Log",tag='log_text',user_data=CN.__version__)
                     dpg.bind_item_font(dpg.last_item(), bold_font)
             

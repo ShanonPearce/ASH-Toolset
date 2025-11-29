@@ -836,7 +836,6 @@ def sofa_workflow_new_dataset(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, 
         #invert response
         hrir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(hrir_fft_avg_mag_sm)*-1)
         #create min phase FIR
-        #hrir_df_inv_fir = hf.mag_to_min_fir(hrir_fft_avg_mag_inv, crop=1, out_win_size=1024, n_fft=CN.N_FFT)
         hrir_df_inv_fir = hf.build_min_phase_filter(hrir_fft_avg_mag_inv, truncate_len=1024, n_fft=CN.N_FFT)
         
 
@@ -1009,8 +1008,11 @@ def apply_hp_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, direc
   
   
   
-def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_source_positions, flip_azimuths_fb=False, reverse_azim_rot=False, gui_logger=None, spatial_res=2):
 
+
+def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_source_positions,
+                           flip_azimuths_fb=False, reverse_azim_rot=False,
+                           gui_logger=None, spatial_res=2):
     """ 
     Function peforms the following transformations:
         extracts hrirs from sofa_data_ir 
@@ -1025,98 +1027,98 @@ def sofa_dataset_transform(convention_name, sofa_data_ir, sofa_samplerate, sofa_
         sofa_source_positions(npy array):source positions array from sofa file, 3 spherical dimensions, azimuth (deg) x elevation (deg) x distance, 2d array: position x coordinate tuple
         reverse_azim_rot (bool): flag to reverse azimuth direction, positive = CCW by default
     """
-    hrir_out=None
+    hrir_out = None
     try:
-        #filters
-        cutoff=10000#14000
-        fs=CN.FS
-        order=8
-        method=1
+        cutoff = 10000
+        fs = CN.FS
+        order = 8
         lp_sos = hf.get_filter_sos(cutoff=cutoff, fs=fs, order=order, b_type='low')
-        
+
+        # Check convention and dimensions
         if convention_name in CN.SOFA_COMPAT_CONV:
-            #in GeneralFIRE convention, dim 1 = measurements, dim 2 = receivers (L + R), dim 3 = samples, dim 4 = emitters (speakers):
-            #in GeneralFIR and SimpleFreeFieldHRIR conventions, dim 1 = measurements, dim 2 = receivers (L + R), dim 3 = samples e.g. size [648, 2, 2048]
-            # Get the lengths of the first 3 dimensions
-            n_measurements = sofa_data_ir.shape[0]
-            n_receivers = sofa_data_ir.shape[1]
-            n_samples = sofa_data_ir.shape[2]  
+            n_measurements, n_receivers, n_samples = sofa_data_ir.shape[:3]
         else:
             raise ValueError('Invalid SOFA convention. Not yet supported.')
-        
-        #coordinate system and dimensions
+
+        # Check spatial resolution
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
-            elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
-            elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
-            elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
-            azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
+            elev_min = CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res]
+            elev_max = CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res]
+            elev_nearest = CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res]
+            azim_nearest = CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res]
         else:
             raise ValueError('Invalid spatial resolution')
-        output_azims = int(360/azim_nearest)
-        output_elevs = int((elev_max-elev_min)/elev_nearest +1)
-        total_chan_hrir=CN.TOTAL_CHAN_HRIR
-        total_samples_hrir=CN.TOTAL_SAMPLES_HRIR
-        total_sets=1
-        set_id=0
-        #create empty npy dataset
-        #HRIR array will be populated with all HRIRs
-        hrir_out=np.zeros((total_sets,output_elevs,output_azims,total_chan_hrir,total_samples_hrir))
-        hrir_selected=np.zeros((total_chan_hrir,n_samples))
-        #hrir_sample=np.zeros((total_chan_hrir,n_samples))
-        
-        populate_samples = min(total_samples_hrir,n_samples)
-        samp_freq_ash =CN.SAMP_FREQ
-        #resample if samp_freq is not 44100
-        if sofa_samplerate != samp_freq_ash:
-            populate_samples_re = round(populate_samples * float(samp_freq_ash) / sofa_samplerate)#recalculate no. samples 
-            populate_samples = min(populate_samples,populate_samples_re)
-            log_string = 'Resampling dataset'
-            hf.log_with_timestamp(log_string, gui_logger)
-            
 
-        #for each direction in output array
-        #for each elev and az
+        output_azims = max(1, int(360 / azim_nearest))
+        output_elevs = max(1, int((elev_max - elev_min) / elev_nearest + 1))
+        total_chan_hrir = min(CN.TOTAL_CHAN_HRIR, n_receivers)
+        total_samples_hrir = CN.TOTAL_SAMPLES_HRIR
+        total_sets = 1
+        set_id = 0
+
+        # Initialize output
+        hrir_out = np.zeros((total_sets, output_elevs, output_azims, total_chan_hrir, total_samples_hrir))
+
+        populate_samples = min(total_samples_hrir, n_samples)
+        samp_freq_ash = CN.SAMP_FREQ
+
+        # Adjust samples if resampling
+        if sofa_samplerate != samp_freq_ash:
+            populate_samples_re = round(populate_samples * float(samp_freq_ash) / sofa_samplerate)
+            populate_samples = min(populate_samples, populate_samples_re)
+            hf.log_with_timestamp('Resampling dataset', gui_logger)
+
+        # Populate HRIRs
         for elev in range(output_elevs):
-            elev_deg = int(elev_min + elev*elev_nearest)
+            elev_deg = int(elev_min + elev * elev_nearest)
             for azim in range(output_azims):
-                azim_deg = int(azim*azim_nearest)
-                #get nearest direction
-                nearest_dir_idx = sofa_find_nearest_direction(sofa_source_positions=sofa_source_positions, target_elevation=elev_deg, target_azimuth=azim_deg, flip_azimuths_fb=flip_azimuths_fb, reverse_azim_rot=reverse_azim_rot)
-                
-                #grab HRIR of this direction
-                hrir_selected=np.zeros((total_chan_hrir,n_samples))
-                for chan in range(total_chan_hrir):
-                    query_sofa_data(convention_name,hrir_selected,sofa_data_ir,nearest_dir_idx,chan)
-        
-                
-                #resample if samp_freq is not 44100
-                if sofa_samplerate != samp_freq_ash:
-                    hrir_selected = hf.resample_signal(hrir_selected, original_rate = sofa_samplerate, new_rate = samp_freq_ash, axis=1, scale=True)
-                    
-                #shift
-                hrir_selected=shift_2d_impulse_response(hrir_selected, lp_sos, target_index=58)#46
-                #hrir_selected=shift_2d_impulse_response_cc(hrir_selected, hrir_sample, lp_sos)#use cross correlation to align in TD
-                
-                
-                #place into npy array (also crops)
-                for chan in range(total_chan_hrir):
-                    hrir_out[set_id,elev,azim,chan,0:populate_samples] = np.copy(hrir_selected[chan,0:populate_samples])
-                
+                azim_deg = int(azim * azim_nearest)
 
-        #resample if samp_freq is not 44100
+                nearest_dir_idx = sofa_find_nearest_direction(
+                    sofa_source_positions=sofa_source_positions,
+                    target_elevation=elev_deg,
+                    target_azimuth=azim_deg,
+                    flip_azimuths_fb=flip_azimuths_fb,
+                    reverse_azim_rot=reverse_azim_rot
+                )
+
+                # Clamp nearest_dir_idx
+                nearest_dir_idx = max(0, min(nearest_dir_idx, n_measurements - 1))
+
+                hrir_selected = np.zeros((total_chan_hrir, n_samples))
+
+                for chan in range(total_chan_hrir):
+                    if chan < n_receivers:
+                        query_sofa_data(convention_name, hrir_selected, sofa_data_ir, nearest_dir_idx, chan)
+
+                if sofa_samplerate != samp_freq_ash:
+                    hrir_selected = hf.resample_signal(
+                        hrir_selected,
+                        original_rate=sofa_samplerate,
+                        new_rate=samp_freq_ash,
+                        axis=1,
+                        scale=True
+                    )
+
+                hrir_selected = shift_2d_impulse_response(hrir_selected, lp_sos, target_index=58)
+
+                # Safely copy samples
+                copy_samples = min(populate_samples, hrir_selected.shape[1], hrir_out.shape[4])
+                for chan in range(total_chan_hrir):
+                    hrir_out[set_id, elev, azim, chan, 0:copy_samples] = np.copy(hrir_selected[chan, 0:copy_samples])
+
         if sofa_samplerate != samp_freq_ash:
-            log_string_a = 'source samplerate: ' + str(sofa_samplerate) + ', resampled to: '+ str(samp_freq_ash)
-            hf.log_with_timestamp(log_string_a)
-            
+            hf.log_with_timestamp(
+                f'source samplerate: {sofa_samplerate}, resampled to: {samp_freq_ash}',
+                gui_logger
+            )
+
     except Exception as ex:
-        log_string = 'SOFA transform failed'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+        hf.log_with_timestamp('SOFA transform failed', gui_logger=gui_logger, log_type=2, exception=ex)
 
     return hrir_out
+
+
 
 def query_sofa_data(convention_name,hrir_selected,sofa_data_ir,nearest_dir_idx,chan):
     """

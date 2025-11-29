@@ -736,156 +736,7 @@ def map_row_to_standard_dict(row, new_schema=False):
 # List retrieval functions using HPCF_DB_SCHEMA_MAP with schema detection
 # ---------------------------------
 
-# def get_all_headphone_list(conn):
-#     """Retrieve list of all headphones."""
-#     try:
-#         is_new = detect_schema(conn)
-#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
-#         sql = f"SELECT DISTINCT {col} FROM hpcf_table"
-#         cur = conn.cursor()
-#         cur.execute(sql)
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
 
-
-# def get_brand_list(conn):
-#     """Retrieve list of all brands or sources."""
-#     try:
-#         is_new = detect_schema(conn)
-#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
-#         sql = f"SELECT DISTINCT {col} FROM hpcf_table"
-#         cur = conn.cursor()
-#         cur.execute(sql)
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
-
-
-# def search_brand_list(conn, search_str=None):
-#     """Retrieve list of brands or sources matching a search string."""
-#     try:
-#         if not search_str:
-#             return []
-#         is_new = detect_schema(conn)
-#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
-#         sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} LIKE ?"
-#         cur = conn.cursor()
-#         cur.execute(sql, ('%' + search_str + '%',))
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
-
-
-# def search_headphone_list(conn, search_str=None):
-#     """Retrieve list of headphones matching a search string."""
-#     try:
-#         if not search_str:
-#             return []
-#         is_new = detect_schema(conn)
-#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
-#         sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} LIKE ?"
-#         cur = conn.cursor()
-#         cur.execute(sql, ('%' + search_str + '%',))
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
-
-
-# def search_headphones_in_list(conn, search_list=None):
-#     """Retrieve headphones from a given list."""
-#     try:
-#         if not search_list:
-#             return []
-#         is_new = detect_schema(conn)
-#         col = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
-#         placeholders = ','.join(['?'] * len(search_list))
-#         sql = f"SELECT DISTINCT {col} FROM hpcf_table WHERE {col} IN ({placeholders})"
-#         cur = conn.cursor()
-#         cur.execute(sql, search_list)
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
-
-
-# def get_headphone_list(conn, brand, sample=None):
-#     """Retrieve list of headphones for a given brand and optional sample/type."""
-#     try:
-#         is_new = detect_schema(conn)
-#         col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
-#         col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
-#         col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
-
-#         cur = conn.cursor()
-#         if sample:
-#             sql = f"SELECT DISTINCT {col_headphone} FROM hpcf_table WHERE {col_brand}=? AND {col_sample}=?"
-#             cur.execute(sql, (brand, sample))
-#         else:
-#             sql = f"SELECT DISTINCT {col_headphone} FROM hpcf_table WHERE {col_brand}=?"
-#             cur.execute(sql, (brand,))
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
-
-
-# def get_brand(conn, headphone):
-#     """Retrieve brand for a specified headphone."""
-#     try:
-#         is_new = detect_schema(conn)
-#         col_brand = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "brand"][0] if is_new else "brand"
-#         col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
-#         sql = f"SELECT DISTINCT {col_brand} FROM hpcf_table WHERE {col_headphone}=?"
-#         cur = conn.cursor()
-#         cur.execute(sql, (headphone,))
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return rows[0][0]
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
-
-
-# def get_samples_list(conn, headphone):
-#     """Retrieve samples for a specified headphone."""
-#     try:
-#         is_new = detect_schema(conn)
-#         col_headphone = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "headphone"][0] if is_new else "headphone"
-#         col_sample = [k for k, v in CN.HPCF_DB_SCHEMA_MAP.items() if v == "sample"][0] if is_new else "sample"
-#         sql = f"SELECT DISTINCT {col_sample} FROM hpcf_table WHERE {col_headphone}=?"
-#         cur = conn.cursor()
-#         cur.execute(sql, (headphone,))
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return sorted([r[0] for r in rows], key=str.casefold)
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info=e)
-#     return None
 
 def get_all_headphone_list(conn):
     """Retrieve list of all headphones."""
@@ -1538,7 +1389,7 @@ def hpcf_fir_to_geq(fir_array, geq_mode=1, sample_rate=CN.SAMP_FREQ, geq_freq_ar
 
 
 
-def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=False, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
+def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, geq_json = True, eapo_export=False, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', resample_mode=CN.RESAMPLE_MODE_LIST[0], force_output=False):
     """
     Function exports filter to a wav or txt file
     To be run on a hpcf dictionary, call once for every headphone sample. For a given hpcf, exports: FIR-Mono, FIR-Stereo, Graphic EQ full bands, Graphic EQ 31 Band, Graphic EQ 103 Band
@@ -1555,6 +1406,8 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
     """
     
     try:
+        
+        success = True   # <-- result flag
 
 
         #hesuvi path
@@ -1595,7 +1448,7 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         
         #resample if samp_freq is not 44100
         if samp_freq != CN.SAMP_FREQ:
-            hpcf_fir = hf.resample_signal(hpcf_fir, new_rate = samp_freq)
+            hpcf_fir = hf.resample_signal(hpcf_fir, new_rate = samp_freq, mode=resample_mode)
         
         out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
         
@@ -1608,12 +1461,13 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
             
-            #dont write if file already exists
-            if force_output == True or not output_file.is_file():
+            #dont write if file already exists          
+            if force_output or hf.wav_needs_update(out_file_path, samp_freq, bit_depth):
                 hf.write2wav(file_name=out_file_path, data=hpcf_fir, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
-            
                 log_string = 'HpCF (WAV FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_wav)
                 hf.log_with_timestamp(log_string, gui_logger)
+            else:
+                hf.log_with_timestamp(f"Skipped writing (unchanged wav file): {hpcf_name_wav}")
             
         
 
@@ -1621,25 +1475,33 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
         #
         #save FIR to stereo WAV
         #
-        output_wav_s = np.empty((CN.HPCF_FIR_LENGTH, 2))
-        
-        output_wav_s[0:CN.HPCF_FIR_LENGTH,0] = hpcf_fir[0:CN.HPCF_FIR_LENGTH]
-        output_wav_s[0:CN.HPCF_FIR_LENGTH,1] = hpcf_fir[0:CN.HPCF_FIR_LENGTH]
 
         out_file_path = pjoin(out_file_dir_st_wav, hpcf_name_wav)
         
         if fir_stereo_export == True:
+        
+            # build stereo array with real length
+            fir_len = len(hpcf_fir)
+            output_wav_s = np.column_stack((hpcf_fir, hpcf_fir))  # shape (N, 2)
+        
+            out_file_path = pjoin(out_file_dir_st_wav, hpcf_name_wav)
+        
             if not hf.check_write_permissions(out_file_dir_st_wav, gui_logger):
-                # Skip exporting or raise exception
                 return
-            #create dir if doesnt exist
+        
+            # create dir if doesnt exist
             output_file = Path(out_file_path)
             output_file.parent.mkdir(exist_ok=True, parents=True)
-
-            hf.write2wav(file_name=out_file_path, data=output_wav_s, prevent_clipping=1, bit_depth=bit_depth, samplerate=samp_freq)
-            
-            
-            log_string = 'HpCF (WAV Stereo FIR): ' + hpcf_name + ' saved to: ' + str(out_file_dir_st_wav)
+        
+            hf.write2wav(
+                file_name=out_file_path,
+                data=output_wav_s,
+                prevent_clipping=1,
+                bit_depth=bit_depth,
+                samplerate=samp_freq
+            )
+        
+            log_string = f'HpCF (WAV Stereo FIR): {hpcf_name} saved to: {out_file_dir_st_wav}'
             hf.log_with_timestamp(log_string, gui_logger)
                 
         #
@@ -1795,12 +1657,18 @@ def hpcf_to_file(hpcf_dict, primary_path, fir_export = True, fir_stereo_export =
 
 
     except Exception as ex:
+        success = False
         log_string = 'Failed to export HpCFs'
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
+        
+    return success   # <-- return the flag
 
 
 
-def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=False, report_progress=0, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', force_output=False):
+
+
+        
+def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir_stereo_export = True, geq_export = True, geq_31_export = True, geq_103_export = False, hesuvi_export = True, eapo_export=False, report_progress=0, gui_logger=None, samp_freq=CN.SAMP_FREQ, bit_depth='PCM_24', resample_mode=CN.RESAMPLE_MODE_LIST[0], force_output=False):
     """
     Function bulk exports all filters to wav or txt files
     calls above function on each headphone/sample combination in the database
@@ -1813,49 +1681,82 @@ def hpcf_to_file_bulk(conn, primary_path, headphone=None, fir_export = True, fir
     :param hesuvi_export: int, 1 = export hesuvi files
     :param eapo_export: int, 1 = export equalizer apo config files for hpcf fir convolution
     :param report_progress: bool, True = report progress to dearpygui progress bar
+  
+    Bulk-export all filters for one or all headphones in the database.
+    Returns True if all exports succeed, False otherwise.
     """
-    
+
     try:
-        
-        #if no headphone specified,
-        if headphone == None:
-            #get list of all headphones in the DB
+        any_failures = False
+
+        # If no headphone specified, export all headphones
+        if headphone is None:
             headphone_list = get_all_headphone_list(conn)
         else:
             headphone_list = [headphone]
-        
-        #for each headphone
-        for h in headphone_list:
-            
-            #get list of samples
-            sample_list = get_hpcf_samples_dicts(conn, h)
 
+        # Process each headphone
+        for h in headphone_list:
+
+            sample_list = get_hpcf_samples_dicts(conn, h)
             num_samples = len(sample_list)
-            #export each sample
+
             for index, s in enumerate(sample_list):
-            #for s in sample_list:
                 sample_dict = dict(s)
-                hpcf_to_file(sample_dict, primary_path=primary_path, fir_export=fir_export, fir_stereo_export=fir_stereo_export, geq_export=geq_export, 
+
+                result = hpcf_to_file(sample_dict, primary_path=primary_path, fir_export=fir_export, fir_stereo_export=fir_stereo_export, geq_export=geq_export, resample_mode=resample_mode, 
                              geq_31_export=geq_31_export, geq_103_export=geq_103_export, hesuvi_export=hesuvi_export, eapo_export=eapo_export, gui_logger=gui_logger, samp_freq=samp_freq, bit_depth=bit_depth, force_output=force_output)
 
+                if not result:
+                    any_failures = True
+
+                # Progress bar
                 if report_progress > 0:
-                    progress = ((index+1)/num_samples)
+                    progress = (index + 1) / num_samples
                     if report_progress == 2:
                         dpg.set_value("progress_bar_hpcf", progress)
-                        dpg.configure_item("progress_bar_hpcf", overlay = str(int(progress*100))+'%')
+                        dpg.configure_item("progress_bar_hpcf", overlay=f"{int(progress*100)}%")
                     else:
                         dpg.set_value("qc_progress_bar_hpcf", progress)
-                        dpg.configure_item("qc_progress_bar_hpcf", overlay = str(int(progress*100))+'%')
+                        dpg.configure_item("qc_progress_bar_hpcf", overlay=f"{int(progress*100)}%")
                         if progress == 1:
-                            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_FIN)
-                    
+                            dpg.configure_item("qc_progress_bar_hpcf", overlay=CN.PROGRESS_FIN)
+
+            # Write metadata (only once per headphone)
+            if fir_export:
+                brand = sample_dict.get("brand")
+                headphone_name = sample_dict.get("headphone")
+
+                brand_folder = brand.replace(" ", "_")
+                out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS, "FIRs", brand_folder)
+
+                os.makedirs(out_file_dir_wav, exist_ok=True)
+
+                metadata = {
+                    "brand_or_type": brand,
+                    "headphone": headphone_name,
+                    "samp_freq": samp_freq,
+                    "bit_depth": bit_depth,
+                    "timestamp": datetime.now().isoformat(timespec="seconds"),
+                    "num_samples": num_samples,
+                }
+
+                json_filename = f"{headphone_name.replace(' ', '_')}_metadata.json"
+                json_path = pjoin(out_file_dir_wav, json_filename)
+
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(metadata, f, indent=4)
+
+        # Summary log
+        if any_failures:
+            hf.log_with_timestamp("WARNING: One or more HpCF files failed to export.", gui_logger, log_type=1)
+
+        # Return True = success / False = failure
+        return not any_failures
 
     except Error as e:
-        logging.error("Error occurred", exc_info = e)
-
-
-        
-
+        logging.error("Error occurred", exc_info=e)
+        return False
 
 
 
@@ -1961,7 +1862,6 @@ def hpcf_generate_averages(conn, gui_logger=None):
                 #convert to mag
                 hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
                 #create min phase FIR
-                #hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
                 hpcf_avg_fir_full = hf.build_min_phase_filter(hpcf_fft_avg_mag, truncate_len=CN.HPCF_FIR_LENGTH)
                 #store in cropped array
                 hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))
@@ -2652,7 +2552,6 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                 hpcf_fft_out_mag = hpcf_fft_out_mag*0.5
                 
                 #create min phase FIR
-                #hpcf_out_fir_full = hf.mag_to_min_fir(hpcf_fft_out_mag, out_win_size=CN.HPCF_FIR_LENGTH)
                 hpcf_out_fir_full = hf.build_min_phase_filter(hpcf_fft_out_mag, truncate_len=CN.HPCF_FIR_LENGTH)
                 
                 #store in cropped array
@@ -2939,7 +2838,6 @@ def hpcf_generate_variants(conn, gui_logger=None):
                             #convert to mag
                             hpcf_fft_avg_mag = hf.db2mag(hpcf_fft_avg_db)
                             #create min phase FIR
-                            #hpcf_avg_fir_full = hf.mag_to_min_fir(hpcf_fft_avg_mag, out_win_size=CN.HPCF_FIR_LENGTH)
                             hpcf_avg_fir_full = hf.build_min_phase_filter(hpcf_fft_avg_mag, truncate_len=CN.HPCF_FIR_LENGTH)
                             #store in cropped array
                             hpcf_avg_fir_array=np.zeros((CN.HPCF_FIR_LENGTH))

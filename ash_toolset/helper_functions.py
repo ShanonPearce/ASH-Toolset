@@ -1883,16 +1883,17 @@ def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_dep
     #old method using scipy
     #write("example.wav", samplerate, data.astype(np.int32))
     
-    #adjust gain
+    # Ensure data is float for proper PCM conversion
+    data = np.asarray(data, dtype=np.float32)
+    
+    # Prevent clipping
     if prevent_clipping == 1:
         max_amp = np.max(np.abs(data))
         if max_amp > 1:
-            data = data/max_amp
+            data = data / max_amp
     
-    #new method using PySoundFile 
-    #soundfile expects data in frames x channels, or one-dimensional data for mono files. librosa does it the other way around.
-    sf.write(file_name, data, samplerate, bit_depth)
-    
+    # Write WAV
+    sf.write(file_name, data, samplerate, subtype=bit_depth)
     
 
     
@@ -1913,35 +1914,114 @@ def read_wav_file(audiofilename):
     samples, samplerate = sf.read(audiofilename, always_2d=False)
     return samplerate, samples
 
-    
-def resample_signal_slow(signal, original_rate = CN.SAMP_FREQ, new_rate = 48000, axis=0, scale=False):
+
+def wav_needs_update(path, samplerate, bit_depth, gui_logger=None):
     """
-    function to resample a signal. By default will upsample from 44100Hz to 48000Hz
-    """  
-    
-    #Resample data
-    
-    #V1.0 implementation uses scipy resample method which is low quality
-    # number_of_samples = round(len(signal) * float(new_rate) / original_rate)
-    # resampled_signal = sps.resample(signal, number_of_samples) 
-    
-    #new versions use librosa
-    resampled_signal = librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=axis, scale=scale )
-    
-    
-    return resampled_signal
+    Returns True if the WAV file does not exist OR if its metadata does not match.
+    Uses hf.log_with_timestamp for all logs.
+    """
+
+    p = Path(path)
+
+    # File does not exist
+    if not p.is_file():
+        log_with_timestamp(f"WAV missing → will write: {p.name}", gui_logger)
+        return True
+
+    # Try reading metadata
+    try:
+        info = sf.info(str(p))
+    except Exception:
+        log_with_timestamp(f"WAV unreadable → rewriting: {p.name}", gui_logger)
+        return True
+
+    # Check sample rate
+    if info.samplerate != samplerate:
+        log_with_timestamp(
+            f"Sample rate mismatch for {p.name}: "
+            f"file={info.samplerate}, expected={samplerate}",
+            gui_logger
+        )
+        return True
+
+    # Check bit depth (subtype)
+    if info.subtype != bit_depth:
+        log_with_timestamp(
+            f"Bit depth mismatch for {p.name}: "
+            f"file={info.subtype}, expected={bit_depth}",
+            gui_logger
+        )
+        return True
+
+    # All good → no update needed
+    return False   
 
 
-def resample_signal(signal, original_rate=CN.SAMP_FREQ, new_rate=48000, axis=0, scale=False, mode='fast'):
+def resample_signal(signal, original_rate=CN.SAMP_FREQ, new_rate=48000,
+                    axis=0, scale=False, mode='fast'):
     """
-    function to resample a signal. By default will upsample from 44100Hz to 48000Hz
-    """  
+    Resample a signal and enforce the mathematically correct output length.
+    """
+
+    # No resampling needed
     if original_rate == new_rate:
         return signal
-    if mode == 'best':
-        return librosa.resample(signal, orig_sr=original_rate, target_sr=new_rate, res_type='kaiser_best', axis=axis, scale=scale )
+
+    # -------- Expected exact output length --------
+    # length changes only along the resampling axis
+    in_len = signal.shape[axis]
+    target_len = round(in_len * float(new_rate) / float(original_rate))
+
+    # -------- Perform resampling --------
+    if mode == 'best' or mode == 'Quality':
+        out = librosa.resample(
+            signal,
+            orig_sr=original_rate,
+            target_sr=new_rate,
+            res_type='kaiser_best',
+            axis=axis,
+            scale=scale
+        )
+    elif mode == 'fast' or mode == 'Performance':
+        out = resample_poly(
+            signal,
+            new_rate,
+            original_rate,
+            axis=axis,
+            window=('kaiser', 5.0)
+        )
     else:
-        return resample_poly(signal, new_rate, original_rate, axis=axis, window=('kaiser', 5.0))
+        out = resample_poly(
+            signal,
+            new_rate,
+            original_rate,
+            axis=axis,
+            window=('kaiser', 14.0)
+        )
+
+    # -------- Enforce exact length --------
+    out_len = out.shape[axis]
+
+    # CROPPING
+    if out_len > target_len:
+        log_with_timestamp(
+            f"Resample length correction: cropping from {out_len} to {target_len}"
+        )
+        slicer = [slice(None)] * out.ndim
+        slicer[axis] = slice(0, target_len)
+        out = out[tuple(slicer)]
+
+    # PADDING
+    elif out_len < target_len:
+        log_with_timestamp(
+            f"Resample length correction: padding from {out_len} to {target_len}"
+        )
+        pad_width = [(0, 0)] * out.ndim
+        pad_width[axis] = (0, target_len - out_len)
+        out = np.pad(out, pad_width)
+
+    return out
+   
 
     
 def normalize_array(ir):
@@ -2571,50 +2651,7 @@ def smooth_fft_octaves(
 
 
 
-def mag_to_min_fir(data, n_fft=CN.N_FFT, out_win_size=4096, crop=1):
-    """
-    Function to create min phase FIR from a fft magnitude response
-    :param data: numpy array, magnitude response of a signal
-    :param out_win_size: int, number of samples desired in output signal. Will crop signal
-    :param n_fft: int, fft size
-    :param crop: int, 0 = leave fir samples as per fft size, 1 = crop to out_win_size
-    :return: numpy array, time domain signal
-    """  
-    
-    n_unique_pts = int(np.ceil((n_fft+1)/2.0))
 
-    data_pad_zeros=np.zeros(n_fft)
-    data_pad_ones=np.ones(n_fft)
-
-    #create min phase FIR 
-    data_ifft = np.fft.irfft(data[0:n_unique_pts])#zero phase and symmetric
-    data_lin = np.fft.ifftshift(data_ifft)#linear phase
-    #filter will have a magnitude response that approximates the square root of the original filter’s magnitude response.
-    data_min = sp.signal.minimum_phase(data_lin[1:n_fft], 'homomorphic', n_fft)
-    data_min_pad = data_pad_zeros.copy()
-    #return to original mag response
-    data_min_conv = sp.signal.convolve(data_min,data_min, 'full', 'direct')
-    data_min_pad[0:n_fft-1] = data_min_conv[:]
-    
-    #apply window to result
-
-    #fade out window
-    fade_hanning_size=out_win_size*2
-    fade_hanning_start=100#50
-    hann_fade_full=np.hanning(fade_hanning_size)
-    hann_fade = np.split(hann_fade_full,2)[1]
-    fade_out_win = data_pad_ones.copy()
-    fade_out_win[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
-    fade_out_win[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
-
-    #return result
-    #result with original length and windowed
-    data_out = np.multiply(data_min_pad[0:n_fft-1],fade_out_win[0:n_fft-1])
-    
-    if crop == 1:
-        return data_out[0:out_win_size]
-    else:
-        return data_out
      
     
 def build_min_phase_filter(
@@ -3904,3 +3941,6 @@ def update_default_output_text(reset_sd=True):
             dpg.set_value("qc_def_pb_device_sr", "Default sample rate: Unknown")
         msg = f"[Warning] Could not update default output info: {e}"
         log_with_timestamp(msg)
+        
+        
+        

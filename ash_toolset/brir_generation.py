@@ -179,7 +179,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         direction_matrix_post = brir_export.generate_direction_matrix(spatial_res=spatial_res, variant=1)
 
 
-        log_string = 'Loading input filters'
+        log_string = 'Loading filters'
         hf.log_with_timestamp(log_string, gui_logger)
         if report_progress > 0:
             progress = 1/100
@@ -412,7 +412,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
 
   
    
-        log_string = 'Adjusting levels'
+        log_string = 'Adjusting HRTF levels'
         hf.log_with_timestamp(log_string, gui_logger)
         if report_progress > 0:
             progress = 20/100
@@ -782,7 +782,6 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #invert response
         brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
         #create min phase FIR
-        #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1, out_win_size=2048, n_fft=CN.N_FFT)
         brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=2048, n_fft=CN.N_FFT)#new method
         
         if report_progress > 0:

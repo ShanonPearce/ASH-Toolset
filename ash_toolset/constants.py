@@ -774,7 +774,7 @@ SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}
 BIT_DEPTH_LIST = ['24 bit', '32 bit']
 BIT_DEPTH_DICT = {'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  #{'24 bit': 'PCM_24', '32 bit': 'PCM_32'}  
 HRTF_SYM_LIST = ['Disabled', 'Mirror Left Side', 'Mirror Right Side']
-
+RESAMPLE_MODE_LIST = ['Performance', 'Quality']
 
 #AIR and BRIR reverberation processing
 LIMIT_REBERB_DIRS=True
@@ -1023,7 +1023,7 @@ DEFAULTS = {
     "fde_brir_hrtf_type": HRTF_TYPE_DEFAULT,#brir_hrtf_type
     "fde_brir_hrtf_dataset": HRTF_DATASET_DEFAULT,#brir_hrtf_dataset
     "fde_brir_hrtf": HRTF_LISTENER_DEFAULT,#brir_hrtf
-    "fde_brir_spat_res": SPATIAL_RES_LIST[0],#brir_spat_res
+    "fde_brir_spat_res": SPATIAL_RES_LIST[2],#brir_spat_res, high as default
     "fde_crossover_f_mode": SUB_FC_SETTING_LIST[0],#crossover_f_mode
     "fde_crossover_f": SUB_FC_DEFAULT,#crossover_f
     "fde_sub_response": SUB_RESPONSE_LIST_GUI[3] if len(SUB_RESPONSE_LIST_GUI) > 3 else SUB_RESPONSE_LIST_GUI[0],#sub_response
@@ -1079,6 +1079,7 @@ DEFAULTS = {
     
     "qc_e_apo_curr_brir_set": "",#nothing generated to start with
     "qc_e_apo_sel_brir_set": "",#nothing generated to start with
+    "qc_e_apo_sel_brir_set_ts": "",#nothing generated to start with
     "e_apo_brir_conv": False,
     
     
@@ -1151,7 +1152,8 @@ DEFAULTS = {
     "check_updates_start_toggle": False,
     "hrtf_polarity_rev": HRTF_POLARITY_LIST[0],
     "force_hrtf_symmetry":HRTF_SYM_LIST[0],
-    "er_delay_time":0.5
+    "er_delay_time":0.5,
+    "export_resample_mode": RESAMPLE_MODE_LIST[0]
     
 
 }

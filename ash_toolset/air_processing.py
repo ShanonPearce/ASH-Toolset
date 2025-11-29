@@ -1372,7 +1372,6 @@ def convert_airs_to_brirs(
                 # Compensation filter (smoothed)
                 comp_mag = hf.db2mag(hf.mag2db(brir_fft_target_mag) - hf.mag2db(brir_fft_avg_mag_sm))
                 #comp_mag = hf.smooth_fft_octaves(comp_mag, win_size_base = 7)
-                #comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
                 comp_eq_fir = hf.build_min_phase_filter(comp_mag)
         
                 # Equalize both channels (loop still needed for convolution)
@@ -1977,7 +1976,6 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
             #invert response
             brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
             #create min phase FIR
-            #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
             brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
             df_eq = brir_df_inv_fir
             
@@ -2050,7 +2048,6 @@ def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_al
             comp_mag = hf.db2mag(np.subtract(hf.mag2db(brir_fft_target_mag),hf.mag2db(brir_fft_avg_mag_sm)))
             comp_mag = hf.smooth_fft_octaves(data=comp_mag, win_size_base = 30)
             #create min phase FIR
-            #comp_eq_fir = hf.mag_to_min_fir(comp_mag, crop=1)
             comp_eq_fir = hf.build_min_phase_filter(comp_mag)
  
             #equalise each brir with comp filter
@@ -2227,7 +2224,6 @@ def calc_avg_room_target_mag(gui_logger=None):
         air_fft_avg_mag_sm = hf.smooth_fft_octaves(data=air_fft_avg_mag, n_fft=n_fft)
         
         #create min phase FIR
-        #avg_room_min_fir = hf.mag_to_min_fir(air_fft_avg_mag_sm, crop=1)
         #avg_room_min_fir = hf.build_min_phase_filter(air_fft_avg_mag_sm)
  
         if CN.PLOT_ENABLE == True:
@@ -2711,7 +2707,6 @@ def calc_subrir(gui_logger=None):
                     #invert response
                     brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
                     #create min phase FIR
-                    #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
                     brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
                     df_eq = brir_df_inv_fir
                     #convolve with inverse filter
@@ -3225,7 +3220,6 @@ def calc_subrir(gui_logger=None):
             #invert response
             brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
             #create min phase FIR
-            #brir_df_inv_fir = hf.mag_to_min_fir(brir_fft_avg_mag_inv, crop=1)
             brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
             df_eq = brir_df_inv_fir
             #convolve with inverse filter
@@ -3445,7 +3439,6 @@ def calc_room_target_dataset(gui_logger=None):
                 room_target_mag_new = hf.level_spectrum_ends(room_target_mag, 20, 20000, smooth_win = 3)#150
                 room_target_mag_new_sm = hf.smooth_fft_octaves(data=room_target_mag_new, n_fft=n_fft,fund_freq=150,win_size_base = 3)
                 #create min phase FIR
-                #room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
                 room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
 
 
@@ -3465,7 +3458,6 @@ def calc_room_target_dataset(gui_logger=None):
             room_target_mag_new_sm = hf.smooth_fft(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
             
             #create min phase FIR
-            #room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
             room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
             
             #store into numpy array
@@ -3490,7 +3482,6 @@ def calc_room_target_dataset(gui_logger=None):
             room_target_mag_new_sm = hf.smooth_fft(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
             
             #create min phase FIR
-            #room_target_min_fir = hf.mag_to_min_fir(room_target_mag_new_sm, crop=1)
             room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
             
             #store into numpy array

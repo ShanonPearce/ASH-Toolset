@@ -209,15 +209,14 @@ def load_settings(defaults=None, preset_name=None, version=None,
             else:
                 migrate_settings()
         except Exception as e:
-            if logz:
-                hf.log_with_timestamp(f"Warning: Migration step failed – {e}", logz)
+            hf.log_with_timestamp(f"Warning: Migration step failed – {e}", logz)
 
         config = configparser.ConfigParser()
         config.read(settings_file)
 
         # --- Version check ---
         version_loaded = hf.safe_get(config, "version", str, version)
-        if version_loaded != version and logz:
+        if version_loaded != version:
             hf.log_with_timestamp(
                 f"Settings version mismatch: file={version_loaded}, expected={version}. Loading anyway.", logz
             )
@@ -232,13 +231,12 @@ def load_settings(defaults=None, preset_name=None, version=None,
                     for old_key, new_key in legacy_mapping.items():
                         if new_key == key and config.has_option('DEFAULT', old_key):
                             loaded_values[key] = hf.safe_get(config, old_key, value_type, default_value)
-                            if logz:
-                                hf.log_with_timestamp(f"Loaded legacy key '{old_key}' → '{key}'", logz)
+                            hf.log_with_timestamp(f"Loaded legacy key '{old_key}' → '{key}'", logz)
                             break
             except Exception as e:
-                if logz:
-                    hf.log_with_timestamp(f"Failed to load key '{key}' from {settings_file}: {e}", logz)
+                hf.log_with_timestamp(f"Failed to load key '{key}' from {settings_file}: {e}", logz)
 
+        hf.log_with_timestamp(f"Loaded settings file: {settings_file}.", logz)
         # --- Optionally update GUI ---
         if set_gui_values:
             try:
@@ -254,10 +252,8 @@ def load_settings(defaults=None, preset_name=None, version=None,
                 brand_selected = hpcf_functions.get_brand(conn, headphone_selected) if headphone_selected else None
                 #update qc hpcf lists
                 handle_hpcf_update(tab_prefix="qc", update_type="full_update", brand=brand_selected, headphone=headphone_selected, sample=sample_selected)
-
-                    
-                if logz:
-                    hf.log_with_timestamp("Refreshed HpCF GUI elements.")
+ 
+                hf.log_with_timestamp("Refreshed HpCF GUI elements.")
 
                 #update all gui values
                 applied = 0
@@ -269,17 +265,14 @@ def load_settings(defaults=None, preset_name=None, version=None,
                         except Exception as e:
                             hf.log_with_timestamp(f"Failed to set GUI element '{key}': {e}", logz)
                 qc_reset_progress()
-                if logz:
-                    hf.log_with_timestamp(f"Loaded {settings_file} and applied {applied} loaded settings to GUI elements.", logz)
+                hf.log_with_timestamp(f"Applied {applied} loaded settings to GUI elements.", logz)
 
             except Exception as e:
-                if logz:
-                    hf.log_with_timestamp(f"Error applying loaded settings to GUI: {e}", logz)
+                hf.log_with_timestamp(f"Error applying loaded settings to GUI: {e}", logz)
 
     except Exception as e:
-        if logz:
-            hf.log_with_timestamp(f"Error loading saved configuration ({settings_file}): {e}", logz)
-            hf.log_with_timestamp("Falling back to default values.", logz)
+        hf.log_with_timestamp(f"Error loading saved configuration ({settings_file}): {e}", logz)
+        hf.log_with_timestamp("Falling back to default values.", logz)
 
     return loaded_values
 
@@ -1034,7 +1027,7 @@ def process_hpcfs(sender=None, app_data=None, user_data=None):
         # Retrieve logger and DB connection
         logz = dpg.get_item_user_data("console_window")  # contains logger
         hpcf_db_dict = dpg.get_item_user_data("qc_e_apo_sel_hpcf")
-    
+
         if not hpcf_db_dict or "conn" not in hpcf_db_dict:
             hf.log_with_timestamp("No valid database connection found — skipping FDE HPCF processing.", logz)
             return
@@ -1073,6 +1066,7 @@ def process_hpcfs(sender=None, app_data=None, user_data=None):
         samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str)
         bit_depth_str = dpg.get_value("fde_wav_bit_depth")
         bit_depth = CN.BIT_DEPTH_DICT.get(bit_depth_str)
+        resample_mode=CN.RESAMPLE_MODE_LIST[0]
     
         # Perform export
         hpcf_functions.hpcf_to_file_bulk(
@@ -1087,7 +1081,7 @@ def process_hpcfs(sender=None, app_data=None, user_data=None):
             geq_31_export=geq_31_export,
             geq_103_export=geq_103_export,
             hesuvi_export=hesuvi_export,
-            gui_logger=logz,
+            gui_logger=logz, resample_mode=resample_mode,
             report_progress=2,
             force_output=True
         )
@@ -1106,22 +1100,9 @@ def qc_apply_hpcf_params(sender=None, app_data=None):
     GUI function to apply hpcf parameters
     """
     force_output=False
-    #check if saved hpcf set name is matching with currently selected params
-    hpcf_name_full = calc_hpcf_name(full_name=True)
-    hpcf_name = calc_hpcf_name(full_name=False)
-    sel_hpcf_set=dpg.get_value('qc_e_apo_sel_hpcf')
 
-    if hpcf_name in sel_hpcf_set:#if only sample rate or bit depth changed, force write output
-        force_output=True
-    #if matching, enable hpcf conv in config
-    if hpcf_name_full == sel_hpcf_set:# this is when it was previously disabled but no selection was changed before applying
-        dpg.set_value("e_apo_hpcf_conv", True)
-        dpg.set_value("qc_e_apo_curr_hpcf", hpcf_name)
-        dpg.set_value("qc_progress_bar_hpcf", 1)
-        dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_FIN)
-        e_apo_config_acquire()
-    else:#else run hpcf processing from scratch
-        qc_process_hpcfs(force_output=force_output)
+        
+    qc_process_hpcfs(force_output=force_output)
             
  
    
@@ -1178,9 +1159,10 @@ def qc_process_hpcfs(force_output=False):
     samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str)
     bit_depth_str = dpg.get_value("qc_wav_bit_depth")
     bit_depth = CN.BIT_DEPTH_DICT.get(bit_depth_str)
+    resample_mode=CN.RESAMPLE_MODE_LIST[0]
 
     # Call processing function
-    hpcf_functions.hpcf_to_file_bulk(
+    success = hpcf_functions.hpcf_to_file_bulk(
         conn,
         primary_path=output_path,
         headphone=headphone,
@@ -1193,25 +1175,28 @@ def qc_process_hpcfs(force_output=False):
         geq_103_export=geq_103_export,
         hesuvi_export=hesuvi_export,
         eapo_export=eapo_export,
-        gui_logger=logz,
+        gui_logger=logz, resample_mode=resample_mode,
         report_progress=1,
         force_output=force_output,
     )
-
-    # Update configuration
-    dpg.set_value("e_apo_hpcf_conv", True)
-    e_apo_config_acquire()
-
-    # Update displayed names and save settings
-    filter_name = calc_hpcf_name(full_name=False)
-    filter_name_full = calc_hpcf_name(full_name=True)
-    dpg.set_value("qc_e_apo_curr_hpcf", filter_name)
-    dpg.set_value("qc_e_apo_sel_hpcf", filter_name_full)
-
-    save_settings(update_hpcf_pars=True)
     
-    # everything is valid and completed
-    hf.log_with_timestamp(f" Applied filter for {brand} / {headphone} / {sample}", logz)
+    if not success:
+        hf.log_with_timestamp("HPCF bulk export encountered errors.", logz, log_type=1)
+    else:
+        # Update displayed names and save settings
+        filter_name = calc_hpcf_name(full_name=False)
+        filter_name_full = calc_hpcf_name(full_name=True)
+        dpg.set_value("qc_e_apo_curr_hpcf", filter_name)
+        dpg.set_value("qc_e_apo_sel_hpcf", filter_name_full)
+        
+        # Update configuration
+        dpg.set_value("e_apo_hpcf_conv", True)
+        e_apo_config_acquire()
+  
+        save_settings(update_hpcf_pars=True)
+        
+        # everything is valid and completed
+        hf.log_with_timestamp(f" Applied filter for {brand} / {headphone} / {sample}", logz)
   
    
     
@@ -1492,7 +1477,7 @@ def _select_hrtf_common(mode):
                 elev_deg = int(elev_min + elev * elev_nearest)
                 for azim in range(total_azim_hrir):
                     azim_deg = int(azim * azim_nearest)
-                    if elev_deg == 0 and azim_deg == 330:
+                    if elev_deg == 0 and azim_deg == 330:#330 = 30 deg right
                         chan = 1
                         hrir = np.zeros(CN.N_FFT)
                         hrir[:total_samples_hrir] = hrir_selected[elev][azim][chan][:total_samples_hrir]
@@ -2123,6 +2108,7 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     spat_res_int = CN.SPATIAL_RES_LIST.index(spat_res)
     output_path = dpg.get_value('selected_folder_base')
     sofa_conv=dpg.get_value("sofa_exp_conv")
+    resample_mode=CN.RESAMPLE_MODE_LIST[0]
     
     #grab parameters
     brir_dict_params=get_brir_dict()
@@ -2146,7 +2132,7 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     if brir_gen.size != 0 and status == 0:
     
         brir_export.export_brir(brir_arr=brir_gen, brir_name=brir_name, primary_path=output_path, gui_logger=logz, spatial_res=spat_res_int,
-                             brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, 
+                             brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, resample_mode=resample_mode,
                                sofa_export=sofa_export, multichan_export=multichan_export, multichan_mapping=multichan_mapping, brir_dict=brir_dict_params, sofa_conv=sofa_conv)
         
         #set progress to 100 as export is complete (assume E-APO export time is negligible)
@@ -2172,60 +2158,6 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     #update user data
     dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
 
-def e_apo_toggle_brir_gui(sender=None, app_data=None):
-    """ 
-    GUI function to toggle brir convolution
-    app_data is the toggle
-    
-    """
-    aquire_config=True
-    use_stored_brirs=False
-    force_run_process=False
-
-    e_apo_toggle_brir_custom(activate=app_data, aquire_config=aquire_config, use_stored_brirs=use_stored_brirs, force_run_process=force_run_process)
-
-
-def e_apo_toggle_brir_custom(activate=False, aquire_config=True, use_stored_brirs=False, force_run_process=False):
-    """ 
-    GUI function to toggle brir convolution - with custom parameters passed in
-    app_data is the toggle
-    
-    """
-    
-    process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
-    if activate == False:#toggled off
-        dpg.set_value("qc_e_apo_curr_brir_set", '')
-        #call main config writer function
-        if aquire_config==True:#custom parameter will be none if called by gui
-            e_apo_config_acquire()
-        
-        if process_brirs_running == True:
-            #stop processing if already processing brirs
-            qc_stop_process_brirs()
-        else:
-            #reset progress
-            dpg.set_value("qc_progress_bar_brir", 0)
-            dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
-        
-    else:#toggled on
-        #check if saved brir set name is matching with currently selected params
-        brir_name_full = calc_brir_set_name(full_name=True)
-        brir_name = calc_brir_set_name(full_name=False)
-        sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
-        #if matching and not forced to run, enable brir conv in config
-        if brir_name_full == sel_brir_set and force_run_process==False:#custom parameter will be none if called by gui
-            dpg.set_value("e_apo_brir_conv", True)
-            dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
-            dpg.set_value("qc_progress_bar_brir", 1)
-            dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-            e_apo_activate_direction(force_reset=True)#run in case direction not found in case of reduced dataset
-            if aquire_config==True:#custom parameter will be none if called by gui
-                e_apo_config_acquire()
-        else:#else run brir processing from scratch
-            if process_brirs_running == False:#only start if not already running
-                qc_start_process_brirs(use_stored_brirs=use_stored_brirs)
-
-
 
 
 def qc_apply_brir_params(sender=None, app_data=None):
@@ -2233,20 +2165,7 @@ def qc_apply_brir_params(sender=None, app_data=None):
     GUI function to apply brir parameters, used for button press
     """
 
-    #check if saved brir set name is matching with currently selected params
-    brir_name = calc_brir_set_name(full_name=False)
-    brir_name_full = calc_brir_set_name(full_name=True)
-    sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
-    #if matching, enable brir conv in config
-    if brir_name_full == sel_brir_set:
-        dpg.set_value("e_apo_brir_conv", True)
-        dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
-        dpg.set_value("qc_progress_bar_brir", 1)
-        dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-        e_apo_activate_direction(force_reset=True)#run in case direction not found due to reduced dataset
-        e_apo_config_acquire()
-    else:#else run brir processing from scratch
-        qc_start_process_brirs()#this may trigger a cancel if already running
+    qc_start_process_brirs()#this may trigger a cancel if already running
         
    
 def qc_start_process_brirs(use_stored_brirs=False):
@@ -2304,6 +2223,7 @@ def qc_process_brirs(use_stored_brirs=False):
     brir_name_full = calc_brir_set_name(full_name=True)
     reduce_dataset = True
     output_path = dpg.get_value('qc_selected_folder_base')
+    resample_mode=CN.RESAMPLE_MODE_LIST[0]
     
     #grab parameters
     brir_dict_params=get_brir_dict()
@@ -2346,7 +2266,7 @@ def qc_process_brirs(use_stored_brirs=False):
         e_apo_config_acquire(estimate_gain=False)
         #run export function
         brir_dict_list_new = brir_export.export_brir(brir_arr=brir_gen, brir_name=out_dataset_name, primary_path=output_path, 
-                             brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, 
+                             brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, resample_mode=resample_mode,
                             gui_logger=logz,  spatial_res=spat_res_int, sofa_export=sofa_export, reduce_dataset=reduce_dataset, brir_dict=brir_dict_out_config,
                             use_stored_brirs=use_stored_brirs, brir_dict_list=brir_dict_list)
     
@@ -2368,9 +2288,13 @@ def qc_process_brirs(use_stored_brirs=False):
                         
             
         if use_stored_brirs == False:#only update if normal process
-            #update current brir set text
+            #update gui elements to store current brir set text and applied brir set name
             dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
-            dpg.set_value("qc_e_apo_sel_brir_set", brir_name_full)
+            dpg.set_value("qc_e_apo_sel_brir_set", brir_name_full)           
+            # store the timestamp of this run
+            run_timestamp = datetime.now().isoformat()
+            dpg.set_value("qc_e_apo_sel_brir_set_ts", run_timestamp)
+            
         #unmute before writing configs once more
         dpg.set_value("e_apo_gain_oa", gain_oa_selected)
         dpg.set_value("e_apo_brir_conv", True)
@@ -2499,121 +2423,6 @@ def calc_hpcf_name(full_name=True):
 
     return filter_name
 
-
-#
-#
-## misc tools and settings
-#
-#
-
-
-def show_selected_folder(sender, files, cancel_pressed):
-    """ 
-    GUI function to process selected folder
-    """
-    if not cancel_pressed:
-        base_folder_selected=files[0]
-        ash_folder_selected=pjoin(base_folder_selected, CN.PROJECT_FOLDER)
-        dpg.set_value('selected_folder_base', base_folder_selected)
-        dpg.set_value('selected_folder_ash', ash_folder_selected)
-        dpg.set_value('selected_folder_ash_tooltip', ash_folder_selected)
-        #hesuvi path
-        if 'EqualizerAPO' in base_folder_selected:
-            hesuvi_path_selected = pjoin(base_folder_selected,'HeSuVi')#stored outside of project folder (within hesuvi installation)
-        else:
-            hesuvi_path_selected = pjoin(base_folder_selected, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
-        dpg.set_value('selected_folder_hesuvi', hesuvi_path_selected)
-        dpg.set_value('selected_folder_hesuvi_tooltip', hesuvi_path_selected)
-        save_settings()
-       
-    
-
-
-
-def remove_brirs(sender, app_data, user_data):
-    """ 
-    GUI function to delete generated BRIRs
-    """
-    logz=dpg.get_item_user_data("console_window")#contains logger
-    base_folder_selected=dpg.get_value('selected_folder_base')
-    brir_export.remove_brirs(base_folder_selected, gui_logger=logz)    
-    base_folder_selected=dpg.get_value('qc_selected_folder_base')
-    brir_export.remove_brirs(base_folder_selected, gui_logger=logz)  
-    #disable brir convolution
-    dpg.set_value("qc_e_apo_sel_brir_set", 'Deleted')
-    dpg.set_value("e_apo_brir_conv", False)
-    e_apo_toggle_brir_gui(app_data=False)
-    
-    
-    
-def remove_hpcfs(sender, app_data, user_data):
-    """ 
-    GUI function to remove generated HpCFs
-    """
-    logz=dpg.get_item_user_data("console_window")#contains logger
-    base_folder_selected=dpg.get_value('selected_folder_base')
-    hpcf_functions.remove_hpcfs(base_folder_selected, gui_logger=logz) 
-    base_folder_selected=dpg.get_value('qc_selected_folder_base')
-    hpcf_functions.remove_hpcfs(base_folder_selected, gui_logger=logz) 
-    #disable hpcf convolution
-    dpg.set_value("e_apo_hpcf_conv", False)
-    dpg.set_value("qc_e_apo_sel_hpcf", 'Deleted')
-    e_apo_toggle_hpcf_gui(app_data=False)
-    
-    #disable show history
-    dpg.set_value("qc_toggle_hpcf_history", False)
-    qc_show_hpcf_history(app_data=False)
-    
-
-#
-# Equalizer APO configuration functions
-#
-
-def e_apo_auto_apply_hpcf(sender, app_data, user_data):
-    """ 
-    GUI function to toggle auto apply hpcf convolution
-    """
-    if app_data == True:
-        e_apo_toggle_hpcf_gui(app_data=True)
-    
-
-def e_apo_toggle_hpcf_gui(sender=None, app_data=True):
-    """ 
-    GUI function to toggle hpcf convolution
-    """
-    aquire_config=True
-    e_apo_toggle_hpcf_custom(activate=app_data, aquire_config=aquire_config)
-        
-def e_apo_toggle_hpcf_custom(activate=False, aquire_config=True):
-    """ 
-    GUI function to toggle hpcf convolution
-    """
-    force_output=False
-    if activate == False:
-        dpg.set_value("qc_e_apo_curr_hpcf", '')
-        #call main config writer function
-        if aquire_config==True or aquire_config==None:#custom parameter will be none if called by gui
-            e_apo_config_acquire()
-        #reset progress
-        dpg.set_value("qc_progress_bar_hpcf", 0)
-        dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_START)
-    else:
-        #check if saved hpcf set name is matching with currently selected params
-        hpcf_name_full = calc_hpcf_name(full_name=True)
-        hpcf_name = calc_hpcf_name(full_name=False)
-        if hpcf_name in hpcf_name_full:#if only sample rate or bit depth changed, force write output
-            force_output=True
-        sel_hpcf_set=dpg.get_value('qc_e_apo_sel_hpcf')#most recently used hpcf name
-        #if matching, enable hpcf conv in config
-        if hpcf_name_full == sel_hpcf_set:#this is when user toggles off and on but didnt change selection
-            dpg.set_value("e_apo_hpcf_conv", True)
-            dpg.set_value("qc_e_apo_curr_hpcf", hpcf_name)
-            dpg.set_value("qc_progress_bar_hpcf", 1)
-            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_FIN)
-            if aquire_config==True or aquire_config==None:#custom parameter will be none if called by gui
-                e_apo_config_acquire()
-        else:#else run hpcf processing from scratch
-            qc_process_hpcfs(force_output=force_output)
 
 def get_brir_dict():
     """ 
@@ -2835,6 +2644,252 @@ def get_brir_dict():
 
 
     return brir_dict
+
+#
+#
+## misc tools and settings
+#
+#
+
+
+def show_selected_folder(sender, files, cancel_pressed):
+    """ 
+    GUI function to process selected folder
+    """
+    if not cancel_pressed:
+        base_folder_selected=files[0]
+        ash_folder_selected=pjoin(base_folder_selected, CN.PROJECT_FOLDER)
+        dpg.set_value('selected_folder_base', base_folder_selected)
+        dpg.set_value('selected_folder_ash', ash_folder_selected)
+        dpg.set_value('selected_folder_ash_tooltip', ash_folder_selected)
+        #hesuvi path
+        if 'EqualizerAPO' in base_folder_selected:
+            hesuvi_path_selected = pjoin(base_folder_selected,'HeSuVi')#stored outside of project folder (within hesuvi installation)
+        else:
+            hesuvi_path_selected = pjoin(base_folder_selected, CN.PROJECT_FOLDER,'HeSuVi')#stored within project folder
+        dpg.set_value('selected_folder_hesuvi', hesuvi_path_selected)
+        dpg.set_value('selected_folder_hesuvi_tooltip', hesuvi_path_selected)
+        save_settings()
+       
+    
+
+
+
+def remove_brirs(sender, app_data, user_data):
+    """ 
+    GUI function to delete generated BRIRs
+    """
+    logz=dpg.get_item_user_data("console_window")#contains logger
+    base_folder_selected=dpg.get_value('selected_folder_base')
+    brir_export.remove_brirs(base_folder_selected, gui_logger=logz)    
+    base_folder_selected=dpg.get_value('qc_selected_folder_base')
+    brir_export.remove_brirs(base_folder_selected, gui_logger=logz)  
+    #disable brir convolution
+    dpg.set_value("qc_e_apo_sel_brir_set", 'Deleted')
+    dpg.set_value("e_apo_brir_conv", False)
+    e_apo_toggle_brir_gui(app_data=False)
+    
+    dpg.configure_item("del_brirs_popup", show=False)
+    
+def remove_hpcfs(sender, app_data, user_data):
+    """ 
+    GUI function to remove generated HpCFs
+    """
+    logz=dpg.get_item_user_data("console_window")#contains logger
+    base_folder_selected=dpg.get_value('selected_folder_base')
+    hpcf_functions.remove_hpcfs(base_folder_selected, gui_logger=logz) 
+    base_folder_selected=dpg.get_value('qc_selected_folder_base')
+    hpcf_functions.remove_hpcfs(base_folder_selected, gui_logger=logz) 
+    #disable hpcf convolution
+    dpg.set_value("e_apo_hpcf_conv", False)
+    dpg.set_value("qc_e_apo_sel_hpcf", 'Deleted')
+    e_apo_toggle_hpcf_gui(app_data=False)
+    
+    #disable show history
+    dpg.set_value("qc_toggle_hpcf_history", False)
+    qc_show_hpcf_history(app_data=False)
+    
+    dpg.configure_item("del_hpcfs_popup", show=False)
+
+#
+# Equalizer APO configuration functions
+#
+
+def e_apo_toggle_brir_gui(sender=None, app_data=None):
+    """ 
+    GUI function to toggle brir convolution
+    app_data is the toggle
+    
+    """
+    aquire_config=True
+    use_stored_brirs=False
+    force_run_process=False
+
+    e_apo_toggle_brir_custom(activate=app_data, aquire_config=aquire_config, use_stored_brirs=use_stored_brirs, force_run_process=force_run_process)
+
+
+def e_apo_toggle_brir_custom(activate=False, aquire_config=True, use_stored_brirs=False, force_run_process=False):
+    """ 
+    GUI function to toggle brir convolution - with custom parameters passed in
+    app_data is the toggle
+    
+    """
+    
+    process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
+    if activate == False:#toggled off
+        dpg.set_value("qc_e_apo_curr_brir_set", '')
+        #call main config writer function
+        if aquire_config==True:#custom parameter will be none if called by gui
+            e_apo_config_acquire()
+        
+        if process_brirs_running == True:
+            #stop processing if already processing brirs
+            qc_stop_process_brirs()
+        else:
+            #reset progress
+            dpg.set_value("qc_progress_bar_brir", 0)
+            dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
+        
+    else:#toggled on
+        #check if saved brir set name is matching with currently selected params
+        brir_name_full = calc_brir_set_name(full_name=True)
+        brir_name = calc_brir_set_name(full_name=False)
+        sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
+        #if matching and not forced to run, enable brir conv in config
+        if brir_name_full == sel_brir_set and force_run_process==False:#custom parameter will be none if called by gui
+            dpg.set_value("e_apo_brir_conv", True)
+            dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
+            dpg.set_value("qc_progress_bar_brir", 1)
+            dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
+            e_apo_activate_direction(force_reset=True)#run in case direction not found in case of reduced dataset or outdated data
+            if aquire_config==True:#custom parameter will be none if called by gui
+                e_apo_config_acquire()
+        else:#else run brir processing from scratch
+            if process_brirs_running == False:#only start if not already running
+                qc_start_process_brirs(use_stored_brirs=use_stored_brirs)
+
+
+
+
+def e_apo_auto_apply_hpcf(sender, app_data, user_data):
+    """ 
+    GUI function to toggle auto apply hpcf convolution
+    """
+    if app_data == True:
+        e_apo_toggle_hpcf_gui(app_data=True)
+    
+
+def e_apo_toggle_hpcf_gui(sender=None, app_data=True):
+    """ 
+    GUI function to toggle hpcf convolution
+    """
+    aquire_config=True
+    e_apo_toggle_hpcf_custom(activate=app_data, aquire_config=aquire_config)
+        
+
+            
+def e_apo_toggle_hpcf_custom(activate=False, aquire_config=True):
+    """ 
+    GUI function to toggle hpcf convolution
+    """
+    force_output = False
+
+    # ---------------------------
+    # DISABLE HPCF CONVOLUTION
+    # ---------------------------
+    if activate == False:
+        dpg.set_value("qc_e_apo_curr_hpcf", '')
+
+        if aquire_config == True or aquire_config is None:
+            e_apo_config_acquire()
+
+        dpg.set_value("qc_progress_bar_hpcf", 0)
+        dpg.configure_item("qc_progress_bar_hpcf", overlay=CN.PROGRESS_START)
+
+    # ---------------------------
+    # ENABLE HPCF CONVOLUTION
+    # ---------------------------
+    else:
+        # current expected names
+        hpcf_name_full = calc_hpcf_name(full_name=True)
+        hpcf_name = calc_hpcf_name(full_name=False)
+
+        # last used (saved) set
+        sel_hpcf_set = dpg.get_value('qc_e_apo_sel_hpcf')
+
+        # read GUI headphone & sample
+        gui_headphone = dpg.get_value('qc_hpcf_headphone')
+        gui_sample = dpg.get_value('qc_hpcf_sample')
+
+        # ---------------------------
+        # READ HEADPHONE + SAMPLE FROM CONFIG FILE
+        # ---------------------------
+        base_folder_selected = dpg.get_value('qc_selected_folder_base')
+        output_config_path = pjoin(base_folder_selected, CN.PROJECT_FOLDER_CONFIGS)
+        custom_file = pjoin(output_config_path, "ASH_Toolset_Config.txt")
+
+        config_headphone = None
+        config_sample = None
+
+        if os.path.exists(custom_file):
+            try:
+                with open(custom_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+
+                        if line.startswith("# Headphone:"):
+                            config_headphone = line.split(":", 1)[1].strip()
+
+                        elif line.startswith("# Sample:"):
+                            config_sample = line.split(":", 1)[1].strip()
+
+                        if config_headphone and config_sample:
+                            break
+
+            except Exception as ex:
+                hf.log_with_timestamp(
+                    f"Config read error (headphone/sample): {ex}", 
+                    log_type=2, exception=ex
+                )
+
+        else:
+            hf.log_with_timestamp("Config file missing → treat as outdated", log_type=0)
+
+        # ---------------------------
+        # DETERMINE WHETHER CONFIG IS OUTDATED
+        # ---------------------------
+        config_outdated = False
+
+        if config_headphone is None or config_sample is None:
+            config_outdated = True  # cannot trust old config
+        else:
+            if config_headphone != gui_headphone:
+                config_outdated = True
+            if config_sample != gui_sample:
+                config_outdated = True
+        if config_outdated:
+            hf.log_with_timestamp("Config file outdated, processing HpCFs from scratch", log_type=0)
+
+        # ---------------------------
+        # FAST PATH: reuse existing HPCF
+        # ---------------------------
+        if hpcf_name_full == sel_hpcf_set and config_outdated == False:
+            dpg.set_value("e_apo_hpcf_conv", True)
+            dpg.set_value("qc_e_apo_curr_hpcf", hpcf_name)
+
+            dpg.set_value("qc_progress_bar_hpcf", 1)
+            dpg.configure_item("qc_progress_bar_hpcf", overlay=CN.PROGRESS_FIN)
+
+            if aquire_config == True or aquire_config is None:
+                e_apo_config_acquire()
+
+        # ---------------------------
+        # SLOW PATH: run full HPCF export
+        # ---------------------------
+        else:
+            qc_process_hpcfs(force_output=force_output)    
+
+
     
 
 
@@ -3075,6 +3130,8 @@ def e_apo_activate_direction_gui(sender=None, app_data=None):
 def e_apo_activate_direction(aquire_config=False, force_reset=False):
     """ 
     GUI function to process updates to directions in E-APO config section
+    Used to manage state of elevation and azimuth gui elements, based on selections and currently available wav files
+    prevents activating directions that don't exist yet in the outputs
     """
     
     try:    
@@ -3390,7 +3447,10 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
     except Exception as e:
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
         
-        
+    #run activate direction in case some directions are missing
+    brir_conv_activated=dpg.get_value('e_apo_brir_conv')
+    if brir_conv_activated:
+        e_apo_activate_direction()
     #finally rewrite config file
     if aquire_config == True:#custom parameter will be none if called by gui
         e_apo_config_acquire()
@@ -3462,7 +3522,7 @@ def qc_reset_progress():
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
 
 #
-## GUI Functions - Additional DEV tools
+## GUI Functions - Additional tools
 #    
 
 def check_for_app_update(gui_logger=None):
@@ -4146,7 +4206,6 @@ def generate_room_target_callback(sender, app_data, user_data):
         combined_mag = np.abs(h_ls * h_hs)
 
         # --- Convert to minimum-phase FIR ---
-        #fir = hf.mag_to_min_fir(combined_mag, n_fft=n_fft, out_win_size=4096, crop=1)
         fir = hf.build_min_phase_filter(combined_mag, n_fft=n_fft, truncate_len=4096)
 
         # --- Save only if explicitly requested ---
