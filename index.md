@@ -340,6 +340,13 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 ---
 ## Changelog <a name="Changelog"></a> 
 
+Version 3.6.3:
+- Fixed issue causing sample rate changes to not be applied in certain scenarios
+- Fixed issue causing headphone selection to reset to first available headphone on start up in cases where active database was changed before closing the app
+- Fixed issue causing changes in parameters to not be applied in cases where settings.ini file was manually swapped with another file.
+- Apply selection & parameters buttons will now always start processing again from scratch when clicked. The button previously did nothing if it detected no change in parameters.
+- Minor GUI clean up and logging improvements
+
 Version 3.6.2:
 - Included default playback device information in the quick configuration tab
 - Improved quality and speed of create average listener function
@@ -370,7 +377,6 @@ Version 3.5.0:
 - Added option to manually reverse the polarity of the direct sound. Polarity is auto adjusted by default. The option can be found under Misc. Settings in Additional tools & settings tab.
 
 Version 3.4.0:
-*It is recommended to uninstall the previous version before installing this new version*
 - Low frequency responses can now be generated from acoustic space import tab. When "Low-frequency Mode" is toggled, the result will be available under Low-frequency responses list.
 - Fixed bug causing WAV BRIR exports in Filter & Dataset Export tab to fail
 - Included new low frequency responses (E-J) for low frequency extension
