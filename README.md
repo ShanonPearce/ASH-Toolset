@@ -137,7 +137,7 @@ The app contains the following tabs:
 - The ‘Acoustic Space Import’ tab can be used to import acoustic impulse response files as new acoustic spaces in the binaural simulations
 - The ‘Room target Generator’ tab can be used to create customised room target responses
 - The ‘Additional Tools & Settings’ tab contains some miscellaneous options and log messages
-
+- The ‘Supporting Information’ tab contains reference tables for supplied datasets and conventions
 
 ### Headphone Correction
 In the 'Quick Configuration’ tab, this tool is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
