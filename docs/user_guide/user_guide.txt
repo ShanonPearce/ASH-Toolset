@@ -3,9 +3,10 @@
 [Audio Processing Overview]
 Head-Related Transfer Functions (HRTFs):
     - A head-related transfer function describes how sound arriving from different directions is filtered by the head, torso, and outer ears.
-    - Unlike BRIRs, HRTFs represent only the directional filtering of the listener without room reflections.
-    - ASH Toolset uses HRTFs to derive directional characteristics, generate diffuse-field compensation filters, and assist with binaural equalisation workflows.
-    - Many headphone correction and equalisation processes rely on accurate HRTFs to ensure natural timbre and externalisation.
+    - HRTFs represent only the directional filtering of the listener without room reflections.
+    - ASH Toolset uses HRTFs to derive unique directional characteristics which are integrated into binaural simulation workflows.
+    - Many headphone correction and equalisation processes rely on accurate HRTFs to ensure natural timbre and externalisation. 
+    - A wide range of HRTFs from publicly available datasets are included.
 
 Binaural Room Impulse Responses (BRIRs):
     - Binaural room impulse responses capture how the head, ears, loudspeakers, and room shape sound.
@@ -32,7 +33,7 @@ Acoustic Space Import tab:
 	* Import acoustic impulse response files as new acoustic spaces.
 Room Target Generator tab:
 	* Create customised room target responses.
-Additional Tools & Settings tab:
+Additional Tools & Maintenance tab:
 	* Contains miscellaneous options and log messages.
 [Headphone Correction]
 The supplied headphone correction filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
@@ -101,13 +102,13 @@ Steps for customising and applying/exporting a new simulation:
 	- Lists public HRTF datasets if Listener Type is Dummy Head or Human Listener.
 7. Select Listener
 	- Some options require an internet connection for automatic download.
-	- User SOFA files must be placed in the user data folder (default: C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA).
+	- User SOFA files must be placed in the user data folder (default: C:\Program Files\ASH Toolset\_internal\data\user\SOFA).
 	- Additional SOFA files can be found at the SOFA conventions repository.
 	- Preferred listeners can be added to favourites. An averaged listener can also be generated from the favourites.
 8. Optional: Low-frequency Integration Crossover Frequency
-	- Range: 20 Hz to 150 Hz.
+	- Range: 0 Hz to 150 Hz.
 	- Auto Select chooses an optimal value for the selected acoustic space.
-	- Tunes integration of low-frequency response with room simulation. Higher values may result in a smoother bass response.
+	- Tunes integration of cleaner low-frequency response with original room response. Higher values may result in a smoother bass response. Set to 0Hz to disable this feature.
 9. Select Low-frequency Response for Extension
 	- Select from a set of generalised low frequency binaural responses sourced from a range of real world acoustic measurements.  
 	- Provides clean extension and/or replacement of low frequencies due to limited range and varying quality of original measurements. 
@@ -140,10 +141,10 @@ Room Target Explanation:
 The room target setting controls the overall low and high frequency balance of the final binaural room response. It shapes how "room-like" or "neutral" the simulated environment will sound.
 Options:
     - Flat:
-        Selecting "Flat" produces a response where low and high frequencies are kept at similar levels when averaged across all directions. 
-        Since the acoustic spaces in ASH are pre-calibrated to a neutral diffuse response, the natural bass rise and high-frequency roll-off normally found in real rooms will not be emphasised here.
+		* Selecting "Flat" produces a response where low and high frequencies are kept at similar levels when averaged across all directions. 
+		* Since the acoustic spaces in ASH are pre-calibrated to a neutral diffuse response, the natural bass rise and high-frequency roll-off normally found in real rooms will not be emphasised here.
     - Other targets (e.g. Harman):
-        These introduce additional tonal shaping such as boosted bass or reduced treble. They can make the simulation sound more like typical loudspeaker playback in real rooms.
+		* These introduce additional tonal shaping such as boosted bass or reduced treble. They can make the simulation sound more like typical loudspeaker playback in real rooms.
 Which To Use:
     - If the headphones are equalised to a diffuse-field target (for example using ASH's built-in correction filters), selecting a shaped room target such as Harman will add realistic low-frequency weight and is often desirable.
     - If the headphones are equalised to a Harman-style curve (common with AutoEq and other preset-based EQ), choosing a Harman room target inside ASH will double up the bass boost. In this case, "Flat" is recommended.
@@ -166,14 +167,13 @@ Which Option To Use:
 
 
 [Channel Configuration]
-- The audio channels can be configured in the 'Channel Configuration' tab, located on the right side of the 'Quick Configuration' tab.
+The audio channels can be configured in the 'Channel Configuration' tab, located on the right side of the 'Quick Configuration' tab.
 - Preamplification Control
 	* Apply a gain (in dB) to all channels.
 	* Auto-Adjust Preamp can automatically prevent clipping or align low/mid frequency levels for consistent comparisons across simulations.
 - Estimated Peak Gain Table
 	* Displays potential clipping for different input channel configurations.
 	* Max. Peak Gain: highest peak across left and right channels.
-	* Average Peak Gain: average peak across left and right channels.
 - Input Audio Channel Configuration
 	* Select the input channel setup from a dropdown. The configuration must be supported by your sound device.
 - Upmixing Parameters
@@ -193,7 +193,7 @@ Which Option To Use:
 By default, outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` folder inside the output directory.  
   * In Quick Configuration, the default path is `C:\Program Files\EqualizerAPO\config\ASH-Outputs`. This is to ensure Equalizer APO can read the filters. 
   * In Filter & Dataset Export, the output directory can be customised using the directory selector.
-HeSuVi files are saved in the HeSuVi folder (e.g., `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default to ensure compatibility with HeSuVi.
+  * HeSuVi files are saved in the HeSuVi folder (e.g., `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default to ensure compatibility with HeSuVi.
 
 Binaural Room Impulse Responses (BRIRs):
 - BRIRs are saved within the `ASH-Outputs\BRIRs` folder.  
@@ -249,17 +249,18 @@ Steps for importing and processing acoustic spaces:
 	- Low-frequency Mode: Enable if IRs are low-frequency (subwoofer) measurements. This will make the result available under Low-frequency responses.
 	- Rise Time (ms): Duration of fade-in window applied to IR.
 	- Binaural measurements: Enable if the IRs are binaural measurements such as dummy head measurements. This will bypass application of new HRTFs to the inputs.
+	- Room Correction Factor: Select a value between 0 and 1 to control the strength of room correction.
 4. Set Spatial Sampling
 	- Desired Directions: Number of simulated source directions to generate.
-		* Minimum: 1000, Maximum: 3500, Default: 2500
-		* Lower values reduce processing time.
+		* Minimum: 1500, Maximum: 4000, Default: 3000
+		* Lower values reduce processing time but may also reduce quality.
 	- Alignment Frequency (Hz): Cutoff frequency for time-domain alignment.
 		* Minimum: 50, Maximum: 150, Default: 110
 5. (Optional) Configure Pitch Shifting for Dataset Expansion
 	- Pitch Shift Range
 		* Low: Minimum pitch shift in semitones (default: -12.0)
 		* High: Maximum pitch shift in semitones (default: 12.0)
-	- Pitch Shift Compensation: Enable to correct frequency response of pitch-shifted IRs; may introduce artifacts.
+	- Pitch Shift Compensation: Enable to correct frequency response of pitch-shifted IRs.
 6. Start Processing
 	- Click 'Start Processing' to begin.
 	- Processing time depends on dataset size and settings.
@@ -303,9 +304,10 @@ Steps for configuring the optional additional parameters:
 	- Manually reverse the polarity of the direct sound if needed.
 	- Reverberation is not modified.
 3. HRTFs - Diffuse-field Calibration
-	- Enable or bypass diffuse-field calibration of HRTF datasets.
-	- If bypassed, HRTFs retain their direction-independent information.
-	- The "Level Spectrum Ends" option removes roll-off from low and high frequencies if present.
+	- Diffuse-field calibration of HRTF datasets is enabled by default but can be disabled if required.
+        - Diffuse-field calibration will remove direction-independent spectral colouration introduced by common sources such as loudspeakers, microphones, and ear-canal resonances.
+	- If disabled, HRTFs retain their direction-independent information. This is only recommended if using personalised HRTF measurements in the binaural simulations together with personalised headphone EQ measured in the ear canal, to ensure they remain compatible.
+	- The "Retain and Level Spectrum Ends" option also flattens and removes any roll-off in the low and high frequencies.
 4. HRTFs - Direction Misalignment Correction
 	- Correct common orientation errors in SOFA datasets.
 	- Use this if azimuth or elevation directions appear reversed, rotated, or start from the wrong reference.
