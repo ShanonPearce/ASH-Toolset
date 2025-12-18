@@ -40,34 +40,7 @@ logger = logging.getLogger(__name__)
 log_info=1
 
 
-# def fetch_hpcf_data(conn):
-#     """
-#     Fetch brand, headphone, and sample columns from the hpcf_table,
-#     sorted by brand, then headphone, then sample in ascending order.
 
-#     Args:
-#         conn (sqlite3.Connection): Active SQLite connection.
-
-#     Returns:
-#         List[Dict]: Sorted list of rows as dictionaries.
-#     """
-#     try:
-#         cursor = conn.cursor()
-#         cursor.execute("""
-#             SELECT brand, headphone, sample
-#             FROM hpcf_table
-#             ORDER BY brand ASC, headphone ASC, sample ASC
-#         """)
-
-#         # Convert result to list of dictionaries
-#         rows = cursor.fetchall()
-#         results = [{"brand": r[0], "headphone": r[1], "sample": r[2]} for r in rows]
-
-#         return results
-
-#     except sqlite3.Error as e:
-#         print(f"Error fetching data from hpcf_table: {e}")
-#         return []
 
 def create_connection(db_file):
     """ create a database connection to the SQLite database
@@ -666,46 +639,7 @@ def hpcf_wavs_to_database(conn, gui_logger=None):
         
 
 
-    
 
-### unused
-
-# def get_hpcf_samples(conn, headphone):
-#     """
-#     Function retrieves filter data (all samples) from database for a specified headphone 
-#     """  
-#     try:
-#         headphone_tuple = (headphone,)
-#         sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where headphone =?'
-#         cur = conn.cursor()
-#         cur.execute(sql, headphone_tuple)
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return rows
-#         else:
-#             return None
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info = e)
-#         return None     
-
-# def get_hpcf_sample(conn, hpcf_id):
-#     """
-#     Function retrieves filter data from database for a specified hpcf
-#     """ 
-#     try:
-#         headphone_tuple = (hpcf_id,)
-#         sql = 'select brand,headphone,sample,sample_id,fir,graphic_eq,graphic_eq_31,graphic_eq_103,created_on from hpcf_table where id =?'
-#         cur = conn.cursor()
-#         cur.execute(sql, headphone_tuple)
-#         rows = cur.fetchall()
-#         cur.close()
-#         if rows:
-#             return rows
-#     except sqlite3.Error as e:
-#         logging.error("Error occurred", exc_info = e)
-#         return None     
-        
 
 ##### new retrieval functions, compatible with both DB schemas
 
@@ -1915,22 +1849,31 @@ def hpcf_generate_averages(conn, gui_logger=None):
 
 
 
-        
 
-def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_to_file=0, plot_type=0, brand=None, gui_logger=None):
+def hpcf_to_plot(
+    conn,
+    headphone,
+    sample,
+    primary_path=CN.DATA_DIR_OUTPUT,
+    save_to_file=0,
+    plot_dest=0,
+    brand=None,
+    gui_logger=None
+):
     """
-    Function returns a plot of frequency response for a specified HpCF,
-    also plots graphic EQ and 32-band filters.
+    Function plots a FIR for a specified HpCF using DearPyGui.
 
     :param conn: SQLite connection
     :param headphone: string, name of headphone to plot
     :param sample: string, name of sample to plot
     :param primary_path: string, path to save plots to if save_to_file == 1
     :param save_to_file: int, 1 = save plot to a file
-    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 2 = dearpygui (series 2 - quick config)
+    :param plot_dest: int, 0 = matplotlib, 1 = DPG (series 1), 2 = DPG (series 2)
     :param brand: optional string, filter by brand/source
     :param gui_logger: optional GUI logger reference
+    :param view: string, type of plot ("Magnitude Response", "Impulse Response", "Group Delay", "Decay")
     """
+
     try:
         # Get dictionary of HpCF data
         hpcf_dict = get_hpcf_headphone_sample_dict(conn, headphone, sample, brand=brand)
@@ -1938,44 +1881,41 @@ def hpcf_to_plot(conn, headphone, sample, primary_path=CN.DATA_DIR_OUTPUT, save_
             hf.log_with_timestamp(f"No HpCF data found for {headphone} / {sample}", gui_logger)
             return
 
-        # Directories
-        brand_name = hpcf_dict.get('brand')
-        brand_folder = brand_name.replace(" ", "_")
-        hpcf_name = f"{hpcf_dict.get('headphone')} {hpcf_dict.get('sample')}"
-
-        # Output directory
-        out_file_dir_plot = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS, 'Plots', brand_folder)
-
-        # FIR data
+        # FIR array
         hpcf_fir_json = hpcf_dict.get('fir')
         hpcf_fir_list = json.loads(hpcf_fir_json)
-        hpcf_fir = np.array(hpcf_fir_list)
+        hpcf_fir = np.array(hpcf_fir_list, dtype=np.float64)
+        fir_to_plot = hpcf_fir
 
-        # Frequency response
-        data_pad = np.zeros(65536)
-        data_pad[0:(CN.HPCF_FIR_LENGTH - 1)] = hpcf_fir[0:(CN.HPCF_FIR_LENGTH - 1)]
-        data_fft = np.fft.fft(data_pad)
-        hpcf_fr_mag = np.abs(data_fft)
+        # Plot title
+        plot_title = f"{hpcf_dict.get('headphone')} {hpcf_dict.get('sample')}"
+        
+        view = dpg.get_value("qc_plot_type") if plot_dest == CN.TAB_QC_CODE else dpg.get_value("qc_plot_type") 
 
-        # Plot
-        plot_title = hpcf_name
-        hf.plot_data(
-            hpcf_fr_mag,
+        # Plot using the new generic function
+        hf.plot_fir_generic(
+            fir_array=fir_to_plot,
+            view=view,
             title_name=plot_title,
-            n_fft=CN.N_FFT,
             samp_freq=CN.SAMP_FREQ,
-            y_lim_adjust=1,
-            save_plot=save_to_file,
-            plot_path=out_file_dir_plot,
-            plot_type=plot_type
+            n_fft=CN.N_FFT,
+            normalise=1,
+            level_ends=0,
+            x_lim_adjust=True,
+            x_lim_a=20,
+            x_lim_b=20000,
+            y_lim_adjust=True,
+            y_lim_a=-20,
+            y_lim_b=15,
+            plot_dest=plot_dest
         )
 
-        hf.log_with_timestamp(f"Plotted HpCF: {hpcf_name}", gui_logger)
+        hf.log_with_timestamp(f"Plotted HpCF: {plot_title}", gui_logger)
 
     except Exception as ex:
         hf.log_with_timestamp(f"Error plotting HpCF for {headphone} / {sample}: {ex}", gui_logger)
-
-
+        
+        
 
 def generate_hp_summary_sheet(conn, measurement_folder_name, in_ear_set=0, gui_logger=None):
     """
@@ -2512,7 +2452,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
         #level ends of spectrum
         hpcf_target_mag = hf.level_spectrum_ends(hpcf_target_mag, 50, 19000, smooth_win = 7)#
         #smoothing
-        hpcf_target_mag = hf.smooth_fft_octaves(hpcf_target_mag)
+        hpcf_target_mag = hf.smooth_freq_octaves(hpcf_target_mag)
         
         #back to db
         hpcf_target_db_comp=hf.mag2db(hpcf_target_mag)
@@ -2544,7 +2484,7 @@ def calculate_new_hpcfs(conn, measurement_folder_name, in_ear_set = 0, gui_logge
                 hpcf_fft_out_mag = hf.level_spectrum_ends(hpcf_fft_out_mag, 50, 19000, smooth_win = 7)#
   
                 #smoothing
-                hpcf_fft_out_mag = hf.smooth_fft_octaves(hpcf_fft_out_mag)
+                hpcf_fft_out_mag = hf.smooth_freq_octaves(hpcf_fft_out_mag)
                 
                 
                 #normalise to -6db in low frequencies
@@ -2920,120 +2860,112 @@ def get_recent_hpcfs(conn, date_str='2025-01-01', gui_logger=None, output_file="
         logging.error("Error occurred", exc_info=e)
 
 
-# def check_for_database_update(conn, gui_logger=None):
-#     """ 
-#     Function finds version of latest database, compares with current version
-#     """
-    
-#     try:
-        
-#         #get version of local database
-#         json_fname = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata.json')
-#         with open(json_fname) as fp:
-#             _info = json.load(fp)
-#         local_db_version = _info['version']
-        
-#         #log results
-#         log_string = 'Checking for Headphone Correction Filter dataset updates'
-#         hf.log_with_timestamp(log_string, gui_logger)
-        
-#         #log results
-#         log_string = 'Current dataset version: ' + str(local_db_version)
-#         hf.log_with_timestamp(log_string, gui_logger)
-            
-#         #log results
-#         log_string = 'Finding latest version'
-#         hf.log_with_timestamp(log_string, gui_logger)
-            
-#         #get version of online database
-#         url = "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
-#         output = pjoin(CN.DATA_DIR_OUTPUT, 'hpcf_database_metadata_latest.json')
-#         gdown.download(url, output, fuzzy=True)
-        
-#         #read json
-#         json_fname = output
-#         with open(json_fname) as fp:
-#             _info = json.load(fp)
-#         web_db_version = _info['version']
-        
-#         #log results
-#         log_string = 'Latest dataset version: ' + str(web_db_version)
-#         hf.log_with_timestamp(log_string, gui_logger)
-            
-#         if local_db_version == web_db_version:
-#             #log results
-#             log_string = 'No update available'
-#         else:
-#             log_string = "New version available. Click 'Download Latest Dataset' to update"
-#         hf.log_with_timestamp(log_string, gui_logger)
-        
-#         return True
-    
 
-        
-#     except Error as e:
 
-#         log_string = 'Failed to check HpCF versions'
-#         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
-            
-#         return False
-
-def check_for_database_update(conn, gui_logger=None):
+def check_for_database_update(
+    conn,
+    gui_logger=None,
+    download_if_update=False
+):
     """
-    Check both Main and Compilation HpCF database versions against their latest online versions.
+    Check both Main and Compilation HpCF database versions against their
+    latest online versions.
+
+    If download_if_update is True, downloads updated databases automatically.
     """
     try:
         databases = [
             {
                 "name": "ASH Filters Database",
                 "local_meta": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database_metadata.json"),
-                "remote_meta_url": "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link",
-                "remote_meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database_metadata_latest.json"),
+                "remote_meta_url": CN.ASH_FILT_DB_META_URL,
+                "remote_meta_local": pjoin(
+                    CN.DATA_DIR_OUTPUT,
+                    "hpcf_database_metadata_latest.json"
+                ),
             },
             {
                 "name": "Compilation Database",
-                "local_meta": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database_metadata.json"),
-                "remote_meta_url": "https://drive.google.com/file/d/18WZ1DX9s4LJyHYgw5yCnOHKy6SWxiB3p/view?usp=drive_link",
-                "remote_meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database_metadata_latest.json"),
+                "local_meta": pjoin(
+                    CN.DATA_DIR_OUTPUT,
+                    "hpcf_compilation_database_metadata.json"
+                ),
+                "remote_meta_url": CN.COMP_FILT_DB_META_URL,
+                "remote_meta_local": pjoin(
+                    CN.DATA_DIR_OUTPUT,
+                    "hpcf_compilation_database_metadata_latest.json"
+                ),
             },
         ]
 
         updates_available = False
 
         for db in databases:
-            hf.log_with_timestamp(f"Checking for {db['name']} dataset updates", gui_logger)
+            hf.log_with_timestamp(
+                f"Checking for {db['name']} dataset updates",
+                gui_logger
+            )
 
-            # Load local version
+            # --- read local metadata ---
             if not os.path.exists(db["local_meta"]):
-                hf.log_with_timestamp(f"No local metadata found for {db['name']}", gui_logger, log_type=2)
-                local_version = "N/A"
+                hf.log_with_timestamp(
+                    f"No local metadata found for {db['name']}",
+                    gui_logger,
+                    log_type=2
+                )
+                local_version = None
             else:
-                with open(db["local_meta"]) as fp:
+                with open(db["local_meta"], encoding="utf-8") as fp:
                     local_info = json.load(fp)
-                local_version = local_info.get("version", "Unknown")
+                local_version = local_info.get("version")
 
-            hf.log_with_timestamp(f"Current {db['name']} version: {local_version}", gui_logger)
-            hf.log_with_timestamp(f"Fetching latest version for {db['name']}...", gui_logger)
+            hf.log_with_timestamp(
+                f"Current {db['name']} version: {local_version}",
+                gui_logger
+            )
 
-            # Download remote metadata
-            gdown.download(db["remote_meta_url"], db["remote_meta_local"], fuzzy=True)
+            # --- download remote metadata (always to file) ---
+            response = hf.download_file(
+                url=db["remote_meta_url"],
+                save_location=db["remote_meta_local"],
+                gui_logger=gui_logger
+            )
+            if response is not True:
+                hf.log_with_timestamp(
+                    f"Failed to download metadata for {db['name']}",
+                    gui_logger,
+                    log_type=2
+                )
+                continue
 
-            # Load web version
-            with open(db["remote_meta_local"]) as fp:
+            with open(db["remote_meta_local"], encoding="utf-8") as fp:
                 web_info = json.load(fp)
-            web_version = web_info.get("version", "Unknown")
+            web_version = web_info.get("version")
 
-            hf.log_with_timestamp(f"Latest {db['name']} version: {web_version}", gui_logger)
+            hf.log_with_timestamp(
+                f"Latest {db['name']} version: {web_version}",
+                gui_logger
+            )
 
             if local_version == web_version:
-                hf.log_with_timestamp(f"No update available for {db['name']}", gui_logger)
-            else:
                 hf.log_with_timestamp(
-                    f"New version available for {db['name']}. "
-                    f"Click 'Download Latest Dataset' to update.",
+                    f"No update available for {db['name']}",
                     gui_logger
                 )
+            else:
                 updates_available = True
+                hf.log_with_timestamp(
+                    f"New version available for {db['name']}",
+                    gui_logger
+                )
+
+        # --- optionally download updates ---
+        if updates_available and download_if_update:
+            hf.log_with_timestamp(
+                "Downloading updated HpCF databases...",
+                gui_logger
+            )
+            return download_latest_database(conn, gui_logger)
 
         return updates_available
 
@@ -3048,38 +2980,73 @@ def check_for_database_update(conn, gui_logger=None):
 
 def download_latest_database(conn, gui_logger=None):
     """
-    Download and replace both Main and Compilation HpCF databases if new versions are available.
+    Download and replace both Main and Compilation HpCF databases.
     """
     try:
         datasets = [
             {
                 "name": "ASH Filters",
-                "db_url": "https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link",
-                "meta_url": "https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link",
+                "db_url": CN.ASH_FILT_DB_URL,
+                "meta_url": CN.ASH_FILT_DB_META_URL,
                 "db_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database.db"),
                 "meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_database_metadata.json"),
             },
             {
                 "name": "Compilation",
-                "db_url": "https://drive.google.com/file/d/1gDrqfyZ4umSXmrn4pjJMzZJb0ipeAs_a/view?usp=drive_link",
-                "meta_url": "https://drive.google.com/file/d/18WZ1DX9s4LJyHYgw5yCnOHKy6SWxiB3p/view?usp=drive_link",
-                "db_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database.db"),
-                "meta_local": pjoin(CN.DATA_DIR_OUTPUT, "hpcf_compilation_database_metadata.json"),
+                "db_url": CN.COMP_FILT_DB_URL,
+                "meta_url": CN.COMP_FILT_DB_META_URL,
+                "db_local": pjoin(
+                    CN.DATA_DIR_OUTPUT,
+                    "hpcf_compilation_database.db"
+                ),
+                "meta_local": pjoin(
+                    CN.DATA_DIR_OUTPUT,
+                    "hpcf_compilation_database_metadata.json"
+                ),
             },
         ]
 
         for ds in datasets:
-            hf.log_with_timestamp(f"Downloading latest {ds['name']} database...", gui_logger)
+            hf.log_with_timestamp(
+                f"Downloading latest {ds['name']} database...",
+                gui_logger
+            )
 
-            # Download database file
-            gdown.download(ds["db_url"], ds["db_local"], fuzzy=True)
+            response = hf.download_file(
+                url=ds["db_url"],
+                save_location=ds["db_local"],
+                gui_logger=gui_logger
+            )
+            if response is not True:
+                hf.log_with_timestamp(
+                    f"{ds['name']} database download failed",
+                    gui_logger,
+                    log_type=2
+                )
+                return False
 
-            # Download metadata file
-            gdown.download(ds["meta_url"], ds["meta_local"], fuzzy=True)
+            response = hf.download_file(
+                url=ds["meta_url"],
+                save_location=ds["meta_local"],
+                gui_logger=gui_logger
+            )
+            if response is not True:
+                hf.log_with_timestamp(
+                    f"{ds['name']} metadata download failed",
+                    gui_logger,
+                    log_type=2
+                )
+                return False
 
-            hf.log_with_timestamp(f"{ds['name']} database downloaded to: {ds['db_local']}", gui_logger)
+            hf.log_with_timestamp(
+                f"{ds['name']} database updated successfully",
+                gui_logger
+            )
 
-        hf.log_with_timestamp("All available databases updated successfully.", gui_logger)
+        hf.log_with_timestamp(
+            "All available databases updated successfully.",
+            gui_logger
+        )
         return True
 
     except Error as e:
@@ -3090,8 +3057,6 @@ def download_latest_database(conn, gui_logger=None):
             exception=e
         )
         return False
-
-
 
 
 def remove_hpcfs(primary_path, gui_logger=None):
@@ -3396,7 +3361,7 @@ def process_mono_hp_cues(conn, measurement_folder_name, in_ear_set = 0, gui_logg
         #level ends of spectrum
         hpcf_target_mag = hf.level_spectrum_ends(hpcf_target_mag, 50, 19000, smooth_win = 7)#
         #smoothing
-        hpcf_target_mag = hf.smooth_fft_octaves(hpcf_target_mag)
+        hpcf_target_mag = hf.smooth_freq_octaves(hpcf_target_mag)
             
         if CN.PLOT_ENABLE == True:
             hf.plot_data(hpcf_target_mag,'hpcf_target_mag ' + measurement_folder_name, normalise=0)

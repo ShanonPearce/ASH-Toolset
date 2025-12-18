@@ -26,6 +26,9 @@ import concurrent.futures
 from csv import DictReader
 from ash_toolset import pyquadfilter
 import random
+import json
+from datetime import datetime
+from ash_toolset import air_processing
 
 logger = logging.getLogger(__name__)
 
@@ -91,19 +94,13 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             hrtf_symmetry = brir_dict.get("hrtf_symmetry")
             early_refl_delay_ms = brir_dict.get("er_delay_time")
             hrtf_polarity = brir_dict.get("hrtf_polarity")
+            hrtf_direction_misalign_comp = brir_dict.get("hrtf_direction_misalign_comp")
+            hrtf_direction_misalign_trigger = brir_dict.get("hrtf_direction_misalign_trigger")
+            hrtf_df_cal_mode = brir_dict.get("hrtf_df_cal_mode")
         else:
             raise ValueError('brir_dict not populated')
             
-        #section to convert from favourite to actual dataset (dont do for averaged hrtf)
-        brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short = brir_hrtf_param_cleaning(
-            brir_hrtf_type,
-            brir_hrtf_dataset,
-            brir_hrtf_gui,
-            brir_hrtf_short
-        )
-        
-  
-        
+   
         #exit if stop thread flag is true
         stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
         if stop_thread == True:
@@ -121,8 +118,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
 
         #variable crossover depending on acoustic space
         f_crossover_var=crossover_f
-       # _,order_var= get_ac_f_crossover(name_src=acoustic_space, gui_logger=gui_logger)#f_crossover_var,order_var
-        
+     
         reverb_data=CN.reverb_data
         order_var = CN.extract_column(data=reverb_data, column='order_crossover', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
         fade_start = CN.extract_column(data=reverb_data, column='fade_start', condition_key='name_src', condition_value=acoustic_space, return_all_matches=False)
@@ -139,10 +135,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         lp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=fb_filtering, b_type='low')
         hp_sos = hf.get_filter_sos(cutoff=f_crossover_var, fs=CN.FS, order=order_var, filtfilt=fb_filtering, b_type='high')
 
-        # ac_space_int = CN.AC_SPACE_LIST_SRC.index(acoustic_space)
-        # fade_start = CN.AC_SPACE_FADE_START[ac_space_int]
-        # est_rt60 = CN.AC_SPACE_EST_R60[ac_space_int]
-
+ 
         #impulse
         impulse=np.zeros(CN.N_FFT)
         impulse[0]=1
@@ -188,37 +181,24 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #
         # load room target filter (FIR)
   
-
         room_target_fir = CN.ROOM_TARGETS_DICT[room_target_name]["impulse_response"]
             
         #
         # load pinna comp filter (FIR)
-        #
-
-
+ 
         npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
         ear_comp_fir_dataset = hf.load_convert_npy_to_float64(npy_fname)
         pinna_comp_fir = ear_comp_fir_dataset[pinna_comp,:]
         
         #
         # load additional headphone eq
-        #
-
-        
+  
         data_lf_comp_eq = np.copy(impulse[0:32])
         if hp_rolloff_comp == True:
             filename = 'low_frequency_roll-off_compensation.wav'
             wav_fname = pjoin(CN.DATA_DIR_INT, filename)
             samplerate, data_lf_comp_eq = hf.read_wav_file(wav_fname)
 
-
-        log_string = 'Loading reverberation data'
-        hf.log_with_timestamp(log_string, gui_logger)
-        if report_progress > 0:
-            progress = 2/100
-            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
-        
-        #
         # load low frequency BRIR (FIR)
         #
 
@@ -238,13 +218,43 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         sub_brir_ir[0, :available_samples] = sub_brir_npy[0, :available_samples]
         sub_brir_ir[1, :available_samples] = sub_brir_npy[1, :available_samples]
         
+   
         
-
-    
-           
+        ################## Load BRIR reverberation data
         #
-        # Load BRIR reverberation data
-        #
+        
+        # -------------------------------
+        # Periodic reverberation update check (every 72 hours)
+        # -------------------------------
+        try:
+            csv_directory = pjoin(CN.DATA_DIR_INT, "reverberation")
+            last_checked_path = pjoin(csv_directory, "last_checked_updates.json")
+            needs_update = True  # default to True if file missing or unreadable
+        
+            if os.path.exists(last_checked_path):
+                try:
+                    with open(last_checked_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        last_checked_str = data.get("last_checked")
+                        if last_checked_str:
+                            last_checked_dt = datetime.strptime(last_checked_str, "%Y-%m-%d %H:%M:%S")
+                            hours_elapsed = (datetime.now() - last_checked_dt).total_seconds() / 3600
+                            needs_update = hours_elapsed > 72
+                except Exception:
+                    # If file is corrupted, force update
+                    needs_update = True
+        
+            if needs_update:
+                air_processing.acoustic_space_updates(download_updates=True, gui_logger=gui_logger)
+        except Exception as e:
+            hf.log_with_timestamp(f"Failed to check/update acoustic spaces: {e}", gui_logger)
+        
+        log_string = 'Loading reverberation data'
+        hf.log_with_timestamp(log_string, gui_logger)
+        if report_progress > 0:
+            progress = 2/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
+            
         if as_folder == 'user':
             brir_rev_folder = pjoin(CN.DATA_DIR_AS_USER, acoustic_space)
         else:
@@ -252,13 +262,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         
         npy_file_name = as_file_name + '.npy'
         npy_file_path = pjoin(brir_rev_folder, npy_file_name)
-        
-        
-        
-        
- 
-            
-        
+    
         try:
             # --- Try loading from local file ---
             brir_reverberation = hf.load_convert_npy_to_float64(npy_file_path)
@@ -275,13 +279,15 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 
             hf.log_with_timestamp('Local dataset not found or invalid. Proceeding to download.', gui_logger)
         
-            # --- Randomize between primary and github as first attempt ---
-            if random.random() < 0.5:
-                first_choice = ("primary", as_url_primary)
-                second_choice = ("github", as_url_ghub)
-            else:
-                first_choice = ("github", as_url_ghub)
-                second_choice = ("primary", as_url_primary)
+            # # --- Randomize between primary and github as first attempt ---
+            # if random.random() < 0.5:
+            #     first_choice = ("primary", as_url_primary)
+            #     second_choice = ("github", as_url_ghub)
+            # else:
+            #     first_choice = ("github", as_url_ghub)
+            #     second_choice = ("primary", as_url_primary)
+            first_choice = ("github", as_url_ghub)
+            second_choice = ("primary", as_url_primary)
         
             # --- Ordered download sources ---
             download_sources = [
@@ -320,39 +326,24 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 hf.log_with_timestamp(log_string, gui_logger)
                 raise ValueError(log_string)
            
-            
+        receivers, sources, channels, samples = brir_reverberation.shape
+        log_string = (
+            f"Loaded Reverberation Dataset: "
+            f"Receivers={receivers}, Sources={sources}, "
+            f"Channels={channels}, Samples={samples}."
+        )
+        hf.log_with_timestamp(log_string)
+           
         #total_elev_reverb = len(brir_reverberation)
         total_azim_reverb = len(brir_reverberation[0])
         #total_chan_reverb = len(brir_reverberation[0][0])
         #total_samples_reverb = len(brir_reverberation[0][0][0])
-        nearest_azim_reverb = int(360/total_azim_reverb)
+        nearest_azim_reverb = max(int(360/total_azim_reverb),1)
         
         #zero pad reverberation array due to variable length
         brir_reverberation=hf.zero_pad_last_dimension(data=brir_reverberation, n_fft=n_fft)
         
-        
-        log_string = 'Loading HRTF data'
-        hf.log_with_timestamp(log_string, gui_logger)
-        if report_progress > 0:
-            progress = 5/100
-            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
-
-        #
-        # load HRIRs
-        #
-        
-        #max dataset may need to be downloaded
-        if spatial_res == 3:
-            status_subroutine = check_download_max_hrtf_datasets(download=True, gui_logger=gui_logger, report_progress=report_progress)
-            if status_subroutine == 1:#failed
-                raise ValueError('HRIR processing failed due to error downloading HRTF dataset')
-          
-        # print(brir_hrtf_type)
-        # print(brir_hrtf_dataset)
-        # print(brir_hrtf_gui)
-        # print(brir_hrtf_short)
-        
-        
+        #grab spatial format
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:      
             elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
             elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
@@ -363,63 +354,93 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         else:
             raise ValueError('Invalid spatial resolution')
             
-        npy_fname = get_hrir_file_path(
-            brir_hrtf_type=brir_hrtf_type,
-            brir_hrtf_gui=brir_hrtf_gui,
-            brir_hrtf_dataset=brir_hrtf_dataset,
-            brir_hrtf_short=brir_hrtf_short,
-            spatial_res=spatial_res,
-            gui_logger=gui_logger
-        )
+        log_string = 'Loading HRTF data'
+        #hf.log_with_timestamp(log_string, gui_logger)
+        if report_progress > 0:
+            progress = 5/100
+            hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
 
-        #first try to load npy dataset
-        #if failed, proceed with SOFA workflow
-        try:
-            #load npy files
-            hrir_list = hf.load_convert_npy_to_float64(npy_fname)
-        except:
-            log_string = 'local HRIR dataset not found. Proceeding with SOFA workflow'
-            hf.log_with_timestamp(log_string, gui_logger) 
-            if report_progress > 0:
-                hf.update_gui_progress(report_progress=report_progress, message=log_string)
         
-            #run sofa workflow
-            status_subroutine = hrir_processing.sofa_workflow_new_dataset(brir_hrtf_type=brir_hrtf_type, brir_hrtf_dataset=brir_hrtf_dataset, brir_hrtf_gui=brir_hrtf_gui, brir_hrtf_short=brir_hrtf_short, gui_logger=gui_logger, report_progress=report_progress)
-            if status_subroutine == 0:#success
-                #finally load the npy file
-                hrir_list = hf.load_convert_npy_to_float64(npy_fname)
-            elif status_subroutine == 2:#cancelled
-                brir_out= np.array([])
-                status=2#2=cancelled
-                return brir_out,status
-            else:
-                raise ValueError('HRIR processing failed due to error in SOFA workflow')
+        ############################## load HRIRs and prepare HRIR array
+        #
         
-        
-        hrir_selected = hrir_list[0]#first dimension is unitary
+        # load hrir dataset
+        hrtf_dict_list = [
+            {
+                "hrtf_type": brir_hrtf_type,
+                "hrtf_dataset": brir_hrtf_dataset,       # dataset name
+                "hrtf_gui": brir_hrtf_gui,        # GUI-friendly name
+                "hrtf_short": brir_hrtf_short      # short name used for file
+            }
+        ]
+        hrir_list, status, hrir_metadata_list = hrir_processing.load_hrirs_list(hrtf_dict_list=hrtf_dict_list, spatial_res=spatial_res, direction_fix_gui=hrtf_direction_misalign_comp, 
+                                                                                direction_fix_trigger=hrtf_direction_misalign_trigger, gui_logger=gui_logger)
+        if status != 0 or not hrir_list:
+            raise ValueError(f"Failed to load HRIR dataset: {brir_hrtf_short}")
+            
+        # Extract the only item, unitary first dimension is already removed
+        hrir_selected = hrir_list[0]
+        # hrir_data now guaranteed shape: [elev][azim][chan][samples]
+     
         total_elev_hrir = len(hrir_selected)
         total_azim_hrir = len(hrir_selected[0])
         total_chan_hrir = len(hrir_selected[0][0])
         total_samples_hrir = len(hrir_selected[0][0][0])
         base_elev_idx = total_elev_hrir//2
-    
+        
+       
+        ############################## DF calibration CTF loading
+        #
+        ctf_mag_db = None   # used later in DF calibration section
+        df_cal_reversal = False
+        
+        # Only consider DF calibration if mode is not bypassed and metadata exists
+        if hrtf_df_cal_mode != CN.HRTF_DF_CAL_MODE_LIST[0] and hrir_metadata_list:
+            # allow DF calibration reversal for this HRTF
+            df_cal_reversal = True
+        
+        if df_cal_reversal:
+            # choose CTF variant
+            desired_ctf = "ctf_le_file" if hrtf_df_cal_mode == CN.HRTF_DF_CAL_MODE_LIST[2] else "ctf_file"
+            # pull from metadata JSON
+            hrir_metadata = hrir_metadata_list[0]
+            ctf_path = hrir_metadata.get(desired_ctf, None)
+            # disable reversal silently if metadata is missing or file not found
+            if not ctf_path or not Path(ctf_path).exists():
+                missing_reason = "Metadata missing CTF key" if not ctf_path else "CTF file not found"
+                hf.log_with_timestamp(f"{missing_reason}: '{desired_ctf}' for {brir_hrtf_short}", log_type=1)
+                df_cal_reversal = False
+            else:
+                # read WAV using helper
+                samplerate, ctf_data = hf.read_wav_file(ctf_path)
+                # ensure mono (take first channel if multi-channel)
+                if ctf_data.ndim > 1:
+                    ctf_data = ctf_data[:, 0]
+                # build FIR padded to N_FFT, preserving available length
+                ctf_fir = np.zeros(CN.N_FFT)#use CN N_FFT length to align with method for EQ section
+                copy_len = min(len(ctf_data), CN.N_FFT)
+                ctf_fir[:copy_len] = ctf_data[:copy_len]
+                # FFT -> magnitude -> dB using helper
+                ctf_mag = np.abs(np.fft.rfft(ctf_fir))#use RFFT to align with method for EQ section
+                ctf_mag_db = hf.mag2db(ctf_mag)
+                hf.log_with_timestamp(f"HRTF Diffuse-field calibration mode activated: {hrtf_df_cal_mode}", gui_logger)
+        
+        # If metadata list is empty or DF calibration not required, df_cal_reversal remains False
   
+        ##################### further HRIR preparation
+      
         #output_azims = int(360/azim_nearest)#should be identical to above lengths
         #output_elevs = int((elev_max-elev_min)/elev_nearest +1)#should be identical to above lengths
         
         #BRIR_out array will be populated BRIRs for all directions
         brir_out=np.zeros((total_elev_hrir,total_azim_hrir,2,n_fft))   
 
-  
-   
         log_string = 'Adjusting HRTF levels'
         hf.log_with_timestamp(log_string, gui_logger)
         if report_progress > 0:
             progress = 20/100
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
-            
-
-      
+       
         #adjust levels of HRIRs for DRR scaling. Assume 0dB starting point
         #round to nearest 2 decimal places
         direct_gain_db = round(direct_gain_db,2)
@@ -460,65 +481,44 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         
         
         
-        
+        ################ Reverberation shaping and preparation
+        #
         
         log_string = 'Preparing reverberation data'
         hf.log_with_timestamp(log_string, gui_logger) 
         if report_progress > 0:
             progress = 30/100
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
-            
-        
+   
         #exit if stop thread flag is true
         stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
         if stop_thread == True:
             brir_out= np.array([])
             status=2#2=cancelled
             return brir_out,status
+   
         
-        #
-        ## Integration of BRIRs with HRIRs through TD interpolation and DRR scaling
-        #
- 
-        #
-        ## Reverberation shaping
-        #
         
-        #get start id for noise reduction fade out
-        rt60_comp_factor=0.95
-        
-        n_fade_win_start = int(((fade_start*rt60_comp_factor)/1000)*CN.FS)
+        ######################  Noise reduction at tail ends + reflection delays
         if fade_start > 0:
             noise_fade = True
         else:
             noise_fade = False
-
+        #get start id for noise reduction fade out
+        rt60_comp_factor=0.95
+        n_fade_win_start = int(((fade_start*rt60_comp_factor)/1000)*CN.FS)
         #get start id for reverberation snapshot for reverb reduction
         #convert to sample ID to get start of reverb response
         rt60_snap_start = int(((target_rt60)/1000)*CN.FS)
- 
+        if rt60_snap_start > n_fft:
+            rt60_snap_start=int(n_fft*0.9)
         #generate hann windows for reverb EQ
         l_fade_win_size=np.abs(rt60_snap_start-n_fft)*2
         n_fade_win_size=np.abs(4000)*2
-        if CN.WINDOW_TYPE == 1:
-            wind_l_fade_full=np.hanning(l_fade_win_size)
-            wind_n_fade_full=np.hanning(n_fade_win_size)
-        elif CN.WINDOW_TYPE == 2:
-            wind_l_fade_full=np.bartlett(l_fade_win_size)
-            wind_n_fade_full=np.bartlett(n_fade_win_size)
-        elif CN.WINDOW_TYPE == 3: 
-            wind_l_fade_full=np.blackman(l_fade_win_size)
-            wind_n_fade_full=np.blackman(n_fade_win_size)
-        elif CN.WINDOW_TYPE == 4:
-            wind_l_fade_full=np.hamming(l_fade_win_size)
-            wind_n_fade_full=np.hamming(n_fade_win_size)
-        else:
-            wind_l_fade_full=np.bartlett(l_fade_win_size)
-            wind_n_fade_full=np.bartlett(n_fade_win_size)
-        
+        wind_l_fade_full=np.hanning(l_fade_win_size)
+        wind_n_fade_full=np.hanning(n_fade_win_size)
         win_l_fade_out = np.split(wind_l_fade_full,2)[1]
         win_n_fade_out = np.split(wind_n_fade_full,2)[1]
-        
         if noise_fade == True:
             #additional window to fade out noise
             n_fade_out_win = data_pad_zeros.copy()
@@ -529,8 +529,6 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             n_fade_out_win = data_pad_zeros.copy()
             n_fade_out_win[0:rt60_snap_start] = data_pad_ones[0:rt60_snap_start]
             n_fade_out_win[rt60_snap_start:] = win_l_fade_out
-        
-        
         #for each azim
         for azim in range(total_azim_reverb):
             #apply fade out for noise reduction
@@ -547,43 +545,21 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 brir_reverberation[0][azim][1][0:reverb_delay_samples] = np.multiply(brir_reverberation[0][azim][1][0:reverb_delay_samples],0)
             
                 
-        #
-        # TD alignment of BRIRs with HRIRs
+        ################ HRIR and Reverberation Integration
         #
         
-        #grab a sample hrir and brir used to td alignment
-        # elev_ind = int((0-elev_min)/elev_nearest)
-        # azim_ind = int(30/azim_nearest)
-        # hrir_sample = np.copy(hrir_selected[elev_ind][azim_ind][0][:])
-        # hrir_sample=hf.zero_pad_last_dimension(data=hrir_sample, n_fft=n_fft)#zero pad
-        # reverb_brir_align(brir_reverberation, n_fft, f_crossover_var, hrir_sample, initial_removal_win_rev, total_azim_reverb, order_var)
-
-
-
-
         log_string = 'Integrating HRIRs and reverberation'
         hf.log_with_timestamp(log_string, gui_logger) 
         if report_progress > 0:
             progress = 40/100
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
 
-        #
-        # grab BRIRs from interim matrix and place in output matrix
-        #
+        # grab reverberant BRIRs from interim matrix and place in output matrix
         for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir):
-                
+            for azim in range(total_azim_hrir): 
                 azim_deg = int(azim*azim_nearest)
-                #case for multiple directions on horizontal plane, every x deg azimuth
-                if total_azim_reverb > 7:
-                    #map hrir azimuth to appropriate brir azimuth
-                    #round azim to nearest X deg and get new ID
-                    brir_azim = hf.round_to_multiple(azim_deg,nearest_azim_reverb)#brir_reverberation is nearest 5 deg
-                    if brir_azim >= 360:
-                        brir_azim = 0
-                    brir_azim_ind = int(brir_azim/nearest_azim_reverb)#get index
                 #case for minimal set (7 directions)
-                elif total_azim_reverb == 7:
+                if total_azim_reverb == 7:
                     if azim_deg < 15 or azim_deg > 345:
                         brir_azim_ind=0
                     elif azim_deg < 60:
@@ -610,16 +586,21 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                         brir_azim_ind=3
                     else:
                         brir_azim_ind=4
+                #case for multiple directions on horizontal plane, every x deg azimuth
+                elif total_azim_reverb > 0:
+                    #map hrir azimuth to appropriate brir azimuth
+                    #round azim to nearest X deg and get new ID
+                    brir_azim = hf.round_to_multiple(azim_deg,nearest_azim_reverb)#brir_reverberation is nearest X deg, variable
+                    if brir_azim >= 360:
+                        brir_azim = 0
+                    brir_azim_ind = int(brir_azim/nearest_azim_reverb)#get index
                 else:
-                    raise ValueError('Unable to process BRIR reverberation data. Invalid number of directions: ' + str(total_azim_reverb) )
+                    raise ValueError('Unable to process BRIR reverberation data. Invalid number of reverberation sources: ' + str(total_azim_reverb) )
                 
                 for chan in range(CN.TOTAL_CHAN_BRIR):
                     brir_out[elev][azim][chan][0:n_fft] = np.copy(brir_reverberation[0][brir_azim_ind][chan][0:n_fft])
    
     
-   
-    
-        #
         #add HRIR into output BRIR array
         #use multiple threads to integrate HRIRs into output BRIR array
         # Use ThreadPoolExecutor to integrate HRIRs into output BRIR array
@@ -632,17 +613,13 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         hrir_selected = None
         brir_reverberation = None
         
-   
- 
- 
-        log_string = 'Processing low frequencies'
-        hf.log_with_timestamp(log_string, gui_logger)
-    
         if report_progress > 0:
             progress = 50/100
             hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
-        
-        
+   
+        #################### low frequency BRIR integration
+        #
+ 
         #exit if stop thread flag is true
         stop_thread = hf.check_stop_thread(gui_logger=gui_logger)
         if stop_thread == True:
@@ -655,7 +632,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         mag_range_a2=int(80*(n_fft/CN.N_FFT))#50
         mag_range_b=int(290*(n_fft/CN.N_FFT))
         
-        #grab a sample brir used to td alignment
+        #grab a sample brir used for td alignment and level alignment
         elev_ind = int((0-elev_min)/elev_nearest)
         azim_ind = int(30/azim_nearest)
         brir_sample = np.copy(brir_out[elev_ind][azim_ind][0][:])
@@ -673,15 +650,12 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                     #only apply gain if direction is in direction matrix
                     if direction_matrix_process[elev][azim][0][0] == 1: 
                         brir_out[elev][azim][chan][:] = np.divide(brir_out[elev][azim][chan][:],average_mag_b)
-        
-        
-        
-        #
-        # Sub BRIR integration
-        #
-        
-  
-        if CN.ENABLE_SUB_INTEGRATION == True:
+   
+        log_string = 'Processing low frequencies'
+        hf.log_with_timestamp(log_string, gui_logger)
+       
+        #integreate low frequency BRIRs into BRIRs. Only perform if enabled 
+        if CN.ENABLE_SUB_INTEGRATION == True and f_crossover_var >= CN.MIN_FILT_FREQ:
         
             sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var, fb_filtering)
             
@@ -694,9 +668,6 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             #
             brir_eq_a_l = np.copy(sub_brir_ir[0][:])
             brir_eq_a_r = np.copy(sub_brir_ir[1][:])
-            # #apply lp filter
-            # brir_eq_b_l = hf.signal_lowpass_filter(brir_eq_a_l, f_crossover_var, CN.FS, order_var)
-            # brir_eq_b_r = hf.signal_lowpass_filter(brir_eq_a_r, f_crossover_var, CN.FS, order_var)
             #apply lp filter
             brir_eq_b_l = hf.apply_sos_filter(brir_eq_a_l, lp_sos, filtfilt=fb_filtering)
             brir_eq_b_r = hf.apply_sos_filter(brir_eq_a_r, lp_sos, filtfilt=fb_filtering)
@@ -709,9 +680,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             sub_brir_ir[0][:] = np.multiply(sub_brir_ir[0][:],n_fade_out_win)
             sub_brir_ir[1][:] = np.multiply(sub_brir_ir[1][:],n_fade_out_win)
             
-       
-
-            
+     
             #use multiple threads to integrate sub brir into output array
             # Use ThreadPoolExecutor to integrate sub brir
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -720,9 +689,6 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                            for elev in range(total_elev_hrir)]
                 for future in concurrent.futures.as_completed(futures):
                     future.result()  # Optionally, handle exceptions
-
-        
-    
 
         log_string = 'Applying EQ'
         hf.log_with_timestamp(log_string, gui_logger)
@@ -737,14 +703,11 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             brir_out= np.array([])
             status=2#2=cancelled
             return brir_out,status
-            
-
-
-        #
-        ## EQ correction
-        #
+   
         
-
+        ############### EQ correction
+        #
+  
         #use multiple threads to calculate EQ
         # Use ThreadPoolExecutor to calculate EQ
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -753,9 +716,6 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
     
             for future in concurrent.futures.as_completed(futures):
                 future.result()  # Optionally, handle exceptions
-
-       
-           
         #results_list will be populated with numpy arrays representing db response for each elevation
         num_results_avg = 0
         brir_fft_avg_db = fr_flat.copy()
@@ -765,22 +725,20 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 brir_fft_avg_db = np.add(brir_fft_avg_db,result)
         #divide by total number of elevations
         brir_fft_avg_db = brir_fft_avg_db/num_results_avg
- 
         #convert to mag
-        brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-        
+        brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)      
         #level ends of spectrum
-        brir_fft_avg_mag_sm = hf.level_spectrum_ends(brir_fft_avg_mag, 20, 18500, smooth_win = 5, n_fft=CN.N_FFT)#40, 19000, smooth_win = 7
-        
- 
+        brir_fft_avg_mag_sm = hf.level_spectrum_ends(brir_fft_avg_mag, 20, 18500, smooth_win = 5, n_fft=CN.N_FFT)#40, 19000, smooth_win = 7 
         #octave smoothing
-        brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag_sm, n_fft=CN.N_FFT, win_size_base = 5, fund_freq=170)#win_size_base = 10, fund_freq=140 win_size_base = 7, fund_freq=160
-        
-        
-        
-        
+        brir_fft_avg_mag_sm = hf.smooth_freq_octaves(data=brir_fft_avg_mag_sm, n_fft=CN.N_FFT, win_size_base = 5, fund_freq=170)#win_size_base = 5, fund_freq=170
         #invert response
         brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
+        if df_cal_reversal:#include CTF if DF calibration reversal is enabled
+            if ctf_mag_db is not None:
+                # safely add to DB correction curve
+                brir_fft_avg_mag_inv = hf.db2mag(np.add(hf.mag2db(brir_fft_avg_mag_inv),ctf_mag_db))
+            else:
+                hf.log_with_timestamp("HRTF DF response not available, skipping DF calibration adjustment.", gui_logger)
         #create min phase FIR
         brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=2048, n_fft=CN.N_FFT)#new method
         
@@ -799,7 +757,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         
         #section to prepare to crop BRIR output
         #larger reverb times will need additional samples
-       #estimate output array length based on RT60
+        #estimate output array length based on RT60
         if est_rt60 <=400:#determines the most samples to keep based on estimated rt60
             out_samples_est = 33075
         elif est_rt60 <750:
@@ -819,15 +777,9 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         norm_factor = np.max(brir_sample)
         ref_array = np.divide(brir_sample,norm_factor*2)
         crop_samples = hf.get_crop_index(ref_array, tail_ignore=10000)
-        
-        #hf.plot_td(ref_array[10000:])
-        #print(crop_samples)
-        #print(out_samples_est)
-        
         if crop_samples < 4000 or crop_samples > out_samples_est:
             crop_samples=out_samples_est
         #get end index for convolutions
-        
         #print(crop_samples)
         # brir_sample = brir_out[0][0][0][:]
         # crop_samples = hf.get_crop_index(brir_sample)
@@ -911,16 +863,7 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
     # Round max_t_shift up to the nearest multiple of t_shift_interval
     max_t_shift = int(np.ceil((0 + shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
     
-    # if fb_filtering == True:#symmetrical case
-    #     # Round min_t_shift down to the nearest multiple of t_shift_interval
-    #     min_t_shift = int(np.floor((0 - shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
-    #     # Round max_t_shift up to the nearest multiple of t_shift_interval
-    #     max_t_shift = int(np.ceil((0 + shift_quota_per_pol / 2) / t_shift_interval) * t_shift_interval)
-    # else:#bias towards lower values
-    #     # Round min_t_shift down to the nearest multiple of t_shift_interval
-    #     min_t_shift = int(np.floor((0 - shift_quota_per_pol * (2/3)) / t_shift_interval) * t_shift_interval)
-    #     # Round max_t_shift up to the nearest multiple of t_shift_interval
-    #     max_t_shift = int(np.ceil((0 + shift_quota_per_pol * (1/3)) / t_shift_interval) * t_shift_interval)
+
         
     # Calculate the number of intervals
     num_intervals = int(np.abs((max_t_shift - min_t_shift) / t_shift_interval))
@@ -957,11 +900,7 @@ def sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_rem
     subrir_sample_p = np.copy(sub_brir_ir[0][:])#check first ir, first channel
     subrir_sample_n = np.multiply(np.copy(sub_brir_ir[0][:]),-1)
 
-    #apply low pass before shifting
-    # brir_sample_lp = hf.signal_lowpass_filter(brir_sample, f_crossover_var, CN.FS, order_var)
-    # subrir_sample_p_lp = hf.signal_lowpass_filter(subrir_sample_p, f_crossover_var, CN.FS, order_var)
-    # subrir_sample_n_lp = hf.signal_lowpass_filter(subrir_sample_n, f_crossover_var, CN.FS, order_var)
-    
+    #apply low pass before shifting 
     brir_sample_lp = hf.apply_sos_filter(brir_sample, lp_sos, filtfilt=CN.FILTFILT_TDALIGN)
     subrir_sample_p_lp = hf.apply_sos_filter(subrir_sample_p, lp_sos, filtfilt=CN.FILTFILT_TDALIGN)
     subrir_sample_n_lp = hf.apply_sos_filter(subrir_sample_n, lp_sos, filtfilt=CN.FILTFILT_TDALIGN)
@@ -1283,12 +1222,11 @@ def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix
                 brir_eq_a_h = np.copy(brir_out[elev][azim][chan][:])
                 
                 #apply hp filter
-                #brir_eq_b_h = hf.signal_highpass_filter(brir_eq_a_h, f_crossover_var, CN.FS, order_var)
                 brir_eq_b_h = hf.apply_sos_filter(brir_eq_a_h, hp_sos, filtfilt=fb_filtering)
                 
                 brir_out[elev][azim][chan][:] = brir_eq_b_h[0:n_fft] 
   
-    #add SUB BRIR into output BRIR array
+    #add SUB BRIR (already low passed) into output BRIR array
     for azim in range(total_azim_hrir):
         for chan in range(CN.TOTAL_CHAN_BRIR):
             #only apply if direction is in direction matrix
@@ -1299,228 +1237,7 @@ def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix
 
 
 
-def preprocess_hrirs(spatial_res=1, gui_logger=None):
-    """
-    Function applies level matching to hrirs in MAT dataset and saves as NPY dataset
-    :param gui_logger: gui logger object for dearpygui
-    :return: None
-    """ 
-    
-    # get the start time
-    st = time.time()
-    n_fft=CN.N_FFT
-    lf_align=False#False
-    h_pass=True
 
-    try:
-    
-        if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            if spatial_res <= 2:
-                spatial_res_str = 'high'
-                #this dataset includes all hrirs up to high spatial resolution. Elevations from -60 to 60deg in 5 deg steps, Azimuths from 0 to 360dg in 5deg steps
-                mat_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_high.mat')
-            elif spatial_res == 3:
-                spatial_res_str = 'max'
-                #this dataset includes all hrirs at full spatial resolution. Elevations from -40 to 60deg in 2 deg steps, Azimuths from 0 to 360dg in 2deg steps
-                mat_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.mat')
-            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
-        else:
-            log_string = 'Invalid spatial resolution. No hrir dataset loaded.'
-            hf.log_with_timestamp(log_string, gui_logger)
-
-        #old format mat files
-        #annots = loadmat(mat_fname)
-        #new format MATLAB 7.3 files
-        hrirs = mat73.loadmat(mat_fname)
-        
-        #load matrix, get list of numpy arrays
-        hrir_list = [[element for element in upperElement] for upperElement in hrirs['ash_input_hrir']]
-        #grab desired hrtf. by default returns 9x72x2x65536 array
-        num_hrtfs = len(hrir_list)
-        hrir_selected_ref = hrir_list[0]
-        total_elev_hrir = len(hrir_selected_ref)
-        total_azim_hrir = len(hrir_selected_ref[0])
-        total_chan_hrir = len(hrir_selected_ref[0][0])
-        total_samples_hrir = len(hrir_selected_ref[0][0][0])
-        base_elev_idx = total_elev_hrir//2
-        print(str(total_samples_hrir))
-        
-        # take 0 deg azim as reference
-        index_peak_ref = np.argmax(hrir_selected_ref[base_elev_idx][0][0][:])
-        hrir_ref_sample = np.copy(hrir_selected_ref[base_elev_idx][0][0][:])
-        #HRIR array will be populated with all HRIRs
-        hrir_out=np.zeros((num_hrtfs,total_elev_hrir,total_azim_hrir,total_chan_hrir,total_samples_hrir))
-
-        for hrtf_idx in range(num_hrtfs):
-            
-            hrir_selected = hrir_list[hrtf_idx]
-            hrtf_type=hrtf_idx+1
-  
-            if (spatial_res <= 2) and (hrtf_type >= 5 and hrtf_type <= 8):
-                base_azim_idx = total_azim_hrir//2
-            else:
-                base_azim_idx=0
-            #
-            #apply level matching
-            ## set HRIR level to 0
-            
-            mag_range_a=CN.SPECT_SNAP_M_F0 #mag_range_a=int(CN.SPECT_SNAP_F0*n_fft/CN.FS)
-            mag_range_b=CN.SPECT_SNAP_M_F1 #mag_range_b=int(CN.SPECT_SNAP_F1*n_fft/CN.FS)
-       
-            polarity=1
-            #invert polarity of HRTF 4 (04: B&K Type 4128) and 6 (06: DADEC (MMHR-HRIR)) to align with reference
-            if (spatial_res <= 2) and (hrtf_type in CN.HRTF_TYPE_LIST_FLIP_POL):
-                polarity=-1
-            
-            for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    #direction specific gain
-                    avg_mag_sum = 0
-                    for chan in range(total_chan_hrir):
-                        data_fft = np.fft.fft(hf.padarray(hrir_selected[elev][azim][chan][:],n_fft))#also zero pads array in place
-                        mag_fft=np.abs(data_fft)
-                        #avg_mag_azim = np.mean(mag_fft[mag_range_a:mag_range_b])
-                        avg_mag_azim = np.mean(mag_fft[mag_range_a:mag_range_b])
-                        avg_mag_sum=avg_mag_sum+avg_mag_azim
-                    avg_mag=avg_mag_sum/total_chan_hrir
-                    
-                    for chan in range(total_chan_hrir):
-                        hrir_selected[elev][azim][chan][:] = np.divide(hrir_selected[elev][azim][chan][:],avg_mag)
-                        hrir_selected[elev][azim][chan][:] = np.multiply(hrir_selected[elev][azim][chan][:],polarity)
-
-            #
-            #apply time domain alignment
-            #
-
-            for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    azim_deg = int(azim*azim_nearest)
-                    #take left channel if azim < 180 deg, otherwise take right channel
-                    if azim_deg <= 180:
-                        index_peak_cur = np.argmax(np.abs(hrir_selected[elev][azim][0][:]))
-                    else:
-                        index_peak_cur = np.argmax(np.abs(hrir_selected[elev][azim][1][:]))    
-                    hrir_shift = index_peak_ref-index_peak_cur
-                    
-                    for chan in range(total_chan_hrir):
-                        hrir_selected[elev][azim][chan][:] = np.roll(hrir_selected[elev][azim][chan][:],hrir_shift)
-
-
-            #
-            #apply high pass filter to hrirs
-            #
-            if h_pass == True:
-                #f_crossover_var=CN.F_CROSSOVER
-                f_crossover_var=180
-                for elev in range(total_elev_hrir):
-                    for azim in range(total_azim_hrir):
-                        for chan in range(total_chan_hrir):  
-                            hrir_eq_a_h = np.copy(hrir_selected[elev][azim][chan][:])
-                            #apply hp filter
-                            hrir_eq_b_h = hf.signal_highpass_filter(hrir_eq_a_h, f_crossover_var, CN.FS, CN.ORDER)
-                            hrir_selected[elev][azim][chan][0:total_samples_hrir] = hrir_eq_b_h[0:total_samples_hrir] 
-
-
-            if lf_align == True:
-                #after aligning in high freqs, align in low freqs
-                fc_alignment=1000#500
-
-                delay_eval_set_sub_p = np.zeros((CN.NUM_INTERVALS_H))
-
-                #section to calculate best delay for next ir to align with this ir
-                for elev in range(total_elev_hrir):
-                    for azim in range(total_azim_hrir):
-                        azim_deg = int(azim*azim_nearest)
-                        if azim_deg <= 180:
-                            hrir_sample_p = np.copy(hrir_selected[elev][azim][0][:])
-                        else:
-                            hrir_sample_p = np.copy(hrir_selected[elev][azim][1][:]) 
-    
-                        #run once for positive polarity
-                        for delay in range(CN.NUM_INTERVALS_H):
-                        
-                            #shift next ir (hrir)
-                            current_shift = CN.MIN_T_SHIFT_H+(delay*CN.T_SHIFT_INTERVAL_H)
-                            hrir_shift_c = np.roll(hrir_sample_p,current_shift)
-                            
-                            #add current ir (ref hrir) to shifted next ir (hrir)
-                            sum_ir_c = np.add(hrir_ref_sample,hrir_shift_c)
-            
-                            #method 5: calculate distance from peak to peak
-                            sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, fc_alignment, CN.FS, CN.ORDER)
-                            local_max=np.max(sum_ir_lp)
-                            local_min=np.min(sum_ir_lp)
-                            if CN.PEAK_MEAS_MODE == 1:
-                                peak_to_peak = np.abs(local_max-local_min)
-                            else:
-                                peak_to_peak = np.abs(local_max)
-                
-                            #store largest pk to pk distance of all windows into delay set
-                            delay_eval_set_sub_p[delay] = peak_to_peak
-
-                        index_shift_p = np.argmax(delay_eval_set_sub_p[:])
-        
-                        index_shift=index_shift_p
-                        #shift next ir by delay that has largest peak to peak distance
-                        samples_shift=CN.MIN_T_SHIFT_H+(index_shift*CN.T_SHIFT_INTERVAL_H)
-         
-                        for chan in range(CN.TOTAL_CHAN_BRIR):
-                            #roll hrir
-                            hrir_selected[elev][azim][chan][:] = np.roll(hrir_selected[elev][azim][chan][:],samples_shift)
-                            #set end of array to zero to remove any data shifted to end of array
-                            if samples_shift < 0:
-                                hrir_selected[elev][azim][chan][samples_shift:] = hrir_selected[elev][azim][chan][samples_shift:]*0#left
-  
-            #populate hrir dataset
-            for elev in range(total_elev_hrir):
-                for azim in range(total_azim_hrir):
-                    azim_deg = int(azim*azim_nearest)
-                    
-                    #correct azimuth angle for MMHR datasets
-                    if (spatial_res <= 2) and (hrtf_type >= 5 and hrtf_type <= 8):
-                        if azim_deg <= 180:
-                            azim_deg_in = 180-azim_deg
-                        else:
-                            azim_deg_in = 180+360-azim_deg
-                        azim_in = int(azim_deg_in/azim_nearest)
-                    else:
-                        azim_in = azim
-                        
-                    for chan in range(total_chan_hrir):
-                        hrir_out[hrtf_idx,elev,azim,chan,0:total_samples_hrir] = np.copy(hrir_selected[elev][azim_in][chan][0:total_samples_hrir])
-     
-            log_string = 'level adjustment and time alignment completed for hrtf idx: ' + str(hrtf_idx)
-            hf.log_with_timestamp(log_string, gui_logger)
-
-        #save resulting dataset to a numpy file
-        if lf_align == True:
-            npy_file_name =  'hrir_dataset_compensated_lfa_' +spatial_res_str+'.npy'
-        elif h_pass == True:
-            npy_file_name =  'hrir_dataset_compensated_hp_' +spatial_res_str+'.npy'
-        else:
-            npy_file_name =  'hrir_dataset_compensated_' +spatial_res_str+'.npy'
-    
-        out_file_path = pjoin(CN.DATA_DIR_INT,npy_file_name)      
-
-        np.save(out_file_path,hrir_out)    
-
-        log_string = 'Binary saved in data folder'
-        hf.log_with_timestamp(log_string, gui_logger)
-  
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
-        
-    # get the end time
-    et = time.time()
-
-    # get the execution time
-    elapsed_time = et - st
-    if CN.LOG_INFO == True:
-        logging.info('Execution time:' + str(elapsed_time) + ' seconds')
-   
         
    
 
@@ -1595,7 +1312,7 @@ def process_mono_cues_v4(gui_logger=None):
         hptf_fft_avg_mag_le = hf.level_spectrum_ends(hptf_fft_avg_mag, level_f_a, level_f_b, smooth_win = 20)#150
         #smoothing
         #octave smoothing
-        hptf_fft_avg_mag_sm = hf.smooth_fft_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
+        hptf_fft_avg_mag_sm = hf.smooth_freq_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
         hp_cue_onear_mean_mag = np.copy(hptf_fft_avg_mag_sm)
  
         if CN.PLOT_ENABLE == True:
@@ -1629,7 +1346,7 @@ def process_mono_cues_v4(gui_logger=None):
         hptf_fft_avg_mag_le = hf.level_spectrum_ends(hptf_fft_avg_mag, level_f_a, level_f_b, smooth_win = 20)#150
         #smoothing
         #octave smoothing
-        hptf_fft_avg_mag_sm = hf.smooth_fft_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
+        hptf_fft_avg_mag_sm = hf.smooth_freq_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
         hp_cue_overear_mean_mag = np.copy(hptf_fft_avg_mag_sm)
  
         if CN.PLOT_ENABLE == True:
@@ -1662,7 +1379,7 @@ def process_mono_cues_v4(gui_logger=None):
         hptf_fft_avg_mag_le = hf.level_spectrum_ends(hptf_fft_avg_mag, level_f_a, level_f_b, smooth_win = 20)#150
         #smoothing
         #octave smoothing
-        hptf_fft_avg_mag_sm = hf.smooth_fft_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
+        hptf_fft_avg_mag_sm = hf.smooth_freq_octaves(data=hptf_fft_avg_mag_le, n_fft=n_fft, win_size_base = 20)
         hp_cue_inear_mean_mag = np.copy(hptf_fft_avg_mag_sm)
         if CN.PLOT_ENABLE == True:
             print(str(num_sets_avg))
@@ -2040,86 +1757,6 @@ def process_mono_cues_v4(gui_logger=None):
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
 
 
-def check_download_max_hrtf_datasets(download=False, gui_logger=None, report_progress=0):
-    """ 
-    Function checks if max resolution hrtf datasets are locally available, if not found it will download from google drive
-    Returns:
-       Status code: 0 = Success, 1 = Failure, 2 = Cancelled
-    """
-    status=1
-    message=''
-    
-    try:
-        
-        #log results
-        log_string = 'Checking for missing datasets'
-        hf.log_with_timestamp(log_string, gui_logger)
-        
-        #for each max res dataset
-        brir_hrtf_dataset_list_loaded = CN.HRTF_TYPE_DATASET_DICT.get('Dummy Head - Max Resolution')
-        for dataset in brir_hrtf_dataset_list_loaded:
-            
-            #for each hrtf in that dataset
-            hrtf_list_new = hrir_processing.get_listener_list(listener_type='Dummy Head / Head & Torso Simulator', dataset_name=dataset, max_res_only=True)
-            for hrtf in hrtf_list_new:
-                #url
-                gdrive_url = hrir_processing.get_gdrive_url_max(listener_type='Dummy Head / Head & Torso Simulator', dataset_name=dataset, name_gui=hrtf )
-                
-                update_required=True
-        
-                #expected file location
-                brir_hrtf_short = hrir_processing.get_name_short(listener_type='Dummy Head / Head & Torso Simulator', dataset_name=dataset, name_gui=hrtf )
-                hrir_dir_base = CN.DATA_DIR_HRIR_NPY_DH
-                sub_directory = 'm'
-                #join spatial res subdirectory
-                hrir_dir_sr = pjoin(hrir_dir_base, sub_directory)
-                # Create dataset subdirectory
-                hrir_dir_ds = pjoin(hrir_dir_sr, dataset)
-                # full filename
-                dl_file = pjoin(hrir_dir_ds, f"{brir_hrtf_short}.npy")
-                
-                # check if file exists
-                if os.path.exists(dl_file):
-                    update_required = False
-        
-                #file already available
-                if update_required==False:
-                    log_string = brir_hrtf_short + '.npy found'
-                    hf.log_with_timestamp(log_string, gui_logger)
-                        
-                #if download updates enabled
-                #download dataset from gdrive and place into relevant folder
-                if download == True and update_required == True:
-                    try:
-                        if report_progress > 0:
-                            message = 'Downloading required dataset(s)'
-                            hf.update_gui_progress(report_progress=report_progress, message=message)
-                    except:
-                        pass
-                    
-                    log_string = 'Downloading ' + brir_hrtf_short + '.npy'
-                    hf.log_with_timestamp(log_string, gui_logger)
-           
-                    gdrive_link = gdrive_url
-                    hf.download_file(gdrive_link, dl_file, gui_logger=gui_logger)
-                    #gdown.download(gdrive_link, dl_file, fuzzy=True)
-                    
-                    log_string = brir_hrtf_short + '.npy' + ' downloaded and saved to: ' + dl_file
-                    hf.log_with_timestamp(log_string, gui_logger)
-                    
-                status=0#success if reached this far
-       
-        
-
-    except Exception as ex:
-        log_string = 'Failed to validate versions or update data'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-    
-    
-    return status
-
-
-
 
 
 
@@ -2214,114 +1851,5 @@ def get_sub_f_name(sub_response="", gui_logger=None):
         
     return file_name
 
-def get_hrir_file_path(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short,
-                       spatial_res, gui_logger=None, report_progress=None):
-    """
-    Resolve and return the full file path for a given HRIR dataset
-    based on metadata such as type, GUI selection, and spatial resolution.
 
-    Parameters
-    ----------
-    brir_hrtf_type : str
-        Type of HRIR (e.g., 'Human Listener', 'Dummy Head / Head & Torso Simulator', 'Favourites', 'User SOFA Input').
-    brir_hrtf_gui : str
-        GUI-selected HRTF name.
-    brir_hrtf_dataset : str
-        Dataset folder name.
-    brir_hrtf_short : str
-        Short name of the HRTF file (without extension).
-    spatial_res : int
-        Spatial resolution index (0–3).
-    gui_logger : optional
-        Logger for GUI.
-    report_progress : optional
-        Progress callback for downloads (used in high-res sets).
-
-    Returns
-    -------
-    str
-        Full path to the .npy HRIR dataset file.
-
-    Raises
-    ------
-    ValueError
-        If invalid type combinations or dataset paths occur.
-    """
-
-    try:
-        # --- 1. Determine Base Directory ---
-        if brir_hrtf_type == 'Human Listener':
-            hrir_dir_base = CN.DATA_DIR_HRIR_NPY_HL
-
-        elif brir_hrtf_type == 'Dummy Head / Head & Torso Simulator':
-            hrir_dir_base = CN.DATA_DIR_HRIR_NPY_DH
-
-        elif brir_hrtf_type == 'Favourites':
-            if brir_hrtf_gui == CN.HRTF_AVERAGED_NAME_GUI:
-                hrir_dir_base = CN.DATA_DIR_HRIR_NPY_INTRP
-            else:
-                raise ValueError("HRIR processing failed: invalid combination for 'Favourites' type")
-
-        elif brir_hrtf_type == 'User SOFA Input':
-            # User-loaded or custom HRTF set
-            hrir_dir_base = CN.DATA_DIR_HRIR_NPY_USER
-        else:
-            raise ValueError("Invalid HRTF type")
-
-        # --- 2. Validate spatial resolution ---
-        if not (0 <= spatial_res < CN.NUM_SPATIAL_RES):
-            raise ValueError(f"Invalid spatial resolution index: {spatial_res}")
-
-        # --- 3. Subdirectory by spatial resolution ---
-        if spatial_res <= 2:
-            sub_directory = 'h'
-        else:
-            sub_directory = 'm'
-
-
-        # --- 4. Construct directory path ---
-        hrir_dir = hrir_dir_base
-
-        if brir_hrtf_type != 'Favourites':
-            hrir_dir = pjoin(hrir_dir, sub_directory)
-
-        if brir_hrtf_type not in ['User SOFA Input', 'Favourites']:
-            hrir_dir = pjoin(hrir_dir, brir_hrtf_dataset)
-
-        # --- 5. Final filename ---
-        npy_fname = pjoin(hrir_dir, f"{brir_hrtf_short}.npy")
-
-        # --- 6. Logging and return ---
-       # hf.log_with_timestamp(f"Resolved HRIR path: {npy_fname}", gui_logger)
-        return npy_fname
-
-    except Exception as ex:
-        hf.log_with_timestamp("Failed to resolve HRIR file path.", gui_logger, log_type=2, exception=ex)
-        raise
-        
-        
-def brir_hrtf_param_cleaning(brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short):
-    """
-    Cleans and resolves BRIR HRTF parameter values, including handling favourites and user SOFA inputs.
-    Returns the possibly modified (brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short).
-    """
-    # --- Case 1: Averaged favourite ---
-    if brir_hrtf_type == 'Favourites' and brir_hrtf_gui == CN.HRTF_AVERAGED_NAME_GUI:
-        brir_hrtf_short = CN.HRTF_AVERAGED_NAME_FILE
-
-    # --- Case 2: User SOFA favourite ---
-    elif brir_hrtf_type == 'Favourites' and brir_hrtf_gui.startswith(CN.HRTF_USER_SOFA_PREFIX):
-        brir_hrtf_type = 'User SOFA Input'
-        brir_hrtf_dataset = CN.HRTF_DATASET_LIST_CUSTOM[0]
-        brir_hrtf_gui = brir_hrtf_gui.removeprefix(CN.HRTF_USER_SOFA_PREFIX)
-        brir_hrtf_short = brir_hrtf_gui
-
-    # --- Case 3: Standard favourite (lookup) ---
-    elif brir_hrtf_type == 'Favourites':
-        hrtf_type, dataset, name_gui = hrir_processing.get_hrtf_info_from_name_short(name_short=brir_hrtf_gui)
-        brir_hrtf_type = hrtf_type
-        brir_hrtf_dataset = dataset
-        brir_hrtf_short = brir_hrtf_gui
-        brir_hrtf_gui = name_gui
-
-    return brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short
+   

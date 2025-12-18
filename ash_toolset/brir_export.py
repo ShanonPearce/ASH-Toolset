@@ -28,8 +28,7 @@ log_info=1
 st = time.time()
 
 
-def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, multichan_export=False, 
-                multichan_mapping=CN.PRESET_16CH_LABELS[0], resample_mode=CN.RESAMPLE_MODE_LIST[0],
+def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_ts_export=True, hesuvi_export=True, gui_logger=None, multichan_export=False, resample_mode=CN.RESAMPLE_MODE_LIST[0],
                  spatial_res=1, sofa_export=False, reduce_dataset=False, brir_dict={}, sofa_conv=None, use_stored_brirs=False, brir_dict_list=[]):
     """
     Function to export a customised BRIR to WAV files
@@ -140,7 +139,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                 return brir_data
             
             if reduce_dataset == True:
-                #case for reduced dataset
+                #case for reduced dataset, only output selected directions and some common directions
                 direction_matrix_out = generate_direction_matrix(spatial_res=spatial_res, variant=3, brir_dict=brir_dict)
             else:
                 #regular case
@@ -295,6 +294,7 @@ def export_brir(brir_arr,  brir_name, primary_path, brir_dir_export=True, brir_t
                brir_out_44_ts  = np.zeros((CN.NUM_OUT_CHANNELS_TS, out_wav_samples_44))
        
                # --- Dynamic 16-channel mapping ---
+               multichan_mapping=brir_dict.get("multichan_mapping", CN.PRESET_16CH_LABELS[0])
                mapping_order = multichan_mapping.split("|")  # e.g., ['FL','FR','FC','LFE','SL','SR','BL','BR']
        
                # Identify LFE channels safely
@@ -533,7 +533,7 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
     """
     Function returns a numpy array containing a matrix of elevations and azimuths marked for export (variant) or processing
     :param spatial_res: int, spatial resolution, 0= low (-30 to 30 deg elev, nearest 15 deg elev, 5 deg azim) 1 = moderate (-45 to 45 deg elev, nearest 15 deg elev, 5 deg azim), 2 = high (-50 to 50 deg elev, nearest 5 deg elev, 5 deg azim), 3 = full (-50 to 50 deg elev, nearest 2 deg elev, 2 deg azim)
-    :param variant: int,  0 = full range for processing, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 3 = reduce dataset wav flagged (specified directions),
+    :param variant: int,  0 = full range for processing, 1 = reduced set of directions intended for reducing post processing, 2 = reduced set of directions intended for wav export only, 3 = reduced dataset wav flagged (specified directions),
     """
 
     try:
@@ -541,14 +541,14 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
         if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
             elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
             elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
-            elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
-            elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
+            elev_min_out=CN.SPATIAL_RES_ELEV_MIN_WAV_OUT[spatial_res] 
+            elev_max_out=CN.SPATIAL_RES_ELEV_MAX_WAV_OUT[spatial_res] 
             elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
             elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            elev_nearest_out=CN.SPATIAL_RES_ELEV_NEAREST_OUT[spatial_res] 
+            elev_nearest_out=CN.SPATIAL_RES_ELEV_NEAREST_WAV_OUT[spatial_res] 
             azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
             azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
-            azim_nearest_out=CN.SPATIAL_RES_AZIM_NEAREST_OUT[spatial_res] 
+            azim_nearest_out=CN.SPATIAL_RES_AZIM_NEAREST_WAV_OUT[spatial_res] 
         else:
             raise ValueError('Invalid spatial resolution')
            
@@ -558,7 +558,7 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
         #create numpy array to return
         direction_matrix=np.zeros((output_elevs,output_azims,1,1))  
         
-        azim_horiz_range = CN.AZIM_HORIZ_RANGE
+        azim_horiz_range_config = CN.AZ_ANGLES_ALL_WAV_CIRC
         elev_list = []
         azim_list = []
         #grab elev and azim data for reduced dataset case
@@ -574,16 +574,16 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
                 azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
                 
  
-                #reduced dataset flagged case - wav output
+                #reduced dataset flagged case - wav output for specific directions
                 if variant == 3:
-                    if elev_deg in elev_list and (azim_deg_wav in azim_list or azim_deg in CN.AZIM_EXTRA_RANGE):
+                    if elev_deg in elev_list and (azim_deg_wav in azim_list or azim_deg in CN.AZIM_EXTRA_RANGE_CIRC):
                         #populate matrix with 1 if direction applicable
                         direction_matrix[elev][azim][0][0] = 1
                 #reduced set of directions for post processing or WAV output
                 elif variant >= 1:
                     #limited elevation range and azimuth resolution for spatial res 0 and 1
                     if spatial_res == 0 or spatial_res == 1: 
-                        if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_out == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
+                        if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_out == 0 and (azim_deg%azim_nearest_out == 0 or azim_deg in azim_horiz_range_config):  
                             #populate matrix with 1 if direction applicable
                             direction_matrix[elev][azim][0][0] = 1
                     elif spatial_res == 2 or spatial_res == 3: 
@@ -595,8 +595,8 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
                             if elev_deg%elev_nearest_out == 0 and azim_deg%azim_nearest_out == 0:  
                                 #populate matrix with 1 if direction applicable
                                 direction_matrix[elev][azim][0][0] = 1
-                #full dataset for variant 0
-                else:#processing matrix
+                #full dataset for variant 0 = processing matrix
+                else:
                     if (elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0):
                         #populate matrix with 1 if direction applicable
                         direction_matrix[elev][azim][0][0] = 1
@@ -608,76 +608,7 @@ def generate_direction_matrix(spatial_res=1, variant=1, brir_dict={}):
     return direction_matrix
 
 
-def find_nearest_direction(target_elevation, target_azimuth, spatial_res=1):
-    """
-    Function returns a dict containing nearest available azimuth and elevation angle for a specified hrtf and azimuth and elevation
-    Used to determine elevations and azimuths available to read from wav file dataset
-    """
-    
-    try:
-        
-        target_elevation = int(target_elevation)
-        target_azimuth = int(target_azimuth)
-        
-        
-        if spatial_res >= 0 and spatial_res < CN.NUM_SPATIAL_RES:
-            elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
-            elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
-            elev_min_out=CN.SPATIAL_RES_ELEV_MIN_OUT[spatial_res] 
-            elev_max_out=CN.SPATIAL_RES_ELEV_MAX_OUT[spatial_res] 
-            elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
-            elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
-            azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
-            azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
-        else:
-            raise ValueError('Invalid spatial resolution')
-        
-        output_azims = int(360/azim_nearest)
-        output_elevs = int((elev_max-elev_min)/elev_nearest +1)
 
-        azim_horiz_range = CN.AZIM_HORIZ_RANGE
-        
-         
-        nearest_distance = 1000.0 #start with large number
-        nearest_elevation = target_elevation
-        nearest_azimuth = target_azimuth
-
-        #for each elev and az
-        for elev in range(output_elevs):
-            elev_deg = int(elev_min + elev*elev_nearest)
-            for azim in range(output_azims):
-                azim_deg = int(azim*azim_nearest)
-                azim_deg_wav = int(0-azim_deg) if azim_deg < 180 else int(360-azim_deg)
-                
-                valid_dir = 0 
-                
-                if spatial_res == 0: 
-                    if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
-                        valid_dir = 1 
-                elif spatial_res == 1: 
-                    if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and (azim_deg%CN.NEAREST_AZ_WAV == 0 or (elev_deg >= -30 and elev_deg <= 30 and azim_deg in azim_horiz_range)):  
-                        valid_dir = 1 
-                elif spatial_res == 2 or spatial_res == 3:
-                    if (elev_deg >= elev_min_out and elev_deg <= elev_max_out) and elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0:  
-                        valid_dir = 1 
-                else:
-                    if (elev_deg%elev_nearest_process == 0 and azim_deg%azim_nearest_process == 0):
-                        valid_dir = 1 
-                
-                if valid_dir == 1:  
-                    current_distance = sqrt(abs(elev_deg-target_elevation)**2 + abs(azim_deg_wav-target_azimuth)**2)
-                    #store this direction if it is closer than previous
-                    if current_distance < nearest_distance:
-                        nearest_distance=current_distance
-                        nearest_elevation=elev_deg
-                        nearest_azimuth=azim_deg_wav
-                    
-        out_dict = {'nearest_elevation': nearest_elevation, 'nearest_azimuth': nearest_azimuth, 'nearest_distance': nearest_distance}
-        
-        return out_dict
-        
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
         
 
 

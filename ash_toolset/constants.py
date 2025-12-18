@@ -406,8 +406,37 @@ def refresh_sub_responses():
     SUB_RESPONSE_LIST_SOURCE = extract_column(data=sub_data, column='source_type')
     SUB_RESPONSE_LIST_LISTENER = extract_column(data=sub_data, column='listener_type')
 
- 
+def load_azimuth_lookup(csv_path):
+    """
+    Load azimuth/channel YES/NO table and return a dict of lists.
+    Example return structure:
+        {
+            'fl': [-90, -75, ...],
+            'fr': [90, 75, ...],
+            ...
+        }
+    """
+    # Initialize output dict
+    channels = ["fl", "fr", "c", "sl", "sr", "rl", "rr"]
+    result = {ch: [] for ch in channels}
+
+    with open(csv_path, newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            az = int(row["azimuth"])
+            for ch in channels:
+                if row[ch].strip().lower() == "yes":
+                    result[ch].append(az)
+
+    return result 
     
+def sort_azimuths_by_front_priority(angle_list):
+    """
+    Sorts azimuth angles so that angles closest to 0° come first.
+    Example: [-90, 0, -30] → [0, -30, -90]
+    """
+    return sorted(angle_list, key=lambda a: abs(a))
+
 def get_version(metadata_file_path):
     try:
         with open(metadata_file_path) as fp:
@@ -415,13 +444,14 @@ def get_version(metadata_file_path):
     except Exception:
         return "0.0"
 
-
+def to_circular(angle):
+    return (360 - angle) % 360
 
 ################################ 
 #Constants
 
 
-#commonly used
+########## commonly used for fitlering and transformations
 N_FFT = 65536
 N_FFT_L = int(65536*2)
 N_UNIQUE_PTS = int(np.ceil((N_FFT+1)/2.0))
@@ -429,8 +459,28 @@ SAMP_FREQ = 44100#sample rate for ash toolset
 FS=SAMP_FREQ#keep for backwards compat
 THRESHOLD_CROP = 0.0000005#0.0000005 -120db with reference level of 0.5
 
+TOTAL_SAMPLES_HRIR=256
+TOTAL_CHAN_HRIR = 2
+TOTAL_CHAN_BRIR = 2
+INTERIM_ELEVS = 1
+NEAREST_AZ_BRIR_REVERB = 15
+OUTPUT_AZIMS_REVERB = int(360/NEAREST_AZ_BRIR_REVERB)
 
-#Developer settings
+SPECT_SNAP_F0=160
+SPECT_SNAP_F1=3500#1500
+SPECT_SNAP_M_F0=800#1200
+SPECT_SNAP_M_F1=2100#1800
+IGNORE_MS=0#50,100
+#window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
+WINDOW_TYPE=2#1
+ALIGNMENT_METHOD = 5
+
+RT60_MAX_S=1250
+RT60_MAX_L=2500
+#control level of direct sound
+DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
+
+#############  Developer settings
 PLOT_ENABLE = False#False
 LOG_MEMORY=False #False
 LOG_INFO=True     
@@ -442,8 +492,11 @@ STOP_THREAD_FLAG = False
 SHOW_AS_TAB = True
 EXPORT_WAVS_DEFAULT=False#False
 
-#control level of direct sound
-DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
+
+
+#
+################ Low frequency extension and alignment constants
+#
 
 #crossover frequency for low frequency BRIR integration
 ENABLE_SUB_INTEGRATION = True
@@ -454,6 +507,7 @@ PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
 FILTFILT_TDALIGN = False#apply forward reverse filtering in td alignment method?
 FILTFILT_TDALIGN_AIR = False#apply forward reverse filtering in td alignment method?
 FILTFILT_THRESH_F = 45
+MIN_FILT_FREQ = 8#values below this will not be allowed in filter generation
 #size to hop peak to peak window
 DELAY_WIN_HOP_SIZE = 25#10
 DELAY_WIN_MIN_T = 0
@@ -518,32 +572,18 @@ MIN_T_SHIFT_S = -1000#-900
 MAX_T_SHIFT_S = 50#250
 NUM_INTERVALS_S = int(np.abs((MAX_T_SHIFT_S-MIN_T_SHIFT_S)/T_SHIFT_INTERVAL_S))
 
-ALIGN_LIMIT_AZIM = 1#option to limit azimuths for TD alignment
-TOTAL_SAMPLES_HRIR=256
-TOTAL_CHAN_HRIR = 2
-TOTAL_CHAN_BRIR = 2
-INTERIM_ELEVS = 1
-NEAREST_AZ_BRIR_REVERB = 15
-OUTPUT_AZIMS_REVERB = int(360/NEAREST_AZ_BRIR_REVERB)
 
 
-#apply room sorting based on size
-SORT_ROOMS_BY_SIZE=1
-#enable shifting of rooms list
-ROLL_ROOM = 0
 
-#apply room weighting based on size
-ROOM_WEIGHTING_DESC=1
-SPECT_SNAP_F0=160
-SPECT_SNAP_F1=3500#1500
-SPECT_SNAP_M_F0=800#1200
-SPECT_SNAP_M_F1=2100#1800
-IGNORE_MS=0#50,100
-#window for reverb shaping: 1=Hanning,2=Bartlett,3=blackman,4=hamming
-WINDOW_TYPE=2#1
-ALIGNMENT_METHOD = 5
 
-#directories for app related data, relative to app directory
+
+
+
+
+
+############# directories for app related data, relative to app directory
+#
+
 BASE_DIR_OS= path.abspath(path.dirname(path.dirname(__file__)))#using os.path
 SCRIPT_DIR_OS = path.abspath(path.dirname(__file__))#using os.path
 BASE_DIR_PATH = Path(__file__).resolve().parents[1] #using Pathlib
@@ -568,6 +608,7 @@ DATA_DIR_RAW = pjoin(BASE_DIR_OS, 'data','raw')
 DATA_DIR_RAW_HP_MEASRUEMENTS = pjoin(BASE_DIR_OS, 'data','raw','headphone_measurements')
 DATA_DIR_ROOT = pjoin(BASE_DIR_OS, 'data')
 DATA_DIR_OUTPUT = pjoin(BASE_DIR_OS, 'data','processed')
+DOCS_DIR_GUIDE = pjoin(BASE_DIR_OS, 'docs','user_guide')
 PROJECT_FOLDER = 'ASH-Outputs'   
 PROJECT_FOLDER_SSD = 'ASH-Custom-Set' 
 PROJECT_FOLDER_BRIRS = pjoin(PROJECT_FOLDER, 'BRIRs')  
@@ -589,14 +630,24 @@ SETTINGS_FILE = SETTINGS_FILE_NEW
 SETTINGS_DIR = os.path.dirname(SETTINGS_FILE) 
 __version__ = get_version(metadata_file_path=METADATA_FILE)
 
-#constants for writing WAVs
-NEAREST_AZ_WAV = 15
-MIN_ELEV_WAV=0
-MAX_ELEV_WAV=0
-ELEV_OFFSET_WAV = np.abs(MIN_ELEV_WAV)
-OUTPUT_AZIMS_WAV = int(360/NEAREST_AZ_WAV)
+################# Repository links
+USER_GUIDE_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/docs/user_guide/user_guide.txt"
+AS_META_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/data/interim/reverberation/reverberation_metadata_v2.csv"
+MAIN_APP_META_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
+TU_FAB_MAX_HRIR_GD_URL = "https://drive.google.com/file/d/1Q14yEBTv2JDu92pPloUQXf_SthSApQ8L/view?usp=drive_link"
+TU_KU_MAX_HRIR_GD_URL = "https://drive.google.com/file/d/1vmpLYlH-BjBoFvziTD29WqxZGaoYsFuF/view?usp=drive_link"
+TU_FAB_MAX_HRIR_GH_URL = ("https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/data/interim/hrir_dataset_comp_max_TU-FABIAN.npy")
+TU_KU_MAX_HRIR_GH_URL = ("https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/data/interim/hrir_dataset_comp_max_THK-KU-100.npy")
+TU_KU_MAX_HRIR_URLS = [TU_KU_MAX_HRIR_GH_URL, TU_KU_MAX_HRIR_GD_URL]
+TU_FAB_MAX_HRIR_URLS = [TU_FAB_MAX_HRIR_GH_URL,TU_FAB_MAX_HRIR_GD_URL]
+AVG_MAX_HRIR_URL = ""
+ASH_FILT_DB_META_URL = "https://github.com/ShanonPearce/ASH-Toolset/raw/refs/heads/main/data/processed/hpcf_database_metadata.json"#"https://drive.google.com/file/d/1lcJrNhusYq1g-M8As1JHwHIYYAXRhr-X/view?usp=drive_link"
+COMP_FILT_DB_META_URL = "https://github.com/ShanonPearce/ASH-Toolset/raw/refs/heads/main/data/processed/hpcf_compilation_database_metadata.json"#"https://drive.google.com/file/d/18WZ1DX9s4LJyHYgw5yCnOHKy6SWxiB3p/view?usp=drive_link"
+ASH_FILT_DB_URL = "https://github.com/ShanonPearce/ASH-Toolset/raw/refs/heads/main/data/processed/hpcf_database.db"#"https://drive.google.com/file/d/1car3DqHNqziJbgduV4VsVngyBgaTTY2I/view?usp=drive_link"
+COMP_FILT_DB_URL = "https://github.com/ShanonPearce/ASH-Toolset/raw/refs/heads/main/data/processed/hpcf_compilation_database.db"#"https://drive.google.com/file/d/1gDrqfyZ4umSXmrn4pjJMzZJb0ipeAs_a/view?usp=drive_link"
+HRTF_META_URL = "https://github.com/ShanonPearce/ASH-Toolset/raw/refs/heads/main/data/interim/hrir/hrir_metadata.csv"#"https://drive.google.com/file/d/18ZEFwEKXQVhqpuyLp-FnyDZf35VJFyky/view?usp=drive_link"
 
-#GUI related
+########################    GUI related
 TOOLTIP_GAIN = 'Positive values may result in clipping'
 TOOLTIP_ELEVATION = 'Positive values are above the listener while negative values are below the listener'
 TOOLTIP_AZIMUTH = 'Positive values are to the right of the listener while negative values are to the left'
@@ -611,15 +662,26 @@ PROGRESS_START_BRIR='Ready to Apply Parameters'
 PROGRESS_FIN_ALT=' Finished   '
 PROGRESS_START_ALT=' Ready to Start'
 PROCESS_BUTTON_BRIR='Apply Parameters'
-PROCESS_BUTTON_HPCF='Apply Selection'
-
+PROCESS_BUTTON_HPCF='Apply Filter'
+BUTTON_IMAGE_ON='on_blue_image'
+BUTTON_IMAGE_OFF='off_image'
 
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength','None']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low','Hp-Comp-None']
+HRTF_DF_CAL_MODE_LIST = ['Enable Calibration','Retain Diffuse-field','Retain and level spectrum ends']
+PLOT_TYPE_LIST = ['Magnitude Response','Impulse Response','Group Delay', 'Decay']
 
+#gui
+DIRECT_GAIN_MAX=10#8
+DIRECT_GAIN_MIN=-10#-8
+EAPO_ERROR_CODE=501
+ER_RISE_MAX=10#in ms
+ER_RISE_MIN=0#
+TAB_QC_CODE=1
+TAB_FDE_CODE=2
+TAB_QC_IA_CODE=3
 
-
-#Room target related
+######################################### Room target related
 ROOM_TARGETS_DICT = {}
 ROOM_TARGET_LIST = []
 ROOM_TARGET_LIST_SHORT = []
@@ -630,13 +692,12 @@ ROOM_TARGET_INDEX_MAP = []
 refresh_room_targets()
 
 
-#BRIR writing
+#######################################   BRIR writing
 #number of directions to grab to built HESUVI IR
 NUM_SOURCE_AZIM_HE = 7
 NUM_OUT_CHANNELS_HE = NUM_SOURCE_AZIM_HE*2
 NUM_OUT_CHANNELS_TS = 4
 NUM_OUT_CHANNELS_MC = 16
-
 PRESET_16CH_LABELS = [
     # Standard home 7.1 front-back layout
     "FL|FR|FC|LFE|SL|SR|BL|BR",
@@ -652,70 +713,81 @@ PRESET_16CH_LABELS = [
     "FL|FR|BL|BR|FC|LFE|SL|SR"
 ]
 
-#Equalizer APO constants
-BRIR_EXPORT_ENABLE = True
-AZIM_DICT = {'WIDE_BL':'-135','WIDE_BR':'135','NARROW_BL':'-150','NARROW_BR':'150','WIDEST_BL':'-120','WIDEST_BR':'120','SL':'-90','SR':'90','FL':'-30','FR':'30','FC':'0','WIDE_FL':'-35','WIDE_FR':'35','NARROW_FL':'-25','NARROW_FR':'25'}
-CHANNEL_CONFIGS = [['2.0_Stereo','2.0','2.0 Stereo'],['2.0_Stereo_Narrow','2.0N','2.0 Stereo (narrow placement)'],['2.0_Stereo_Wide','2.0W','2.0 Stereo (wide placement)'],['7.1_Surround_Narrow_Back','7.1N','7.1 surround (narrow back placement)'],['7.1_Surround_Wide_Back','7.1W','7.1 surround (wide back placement)'],['5.1_Surround','5.1','5.1 surround']]
+
+################ Equalizer APO constants
+#
+#
 AUDIO_CHANNELS = ['2.0 Stereo','2.0 Stereo Upmix to 7.1','5.1 Surround','7.1 Surround','7.1 Downmix to Stereo']
 UPMIXING_METHODS = ['Method A','Method B']
 AUTO_GAIN_METHODS = ['Disabled','Prevent Clipping','Align Low Frequencies','Align Mid Frequencies']
-NUM_SPEAK_CONFIGS = len(CHANNEL_CONFIGS)
 ELEV_ANGLES_WAV_BK = [-30,0,30]
-ELEV_ANGLES_WAV = [45,30,15,0,-15,-30,-45]#[-45,-30,-15,0,15,30,45]
+ELEV_ANGLES_WAV = [45,30,15,0,-15,-30,-45]#
 ELEV_ANGLES_WAV_LOW = [30,15,0,-15,-30]
 ELEV_ANGLES_WAV_MED = [45,30,15,0,-15,-30,-45]
 ELEV_ANGLES_WAV_HI = [45,30,20,15,10,5,0,-5,-10,-15,-20,-30,-45]
 ELEV_ANGLES_WAV_MAX = [40,30,20,15,10,5,0,-5,-10,-15,-20,-30,-40]
-AZ_ANGLES_FL_WAV = [-90,-75,-60,-45,-40,-35,-30,-25,-20,-15,0]
-AZ_ANGLES_FR_WAV = [90,75,60,45,40,35,30,25,20,15,0]
-AZ_ANGLES_C_WAV = [-5,5,0]
-AZ_ANGLES_SL_WAV = [-150,-135,-120,-105,-90,-75,-60]
-AZ_ANGLES_SR_WAV = [150,135,120,105,90,75,60]
-AZ_ANGLES_RL_WAV = [180,-165,-150,-135,-120,-105,-90]
-AZ_ANGLES_RR_WAV = [180,165,150,135,120,105,90]
-AZ_ANGLES_FL_WAV.reverse()
-AZ_ANGLES_FR_WAV.reverse()
-AZ_ANGLES_C_WAV.reverse()
-AZ_ANGLES_SL_WAV.reverse()
-AZ_ANGLES_SR_WAV.reverse()
-AZ_ANGLES_RL_WAV.reverse()
-AZ_ANGLES_RR_WAV.reverse()
-AZIM_HORIZ_RANGE = {5,20,25,35,40,355,340,335,325,320}
-AZIM_EXTRA_RANGE = {25,30,35,335,330,325}
-EAPO_MUTE_GAIN=-70.0
 
-#spatial resolution
+#Reduced set of commonly used azimuth angles for reduced wav dataset export and E-APO configuration. Resolution must not exceed nearest 5 degrees.
+#grab from csv
+LOOKUP_CSV = pjoin(DATA_DIR_RAW, "channel_config_azimuths.csv")
+# Load the table
+AZ_LOOKUP = load_azimuth_lookup(LOOKUP_CSV)
+# Now build the angled lists dynamically
+AZ_ANGLES_FL_WAV = sort_azimuths_by_front_priority(AZ_LOOKUP["fl"])
+AZ_ANGLES_FR_WAV = sort_azimuths_by_front_priority(AZ_LOOKUP["fr"])
+AZ_ANGLES_C_WAV  = sort_azimuths_by_front_priority(AZ_LOOKUP["c"])
+AZ_ANGLES_SL_WAV = sort_azimuths_by_front_priority(AZ_LOOKUP["sl"])
+AZ_ANGLES_SR_WAV = sort_azimuths_by_front_priority(AZ_LOOKUP["sr"])
+AZ_ANGLES_RL_WAV = sort_azimuths_by_front_priority(AZ_LOOKUP["rl"])
+AZ_ANGLES_RR_WAV = sort_azimuths_by_front_priority(AZ_LOOKUP["rr"])
+AZ_ANGLES_ALL_WAV = list(set(AZ_ANGLES_FL_WAV +AZ_ANGLES_FR_WAV +AZ_ANGLES_C_WAV +AZ_ANGLES_SL_WAV +AZ_ANGLES_SR_WAV +AZ_ANGLES_RL_WAV +AZ_ANGLES_RR_WAV))
+AZ_ANGLES_ALL_WAV_CIRC = sorted({to_circular(a) for a in AZ_ANGLES_ALL_WAV})#convert to circular (CCW) numbering
+AZIM_EXTRA_RANGE_CIRC = {25,30,35,335,330,325}#set of commonly used azimuths to always include in reduced export, in circular numbering
+
+EAPO_MUTE_GAIN=-80.0#custom gain level used to mute but not disable processing
+
+
+################ Spatial Dataset and Resolution Definitions
+#
+#constants for writing WAVs
+#below defines each level of spatial resolution. Each level will determine how many directions will be processed and saved to file. Lower levels are more suitable for WAV exports.
 SPATIAL_RES_LIST = ['Low','Medium','High']#0=low,1=med,2=high,3=max v3.6 was ['Low','Medium','High','Max']
 SPATIAL_RES_LIST_LIM = ['Low','Medium','High']
-SPATIAL_RES_ELEV_DESC = ['-30 to 30 degrees in 15 degree steps.','-45 to 45 degrees in 15 degree steps.',
-                         '-50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps.','-40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps.']
-SPATIAL_RES_AZIM_DESC = ['0 to 360 degrees in varying steps.','0 to 360 degrees in varying steps.',
-                         '0 to 360 degrees in 5 degree steps.','0 to 360 degrees in 2 degree steps.']
-SPATIAL_RES_ELEV_RNG = ['-30° to 30°','-45° to 45°',
-                         '-50° to 50° (WAV) or -60° to 60° (SOFA)','-40° to 40° (WAV) or -40° to 60° (SOFA)']
-SPATIAL_RES_AZIM_RNG = ['0° to 360°','0° to 360°',
-                         '0° to 360°','0° to 360°']
-SPATIAL_RES_ELEV_STP = ['15° steps','15° steps',
-                         '5° steps','2° steps']
-SPATIAL_RES_AZIM_STP = ['varying','varying',
-                         '5° steps','2° steps']
+SPATIAL_RES_ELEV_DESC = ['-30 to 30 degrees in 15 degree steps.','-45 to 45 degrees in 15 degree steps.','-50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps.','-40 to 40 degrees (WAV export) or -40 to 60 degrees (SOFA export) in 2 degree steps.']
+SPATIAL_RES_AZIM_DESC = ['-180 to 180 or 0 to 360 degrees in varying steps.','-180 to 180 or 0 to 360 degrees in varying steps.','-180 to 180 or 0 to 360 degrees in varying steps.','-180 to 180 or 0 to 360 degrees in varying steps.']
+SPATIAL_RES_ELEV_RNG = ['-30° to 30°','-45° to 45°','-50° to 50° (WAV) or -60° to 60° (SOFA)','-40° to 40° (WAV) or -40° to 60° (SOFA)']
+SPATIAL_RES_AZIM_RNG = ['-180° to 180° (WAV) or 0° to 360° (SOFA)','-180° to 180° (WAV) or 0° to 360° (SOFA)','-180° to 180° (WAV) or 0° to 360° (SOFA)','-180° to 180° (WAV) or 0° to 360° (SOFA)']
+SPATIAL_RES_ELEV_STP = ['15° steps','15° steps','5° steps','2° steps']
+SPATIAL_RES_AZIM_STP = ['varying','varying','5° steps','2° steps']
 NUM_SPATIAL_RES = len(SPATIAL_RES_LIST)
-SPATIAL_RES_ELEV_MIN_IN=[-60, -60, -60, -40 ]#as per hrir dataset
-SPATIAL_RES_ELEV_MAX_IN=[60, 60, 60, 60 ]#as per hrir dataset
-SPATIAL_RES_ELEV_MIN_OUT=[-30, -45, -50, -40 ]#reduced set
-SPATIAL_RES_ELEV_MAX_OUT=[30, 45, 50, 40 ]#reduced set
-SPATIAL_RES_ELEV_NEAREST_IN=[5, 5, 5, 2]#as per hrir dataset
-SPATIAL_RES_AZIM_NEAREST_IN=[5, 5, 5, 2]#as per hrir dataset
-SPATIAL_RES_ELEV_NEAREST_PR=[15, 15, 5, 2]#3.1.0 increased processing resolution from [15, 15, 5, 2]
-SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]#
-# SPATIAL_RES_ELEV_NEAREST_PR_R=[15, 15, 5, 2]#
-# SPATIAL_RES_AZIM_NEAREST_PR_R=[5, 5, 5, 2]#
-SPATIAL_RES_ELEV_NEAREST_OUT=[15, 15, 5, 2]#
-SPATIAL_RES_AZIM_NEAREST_OUT=[5, 5, 5, 2]#
+#below defines structure of internal spatial datasets at each spatial resolution
+SPATIAL_RES_AZIM_MIN_IN=[0, 0, 0, 0 ]#lower limits (inclusive)
+SPATIAL_RES_AZIM_MAX_IN=[355, 355, 355, 358 ]#upper limits (inclusive)
+SPATIAL_RES_ELEV_MIN_IN=[-60, -60, -60, -40 ]#lower limits (inclusive)
+SPATIAL_RES_ELEV_MAX_IN=[60, 60, 60, 60 ]#upper limits (inclusive)
+SPATIAL_RES_ELEV_NEAREST_IN=[5, 5, 5, 2]#grid size (elevation)
+SPATIAL_RES_AZIM_NEAREST_IN=[5, 5, 5, 2]#grid size (azimuth)
+#below defines processing grid size, must not exceed internal grid size
+SPATIAL_RES_ELEV_NEAREST_PR=[15, 15, 5, 2]
+SPATIAL_RES_AZIM_NEAREST_PR=[5, 5, 5, 2]
+#below defines resolution of WAV output datasets, must not exceed input limits and processing grid size
+SPATIAL_RES_ELEV_MIN_WAV_OUT=[-30, -45, -50, -40 ]
+SPATIAL_RES_ELEV_MAX_WAV_OUT=[30, 45, 50, 40 ]
+SPATIAL_RES_ELEV_NEAREST_WAV_OUT=[15, 15, 5, 2]
+SPATIAL_RES_AZIM_NEAREST_WAV_OUT=[15, 15, 5, 2]
+
+HRTF_DIRECTION_FIX_LIST = [None,"swap_left_right", "front_back","back_cw_start","rotate_cw_90","rotate_ccw_90","invert_elevation" , ('offset', 5), ('offset', -5), ('offset', 10), ('offset', -10)]
+HRTF_DIRECTION_FIX_LIST_GUI = ["None","Reverse azimuths (CW <-> CCW)", "Reference starts at back (180° shift)", "Reference starts at back and reversed","Reference starts at left (-90° shift)",
+                               "Reference starts at right (+90° shift)","Flip elevation sign" , "Azimuth offset (+5° shift)", "Azimuth offset (-5° shift)", "Azimuth offset (+10° shift)", "Azimuth offset (-10° shift)"]
+HRTF_DIRECTION_FIX_LIST_DESC = ["No change to orientation","Reverses azimuth rotation direction (CW <-> CCW) without shifting the reference point.","Rotates the coordinate system by 180°, swapping front and back.",
+                                "Rotates the coordinate system by 180° and reverses azimuths.","Rotates the entire azimuth grid -90° (clockwise).","Rotates the entire azimuth grid +90° (counter-clockwise).",
+                                "Flips elevation sign (positive <-> negative), inverting above/below.","Rotates the entire azimuth grid +5° (counter-clockwise).","Rotates the entire azimuth grid -5° (clockwise).",
+                                "Rotates the entire azimuth grid +10° (counter-clockwise).","Rotates the entire azimuth grid -10° (clockwise)."]
 
 
 
-#hpcf related
+################ hpcf related
+#
 NUM_ITER = 8 #was 4
 PARAMS_PER_ITER = 4 #was 8
 SENSITIVITY = 0.003 #0.003
@@ -762,13 +834,10 @@ with open(csv_fname, encoding='utf-8-sig', newline='') as inputfile:
 GEQ_SET_F_103 = np.array(GEQ_SET_F_103)
 
 
-#gui
-DIRECT_GAIN_MAX=10#8
-DIRECT_GAIN_MIN=-10#-8
-EAPO_ERROR_CODE=501
-ER_RISE_MAX=10#in ms
-ER_RISE_MIN=0#
 
+
+############### Export related constants
+#
 SAMPLE_RATE_LIST = ['44.1 kHz', '48 kHz', '96 kHz']
 SAMPLE_RATE_DICT = {'44.1 kHz': 44100, '48 kHz': 48000, '96 kHz': 96000}  
 BIT_DEPTH_LIST = ['24 bit', '32 bit']
@@ -781,18 +850,18 @@ LIMIT_REBERB_DIRS=True
 MIN_REVERB_DIRS=1
 MAX_IRS=3500#2520
 MAX_IRS_TRANSFORM=2500#2520,1550,1050,2500 for combined
-IR_MIN_THRESHOLD=800#before this number of IRs, transform will be applied to expand dataset
-IR_MIN_THRESHOLD_FULLSET=1600
+IR_MIN_THRESHOLD=1200#below this number of IRs, transform will be applied to expand dataset
+IR_MIN_THRESHOLD_TRANSFORM=400#below this number of IRs, transform will not be applied
+IR_MIN_THRESHOLD_FULLSET=1600#min number of IRs to create 7 brir sources, otherwise defaults to 5
 DIRECTION_MODE=3#0=one set of azimuths for each source, 1 = separate set of azimuths for left and right hem,2 = random using triangle distribution, 3 = biased_spherical_coordinate_sampler
 MAG_COMP=True#enables DF compensation in AIR processing   True
 RISE_WINDOW=True#enables windowing of initial rise in AIR processing
 
-#deprecated
-RT60_MIN=200
-RT60_MAX_S=1250
-RT60_MAX_L=2250
 
-#Acoustic space related
+
+
+############### Acoustic space related
+#
 AC_SPACE_LIST_COMP = ['generic_room_a', 'auditorium_a']
 AC_SPACE_LIST_KU100 = ['concert_hall_a','music_chamber_a','theater_a']
 AC_SPACE_LIST_SOFA_0 = ['audio_lab_a','office_a','studio_a','audio_lab_i']#sofa objects are divided evenly among all sets. (limited measurements per sofa)
@@ -806,7 +875,6 @@ AC_SPACE_LIST_ISO = ['sub_set_a','sub_set_b']
 AC_SPACE_LIST_ANU = ['studio_c','studio_d']#'studio_b'
 AC_SPACE_LIST_44100 = ['outdoors_b']
 AC_SPACE_LIST_SUBRIRDB = ['sub_set_c']
-#AC_SPACE_LIST_NR = ['tatami_room_a','listening_room_a','listening_room_b','listening_room_c','listening_room_d','listening_room_g','courtyard_a','church_a']
 AC_SPACE_LIST_CUTOFF = ['concert_hall_a']
 AC_SPACE_LIST_LIM_CHANS = ['concert_hall_a','hall_a']
 AC_SPACE_LIST_LIM_SETS = ['hall_a', 'outdoors_a','broadcast_studio_a','concert_hall_a', 'outdoors_b','seminar_room_a','seminar_room_b','lobby_a','seminar_room_c','broadcast_studio_b','office_b']
@@ -822,7 +890,6 @@ AC_SPACE_LIST_RWCP = ['audio_lab_f','conference_room_b', 'tatami_room_a']
 AC_SPACE_LIST_VARIED_R = [' ']
 AC_SPACE_LIST_AVG = ['audio_lab_a','audio_lab_b','audio_lab_d','control_room_a','conference_room_a','control_room_a','office_a','audio_lab_g', 'audio_lab_f','audio_lab_e','audio_lab_h']
 AC_SPACE_LIST_LIM_AZ = [' ']
-# #HRTF_LIST_NUM = ['01: Neumann KU 100 (SADIE)', '02: Neumann KU 100 (TH Köln)', '03: FABIAN HATS', '04: B&K Type 4128', '05: B&K Type 4128C (MMHR-HRIR)', '06: DADEC (MMHR-HRIR)', '07: HEAD acoustics HMSII.2 (MMHR-HRIR)', '08: KEMAR (MMHR-HRIR)', '09: KEMAR-N (MIT)', '10: KEMAR-L (MIT)', '11: KEMAR (SADIE)', '12: KEMAR-N (PKU-IOA)', '13: KEMAR-L (PKU-IOA)']
 AC_SPACE_LIST_SORT_BY = ['Name','Reverberation Time']
 AC_SPACE_LIST_HI_FC = []
 AC_SPACE_LIST_MID_FC = []
@@ -864,25 +931,13 @@ REV_METADATA_FILE_NAME='reverberation_metadata_v2.csv'#was 'reverberation_metada
 refresh_acoustic_space_metadata()
 
 
-# ## Accessing data example
-# for entry in reverb_data:
-#     print(entry['name_gui'], entry['est_rt60'])
-# #
-# AC_SPACE_LIST_GUI = extract_column(reverb_data, 'name_gui')                        # strings
-# AC_SPACE_MEAS_R60 = extract_column(reverb_data, 'meas_rt60')                      # ints
-# AC_SPACE_FADE_START = extract_column(reverb_data, 'fade_start')                   # ints
-# AC_SPACE_GAINS = extract_column(reverb_data, 'gain')                              # floats
-# AC_SPACE_LIST_LOWRT60 = extract_column(reverb_data, 'name_src', 'low_rt60', 'Yes')
-# AC_SPACE_LIST_COMP = extract_column(reverb_data, 'name_src', 'folder', 'comp_bin')
-# # All rows using 'max' HRTF dataset
-# AC_SPACE_LIST_MAX_SRC = [row['name_src'] for row in reverb_data if row.get('source_hrtf_dataset') == 'max']
 
 
-
-#SOFA related
+############     SOFA related
+#
 
 #new: load as dict lists
-csv_directory = DATA_DIR_SOFA
+csv_directory = DATA_DIR_ROOT
 sofa_data = load_csv_as_dicts(csv_directory,'supported_conventions.csv')
 
 SOFA_COMPAT_CONV = extract_column(data=sofa_data, column='Convention')  
@@ -894,6 +949,8 @@ SOFA_OUTPUT_CONVERS = extract_column(data=sofa_data, column='SOFAConventionsVers
 
 
 
+############### HRTF Dataset Related
+#
 #HRTF related - individual datasets
 HRTF_A_GAIN_ADDIT = 2.5#
 #Strings
@@ -911,8 +968,10 @@ HRTF_TYPE_DEFAULT = extract_column(data=hrtf_data, column='hrtf_type', condition
 HRTF_DATASET_DEFAULT = extract_column(data=hrtf_data, column='dataset', condition_key='default', condition_value='Yes', return_all_matches=False)
 HRTF_LISTENER_DEFAULT = extract_column(data=hrtf_data, column='name_gui', condition_key='default', condition_value='Yes', return_all_matches=False)
 
-HRTF_DATASET_LIST_CUSTOM = ['N/A']
-HRTF_DATASET_CUSTOM_DEFAULT = HRTF_DATASET_LIST_CUSTOM[0]
+HRTF_DATASET_LIST_USER = ['User Sourced']
+HRTF_DATASET_LIST_FAVOURITES = ['User Favourites']
+HRTF_DATASET_USER_DEFAULT = HRTF_DATASET_LIST_USER[0]
+HRTF_DATASET_FAVOURITES_DEFAULT = HRTF_DATASET_LIST_FAVOURITES[0]
 # Remove duplicates by converting to a set and back to a list
 HRTF_DATASET_LIST_INDV = list(set(HRTF_DATASET_LIST_INDV))
 # Sort the list alphabetically
@@ -927,9 +986,9 @@ HRTF_DATASET_LIST_DUMMY_MAX.sort()
 HRTF_TYPE_DATASET_DICT = {
     HRTF_TYPE_LIST_FULL[0]: HRTF_DATASET_LIST_DUMMY,
     HRTF_TYPE_LIST_FULL[1]: HRTF_DATASET_LIST_INDV,
-    HRTF_TYPE_LIST_FULL[2]: HRTF_DATASET_LIST_CUSTOM,
+    HRTF_TYPE_LIST_FULL[2]: HRTF_DATASET_LIST_USER,
     HRTF_TYPE_LIST_FULL[3]: HRTF_DATASET_LIST_DUMMY_MAX,
-    HRTF_TYPE_LIST_FULL[4]: HRTF_DATASET_LIST_CUSTOM
+    HRTF_TYPE_LIST_FULL[4]: HRTF_DATASET_LIST_FAVOURITES
 }
 HRTF_POLARITY_LIST = ['Auto Select','Original','Reversed']
 
@@ -940,9 +999,12 @@ HRTF_AVERAGED_NAME_FILE = "hrir_favourites_averaged"
 HRTF_USER_SOFA_DEFAULT = 'No SOFA files found'
 HRTF_USER_SOFA_PREFIX = 'u-'
 
-#SUB Related
+
+###############      SUB Related
+#
+
 SUB_FC_SETTING_LIST = ['Auto Select', 'Custom Value']
-SUB_FC_MIN=20
+SUB_FC_MIN=0
 SUB_FC_MAX=150
 SUB_FC_DEFAULT=120
 
@@ -972,13 +1034,10 @@ SUB_FIELD_NAMES = [
 refresh_sub_responses()
 
 
-
-
 #plotting
 IMPULSE=np.zeros(N_FFT)
 IMPULSE[0]=1
 FR_FLAT_MAG = np.abs(np.fft.fft(IMPULSE))
-
 
 # Define the center frequencies of the 1/3-octave bands
 OCTAVE_BANDS = np.array([50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 
@@ -994,7 +1053,6 @@ _SAVE_DEBOUNCE_TIME = 0.1  # seconds
 
 
 # === GUI Defaults ===
-
 DEFAULTS = {
     # === Not directly GUI related, don't remove ===
     "path": "C:\\Program Files\\EqualizerAPO\\config",
@@ -1006,11 +1064,11 @@ DEFAULTS = {
     "fde_hpcf_brand": "",#hpcf_brand, not known until db loaded
     "fde_hpcf_headphone": "",#hpcf_headphone, not known until db loaded
     "fde_hpcf_sample": "",#hpcf_sample, not known until db loaded
-    "fir_hpcf_toggle": True,
-    "fir_st_hpcf_toggle": False,
-    "hesuvi_hpcf_toggle": False,
-    "geq_hpcf_toggle": False,
-    "geq_31_hpcf_toggle": False,
+    "fde_fir_hpcf_toggle": True,
+    "fde_fir_st_hpcf_toggle": False,
+    "fde_hesuvi_hpcf_toggle": False,
+    "fde_geq_hpcf_toggle": False,
+    "fde_geq_31_hpcf_toggle": False,
     "fde_hpcf_active_database": HPCF_DATABASE_LIST[0],
 
     # === Export tab HRTF / BRIR ===
@@ -1031,11 +1089,11 @@ DEFAULTS = {
     "fde_fb_filtering": False,#fb_filtering
     #"hrtf_default": HRTF_LISTENER_DEFAULT,
     
-    "dir_brir_toggle": True,
-    "ts_brir_toggle": False,
-    "sofa_brir_toggle": False,
-    "hesuvi_brir_toggle": False,
-    "multi_chan_brir_toggle": False,
+    "fde_dir_brir_toggle": True,
+    "fde_ts_brir_toggle": False,
+    "fde_sofa_brir_toggle": False,
+    "fde_hesuvi_brir_toggle": False,
+    "fde_multi_chan_brir_toggle": False,
     
     "fde_wav_sample_rate": SAMPLE_RATE_LIST[0],#wav_sample_rate
     "fde_wav_bit_depth": BIT_DEPTH_LIST[0],#wav_bit_depth
@@ -1091,6 +1149,9 @@ DEFAULTS = {
     "e_apo_mute": False,
     "e_apo_gain": 0.0,
     "e_apo_elev_angle": 0,
+    "e_apo_autoapply_hpcf": False,
+    "e_apo_prevent_clip": AUTO_GAIN_METHODS[1],
+    # === E-APO Per-Channel Config ===
     "e_apo_az_angle_fl": -30,
     "e_apo_az_angle_fr": 30,
     "e_apo_az_angle_c": 0,
@@ -1098,13 +1159,6 @@ DEFAULTS = {
     "e_apo_az_angle_sr": 90,
     "e_apo_az_angle_rl": -135,
     "e_apo_az_angle_rr": 135,
-    #"e_apo_enable_hpcf": False,
-    #"e_apo_enable_brir": False,
-    "e_apo_autoapply_hpcf": False,
-    "e_apo_prevent_clip": AUTO_GAIN_METHODS[1],
-
-
-    # === E-APO Per-Channel Config ===
     # mute
     "e_apo_mute_fl": False,
     "e_apo_mute_fr": False,
@@ -1153,7 +1207,10 @@ DEFAULTS = {
     "hrtf_polarity_rev": HRTF_POLARITY_LIST[0],
     "force_hrtf_symmetry":HRTF_SYM_LIST[0],
     "er_delay_time":0.5,
-    "export_resample_mode": RESAMPLE_MODE_LIST[0]
+    "export_resample_mode": RESAMPLE_MODE_LIST[0],
+    "hrtf_df_cal_mode": HRTF_DF_CAL_MODE_LIST[0],
+    "hrtf_direction_misalign_comp": HRTF_DIRECTION_FIX_LIST_GUI[0],
+    "hrtf_direction_misalign_trigger": False
     
 
 }
@@ -1193,16 +1250,16 @@ LEGACY_KEY_MAP = {
     "hrtf_polarity": "hrtf_polarity_rev",
 
     # === Export Toggles ===
-    "fir_hpcf_exp": "fir_hpcf_toggle",
-    "fir_st_hpcf_exp": "fir_st_hpcf_toggle",
-    "geq_hpcf_exp": "geq_hpcf_toggle",
-    "geq_31_exp": "geq_31_hpcf_toggle",
-    "hesuvi_hpcf_exp": "hesuvi_hpcf_toggle",
-    "dir_brir_exp": "dir_brir_toggle",
-    "ts_brir_exp": "ts_brir_toggle",
-    "hesuvi_brir_exp": "hesuvi_brir_toggle",
-    "multi_chan_brir_exp": "multi_chan_brir_toggle",
-    "sofa_brir_exp": "sofa_brir_toggle",
+    "fir_hpcf_exp": "fde_fir_hpcf_toggle",
+    "fir_st_hpcf_exp": "fde_fir_st_hpcf_toggle",
+    "geq_hpcf_exp": "fde_geq_hpcf_toggle",
+    "geq_31_exp": "fde_geq_31_hpcf_toggle",
+    "hesuvi_hpcf_exp": "fde_hesuvi_hpcf_toggle",
+    "dir_brir_exp": "fde_dir_brir_toggle",
+    "ts_brir_exp": "fde_ts_brir_toggle",
+    "hesuvi_brir_exp": "fde_hesuvi_brir_toggle",
+    "multi_chan_brir_exp": "fde_multi_chan_brir_toggle",
+    "sofa_brir_exp": "fde_sofa_brir_toggle",
 
     # === UI & Behavior ===
     "auto_check_updates": "check_updates_start_toggle",
@@ -1320,16 +1377,16 @@ LEGACY_GUI_KEY_MAP = {
     "sample_list": "fde_hpcf_sample",#hpcf_sample
 
     # === Export Toggles ===
-    "fir_hpcf_toggle": "fir_hpcf_toggle",
-    "fir_st_hpcf_toggle": "fir_st_hpcf_toggle",
-    "geq_hpcf_toggle": "geq_hpcf_toggle",
-    "geq_31_hpcf_toggle": "geq_31_hpcf_toggle",
-    "hesuvi_hpcf_toggle": "hesuvi_hpcf_toggle",
-    "dir_brir_toggle": "dir_brir_toggle",
-    "ts_brir_toggle": "ts_brir_toggle",
-    "hesuvi_brir_toggle": "hesuvi_brir_toggle",
-    "multi_chan_brir_toggle": "multi_chan_brir_toggle",
-    "sofa_brir_toggle": "sofa_brir_toggle",
+    "fir_hpcf_toggle": "fde_fir_hpcf_toggle",
+    "fir_st_hpcf_toggle": "fde_fir_st_hpcf_toggle",
+    "geq_hpcf_toggle": "fde_geq_hpcf_toggle",
+    "geq_31_hpcf_toggle": "fde_geq_31_hpcf_toggle",
+    "hesuvi_hpcf_toggle": "fde_hesuvi_hpcf_toggle",
+    "dir_brir_toggle": "fde_dir_brir_toggle",
+    "ts_brir_toggle": "fde_ts_brir_toggle",
+    "hesuvi_brir_toggle": "fde_hesuvi_brir_toggle",
+    "multi_chan_brir_toggle": "fde_multi_chan_brir_toggle",
+    "sofa_brir_toggle": "fde_sofa_brir_toggle",
 
     # === UI & Behavior ===
     "check_updates_start_tag": "check_updates_start_toggle",

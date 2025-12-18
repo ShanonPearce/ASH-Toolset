@@ -11,6 +11,7 @@ import os
 from scipy.io import wavfile
 from ash_toolset import constants as CN
 from ash_toolset import helper_functions as hf
+from ash_toolset import hrir_processing
 from pathlib import Path
 import mat73
 import scipy as sp
@@ -32,247 +33,12 @@ import csv
 import glob
 from typing import Any, Dict, Optional, Tuple, List, Callable
 from scipy.io.matlab import mat_struct
+import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 log_info=1
 
-def extract_airs_from_recording(ir_set='fw', gui_logger=None):
-    """
-    function to extract individual IRs from a recording containing multiple IRs
-    :param ir_set: str, name of impulse response set. Must correspond to a folder in ASH-Toolset\data\raw\ir_data\stream
-    :return: None
-    """
-    
-    min_len_s=1.0
-    peak_mode=2#0=check amplitude peaks, 1= check gradient peaks, 2=both methods
-    amp_thresh_d=0.80#0.8
-    amp_thresh_l=amp_thresh_d*0.8
-    grad_thresh_d=0.1#
-    output_wavs=1
-    peak_tshift=250
-    
-    ir_data_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'stream',ir_set)
-    ir_out_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'split_airs',ir_set)
-    
-    try:
-        log_string_a = 'Starting extract_airs_from_recording processing for: '+ir_set
-        hf.log_with_timestamp(log_string_a, gui_logger)
-    
-        file_id=0
-        for root, dirs, files in os.walk(ir_data_folder):
-            for filename in files:
-                if '.wav' in filename:
-                    #read wav file
-                    wav_fname = pjoin(root, filename)
-                    samplerate, data = hf.read_wav_file(wav_fname)
-                    fir_array = data 
-                    
-                    #resample if sample rate is not 44100
-                    if samplerate != CN.SAMP_FREQ:
-                        fir_array = hf.resample_signal(fir_array, original_rate = samplerate, new_rate = CN.SAMP_FREQ)
-                        log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to: '+ str(CN.SAMP_FREQ)
-                        hf.log_with_timestamp(log_string_a, gui_logger)
-                    
-                    
-                    #normalise IR
-                    fir_array=np.divide(fir_array,np.max(fir_array))
-                    fir_array_abs = np.abs(fir_array)
-                    #take gradient with x spacing
-                    fir_array_abs_combined = np.divide(np.add(np.abs(fir_array[:,0]),np.abs(fir_array[:,1])),2)
-                    fir_array_abs_grad = np.gradient(fir_array_abs_combined, 1)
-                    if CN.PLOT_ENABLE == True:
-                        plot_name = 'fir_array_abs_grad_'+filename
-                        hf.plot_td(fir_array_abs_grad[0:20000],plot_name)
-                    
-                    #find prominent peaks
-                    if peak_mode == 0:
-                        peaks_indices = np.where(fir_array_abs_combined > amp_thresh_d)[0]
-                    elif peak_mode == 1:
-                        peaks_indices = np.where(fir_array_abs_grad > grad_thresh_d)[0]
-                    else:
-                        peaks_indices = np.where( np.logical_or(fir_array_abs_grad > grad_thresh_d,fir_array_abs_combined > amp_thresh_d))[0]
-                    #get time values of above indices
-                    peaks_time= np.divide(peaks_indices,samplerate)
-                    #get time since previous peak
-                    peaks_time_diff=np.zeros(len(peaks_time))
-                    for i in range(len(peaks_time)):
-                        if i < len(peaks_time)-1:
-                            peaks_time_diff[i]=peaks_time[i+1]-peaks_time[i]    
-
-                    #find prominent peaks where delay between previous peak is sufficiently high
-                    ir_start_indices = peaks_indices[peaks_time_diff >= min_len_s]
-
-                    #shift to the right by x samples
-                    ir_start_ind_shift=np.subtract(ir_start_indices,peak_tshift)
-                    fir_array_split = np.split(fir_array,ir_start_ind_shift)
-                        
-                    #name of dataset
-                    dataset_name=filename.split('.wav')[0]
-                    #loop through array to export wav files for testing
-                    for idx, x in enumerate(fir_array_split):
-                        out_file_name = 'split_ir_'+str(file_id)+'_'+str(idx)+ '.wav'
-                        out_file_path = pjoin(ir_out_folder,dataset_name,out_file_name)
-                        
-                        #create dir if doesnt exist
-                        output_file = Path(out_file_path)
-                        output_file.parent.mkdir(exist_ok=True, parents=True)
-                        
-                        start_idx=1500
-                        end_idx=min(40000,len(x))
-                        if output_wavs == 1 and idx>0 and np.max(np.abs(x[start_idx:end_idx]))<amp_thresh_l:#ensure split ir does not have secondary peak
-                            hf.write2wav(file_name=out_file_path, data=x, samplerate=44100, prevent_clipping = 1)
-                            
-                    file_id=file_id+1
-                    
-        log_string_a = 'Completed extract_airs_from_recording processing for: '+ir_set
-        hf.log_with_timestamp(log_string_a, gui_logger)
-                    
-    except Exception as ex:
-        log_string = 'Failed to extract AIRs from recording for stream: ' + ir_set 
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-
-
-
-def split_airs_to_set(ir_set='fw', gui_logger=None):
-    """
-    function to compile dataset of IRs
-    saves air_reverberation array. num_irs * 2 channels * n_fft samples
-    :param ir_set: str, name of impulse response set. Must correspond to a folder in ASH-Toolset\data\interim\ir_data\split_irs
-    :return: None
-    """
-    
-    #set fft length based on AC space
-    if ir_set in CN.AC_SPACE_LIST_LOWRT60:
-        n_fft=CN.N_FFT
-    else:
-        n_fft=CN.N_FFT_L
-    
-    samp_freq_ash=CN.SAMP_FREQ
-    output_wavs=1
-    
-    #windows
-    data_pad_zeros=np.zeros(n_fft)
-    data_pad_ones=np.ones(n_fft)
-    
-    total_chan_irs=2
-    total_chan_air=1
-
-    #direct sound window for 2nd phase
-    direct_hanning_size=300#350
-    direct_hanning_start=5#101
-    hann_direct_full=np.hanning(direct_hanning_size)
-    hann_direct = np.split(hann_direct_full,2)[0]
-    direct_removal_win_b = data_pad_zeros.copy()
-    direct_removal_win_b[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
-    direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
-    
-    fade_hanning_size=int(60000)
-    fade_hanning_start=1000
-    hann_fade_full=np.hanning(fade_hanning_size)
-    hann_fade = np.split(hann_fade_full,2)[1]
-    fade_out_win_s = data_pad_ones.copy()
-    fade_out_win_s[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
-    fade_out_win_s[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
-    
-    fade_hanning_size=int(120000)
-    fade_hanning_start=5000
-    hann_fade_full=np.hanning(fade_hanning_size)
-    hann_fade = np.split(hann_fade_full,2)[1]
-    fade_out_win_l = data_pad_ones.copy()
-    fade_out_win_l[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
-    fade_out_win_l[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
-    
-    
-    
-    #loop through folders
-    ir_in_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'split_airs',ir_set)
-    
-    try:
-        log_string_a = 'Starting split_airs_to_set processing for: '+ir_set
-        hf.log_with_timestamp(log_string_a, gui_logger)
-
-    
-        #get number of IRs
-        ir_counter=0
-        for root, dirs, files in os.walk(ir_in_folder):
-            for filename in files:
-                if '.wav' in filename:
-                    #read wav files
-                    wav_fname = pjoin(root, filename)
-                    samplerate, data = hf.read_wav_file(wav_fname)
-                    samp_freq=samplerate
-                    fir_array = data 
-
-                    try:
-                        input_channels = len(fir_array[0])
-                    except:
-                        #reshape if mono
-                        input_channels=1
-                        fir_array=fir_array.reshape(-1, 1)
-                    ir_counter=ir_counter+input_channels
-                    
-        #numpy array, num sets x num irs in each set x 2 channels x NFFT max samples
-        total_irs=int(ir_counter)+1
-        print(str(total_irs))
-        air_data=np.zeros((total_irs,n_fft))
-
-        ir_counter=0
-        for root, dirs, files in os.walk(ir_in_folder):
-            for filename in files:
-                if '.wav' in filename:
-                    #print('test')
-                    
-                    #read wav files
-                    wav_fname = pjoin(root, filename)
-                    samplerate, data = hf.read_wav_file(wav_fname)
-                    samp_freq=samplerate
-                    fir_array = data 
-                    fir_length = len(fir_array)
-                    try:
-                        input_channels = len(fir_array[0])
-                    except:
-                        #reshape if mono
-                        input_channels=1
-                        fir_array=fir_array.reshape(-1, 1)
-                    
-                    #append into set list
-                    
-                    extract_legth = min(n_fft,fir_length)
-                    #load into numpy array
-                    for chan in range(input_channels):
-                        air_data[ir_counter,0:extract_legth]=fir_array[0:extract_legth,chan]#L and R
-                        air_data[ir_counter,:] = np.multiply(air_data[ir_counter,:],direct_removal_win_b)#direct removal                
-                        if 'split_ir_' in filename:
-                            air_data[ir_counter,:] = np.multiply(air_data[ir_counter,:],fade_out_win_s)#late reflections fade out 
-                        else:
-                            air_data[ir_counter,:] = np.multiply(air_data[ir_counter,:],fade_out_win_l)#late reflections fade out 
-                            
-                        ir_counter=ir_counter+1
-
-        if ir_counter >0:
-            
-            #create dir if doesnt exist
-            air_out_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'raw_airs',ir_set)
-        
-            npy_file_name = ir_set+'_td_avg.npy'
-        
-            out_file_path = pjoin(air_out_folder,npy_file_name)      
-              
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
-            
-            np.save(out_file_path,air_data)
-            
-            log_string_a = 'Exported numpy file to: ' + out_file_path 
-            hf.log_with_timestamp(log_string_a, gui_logger)
-                
-            log_string_a = 'Completed split_airs_to_set processing for: '+ir_set
-            hf.log_with_timestamp(log_string_a, gui_logger)
-    
-    except Exception as ex:
-        log_string = 'Failed to complete TD averaging for: ' + ir_set 
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-    
     
   
 
@@ -675,7 +441,7 @@ def prepare_air_dataset(
     ir_set='default_set_name',
     input_folder=None,
     gui_logger=None,
-    wav_export=False,
+    wav_export=CN.EXPORT_WAVS_DEFAULT,
     use_user_folder=False,
     save_npy=False,
     desired_measurements=3000, noise_reduction_mode=False,
@@ -715,10 +481,7 @@ def prepare_air_dataset(
         input_folder=ir_set
 
     #set noise reduction based on AC space
-    if ir_set in CN.AC_SPACE_LIST_NR or noise_reduction_mode == True:
-        noise_reduction=True
-    else:
-        noise_reduction=False
+    noise_reduction=noise_reduction_mode
         
     samp_freq_ash=CN.SAMP_FREQ
     air_data=np.array([])
@@ -728,34 +491,14 @@ def prepare_air_dataset(
     data_pad_zeros=np.zeros(n_fft)
     data_pad_ones=np.ones(n_fft)
     #direct sound fade in window
-    direct_hanning_size=300#300
-    direct_hanning_start=51#101
+    direct_hanning_size=200#
+    direct_hanning_start=61#
     hann_direct_full=np.hanning(direct_hanning_size)
     hann_direct = np.split(hann_direct_full,2)[0]
-    direct_removal_win_b = data_pad_zeros.copy()
-    direct_removal_win_b[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
-    direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
-    #optional fade out window
-    if ir_set in CN.AC_SPACE_LIST_WINDOW:
-        if n_fft == CN.N_FFT_L:
-            fade_hanning_size=int(65536*2)
-        else:
-            fade_hanning_size=int(65536)
-        if ir_set == 'outdoors_a':
-            fade_hanning_start=32000
-        elif ir_set == 'hall_a':
-            fade_hanning_start=27000
-        elif ir_set == 'seminar_room_a':
-            fade_hanning_start=12000
-        elif n_fft == CN.N_FFT_L:
-            fade_hanning_start=35000
-        else:
-            fade_hanning_start=30000#
-        hann_fade_full=np.hanning(fade_hanning_size)
-        hann_fade = np.split(hann_fade_full,2)[1]
-        fade_out_win = data_pad_ones.copy()
-        fade_out_win[fade_hanning_start:fade_hanning_start+int(fade_hanning_size/2)] = hann_fade
-        fade_out_win[fade_hanning_start+int(fade_hanning_size/2):]=data_pad_zeros[fade_hanning_start+int(fade_hanning_size/2):]
+    direct_removal_win = data_pad_zeros.copy()
+    direct_removal_win[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
+    direct_removal_win[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
+
     
     #input folder
     if use_user_folder == True:
@@ -846,33 +589,7 @@ def prepare_air_dataset(
             gui_logger.log_warning("Operation cancelled by user.")
             return air_data, 2
         
-        # Optional fade out window
-        if ir_set in CN.AC_SPACE_LIST_WINDOW:
-            # Get average level in late reflections across all IRs
-            average_mag_total = 0
-            total_irs = 0
-            for idx in range(total_measurements):
-                segment = air_data[idx, 44100:CN.N_FFT]
-                data_fft = np.fft.fft(segment)
-                if np.sum(np.abs(data_fft)) > 0.0001:
-                    mag_fft = np.abs(data_fft)
-                    average_mag = np.mean(mag_fft[fb_start:fb_end])
-                    total_irs += 1
-                    average_mag_total += average_mag
-            if total_irs > 0:
-                average_mag_total = 1.10 * average_mag_total / total_irs
-            else:
-                average_mag_total = 0
-            # Apply fade-out window based on condition
-            for idx in range(total_measurements):
-                segment = air_data[idx, 44100:CN.N_FFT]
-                data_fft = np.fft.fft(segment)
-                mag_fft = np.abs(data_fft)
-                average_mag = np.mean(mag_fft[fb_start:fb_end])
-                if average_mag > average_mag_total or ir_set in CN.AC_SPACE_LIST_WINDOW_ALL:
-                    air_data[idx, :] *= fade_out_win
-                    log_string_a = f'Window applied to IR index {idx}'
-                    hf.log_with_timestamp(log_string_a)
+
         
  
     
@@ -933,10 +650,9 @@ def prepare_air_dataset(
             hf.log_with_timestamp(log_string_b, gui_logger)
         
     
- 
         #remove direction portion of signal
         if CN.RISE_WINDOW is True:
-            air_data *= direct_removal_win_b
+            air_data *= direct_removal_win
                        
         #
         #set each AIR to 0 level again after removing direct portion
@@ -988,7 +704,7 @@ def prepare_air_dataset(
             
             out_wav_array=np.zeros((n_fft,1))
             #grab IR
-            out_wav_array[:,0] = np.copy(air_data[-2,:])#take sample
+            out_wav_array[:,0] = np.copy(air_data[1,:])#take sample
 
             hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash)
             
@@ -1079,8 +795,8 @@ def convert_airs_to_brirs(
     air_dataset=np.array([]),
     gui_logger=None,
     use_user_folder=False,
-    wav_export=CN.EXPORT_WAVS_DEFAULT,
-    long_mode=False, report_progress=0, cancel_event=None, distr_mode=0, rise_time=5.1, subwoofer_mode=False
+    wav_export=CN.EXPORT_WAVS_DEFAULT, spatial_res=3, hrir_dataset=None, correction_factor=1.0,
+    long_mode=False, report_progress=0, cancel_event=None, distr_mode=0, rise_time=5.1, subwoofer_mode=False, binaural_input=False, auto_shape_output=False
 ):
     """
     Converts a dataset of Ambisonic Impulse Responses (AIRs) into Binaural Room Impulse Responses (BRIRs)
@@ -1110,15 +826,12 @@ def convert_airs_to_brirs(
     """
     status=1
     #set fft length based on AC space
-    if long_mode == True or ir_set in CN.AC_SPACE_LIST_HIRT60:
+    if long_mode == True:
         n_fft=CN.N_FFT_L
     else:
         n_fft=CN.N_FFT
     
-    if ir_set in CN.AC_SPACE_LIST_NOCOMP:#ir_set in CN.AC_SPACE_LIST_SUB
-        mag_comp=False
-    else:
-        mag_comp=CN.MAG_COMP
+    mag_comp=CN.MAG_COMP
   
     samp_freq_ash=CN.SAMP_FREQ
 
@@ -1127,21 +840,26 @@ def convert_airs_to_brirs(
     impulse[0]=1
     brir_reverberation=np.array([])
   
-    #direct sound window for 2nd phase
-    #windows
-    data_pad_zeros=np.zeros(n_fft)
-    data_pad_ones=np.ones(n_fft)
-    if ir_set in CN.AC_SPACE_LIST_SLOWRISE:
-        direct_hanning_size=1000#    
+    # Direct sound window for initial rise
+    rise_samples = int((rise_time / 1000.0) * samp_freq_ash)
+    direct_hanning_start = 61
+    # Initialize all-zero window
+    direct_removal_win = np.zeros(n_fft)
+    # If rise_samples is too small, skip Hann window and apply instant transition
+    if rise_samples < 2:
+        # Instant fade: everything after the start point becomes 1
+        direct_removal_win[direct_hanning_start:] = 1.0
     else:
-        rise_samples = int((rise_time / 1000.0) * samp_freq_ash)
-        direct_hanning_size=rise_samples*2#
-    direct_hanning_start=51#
-    hann_direct_full=np.hanning(direct_hanning_size)
-    hann_direct = np.split(hann_direct_full,2)[0]
-    direct_removal_win_b = data_pad_zeros.copy()
-    direct_removal_win_b[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
-    direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
+        # Build Hann window (full window = rise + fall)
+        direct_hanning_size = rise_samples * 2
+        hann_direct_full = np.hanning(direct_hanning_size)
+        # Take the rising half only
+        hann_rise = hann_direct_full[:rise_samples]
+        # Apply the rising window
+        end_rise = direct_hanning_start + rise_samples
+        direct_removal_win[direct_hanning_start:end_rise] = hann_rise
+        # After the rise portion, set to 1
+        direct_removal_win[end_rise:] = 1.0
     
     
  
@@ -1181,19 +899,49 @@ def convert_airs_to_brirs(
         total_measurements = air_dataset.shape[0]
 
         #
-        #load HRIR dataset
+        # Load HRIR dataset (user-provided or fallback to defaults)
+        if hrir_dataset is not None and isinstance(hrir_dataset, np.ndarray) and hrir_dataset.size > 0:
+            hrir_list = np.asarray(hrir_dataset, dtype=np.float64)
+            hf.log_with_timestamp(
+                f"Using user-provided HRIR dataset, shape: {hrir_list.shape}",
+                gui_logger
+            )
+        else:
+            #loads HRIRs from one of two preprocessed HRIR datasets from dummy head measurements. 
+            #Max spatial resolution (nearest 2 degrees).
+            #DF compensated but no high pass filter
+            try:
+                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_THK-KU-100.npy')
+                hrir_list = hf.load_convert_npy_to_float64(npy_fname)
+                hf.log_with_timestamp(f"Loaded HRIR dataset: {npy_fname}", gui_logger)
+            except:
+                npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_TU-FABIAN.npy')
+                hrir_list = hf.load_convert_npy_to_float64(npy_fname)
+                hf.log_with_timestamp(f"Loaded HRIR dataset: {npy_fname}", gui_logger)
+                    
+        
         #
-        
-        try:
-            npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_TU-FABIAN.npy')
-            hrir_list = hf.load_convert_npy_to_float64(npy_fname)
-        except:
-            npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_THK-KU-100.npy')
-            hrir_list = hf.load_convert_npy_to_float64(npy_fname)
-        
-        
-        hrir_id = 0#only one id available 
-        hrir_selected = hrir_list[hrir_id]
+        # Normalize HRIR array shape for processing
+        #
+        hrir_arr = hrir_list
+        # --- Case 1: 5D -> extract listener 0 ---
+        if hrir_arr.ndim == 5:
+            # shape: [listener, elev, azim, ch, samples]
+            hrir_selected = hrir_arr[0]
+        # --- Case 2: 4D -> already in good shape ---
+        elif hrir_arr.ndim == 4:
+            # shape: [elev, azim, ch, samples]
+            hrir_selected = hrir_arr
+        # --- Invalid case ---
+        else:
+            raise ValueError(
+                f"HRIR array has invalid number of dimensions ({hrir_arr.ndim}). "
+                f"Expected 4 or 5 dimensions."
+            )
+            
+        # Infer / validate spatial resolution
+        spatial_res = hrir_processing.infer_hrir_spatial_res(hrir_selected,spatial_res=spatial_res,logger=gui_logger)
+
         total_elev_hrir = len(hrir_selected)
         total_azim_hrir = len(hrir_selected[0])
         total_chan_hrir = len(hrir_selected[0][0])
@@ -1202,32 +950,33 @@ def convert_airs_to_brirs(
         base_elev_idx_offset=total_elev_hrir//8
         
         #spatial metadata
-        spatial_res=3#max resolution
         elev_min=CN.SPATIAL_RES_ELEV_MIN_IN[spatial_res] 
         elev_max=CN.SPATIAL_RES_ELEV_MAX_IN[spatial_res] 
+        azim_min=CN.SPATIAL_RES_AZIM_MIN_IN[spatial_res] 
+        azim_max=CN.SPATIAL_RES_AZIM_MAX_IN[spatial_res] 
         elev_nearest=CN.SPATIAL_RES_ELEV_NEAREST_IN[spatial_res] #as per hrir dataset
-        elev_nearest_process=CN.SPATIAL_RES_ELEV_NEAREST_PR[spatial_res] 
         azim_nearest=CN.SPATIAL_RES_AZIM_NEAREST_IN[spatial_res] 
-        azim_nearest_process=CN.SPATIAL_RES_AZIM_NEAREST_PR[spatial_res] 
         #define desired angles
-        nearest_deg=2
-        elev_min_dist=-40
-        elev_max_dist=62#60
-        azim_min_dist=0
-        azim_max_dist=360
-        elev_src_set = np.arange(elev_min_dist,elev_max_dist,elev_nearest)#np.arange(-40,58,elev_nearest)
+        elev_min_dist=elev_min#-40
+        elev_max_dist=elev_max+elev_nearest#62
+        azim_min_dist=azim_min
+        azim_max_dist=azim_max+azim_nearest
+        elev_src_set = np.arange(elev_min_dist,elev_max_dist,elev_nearest)
         azim_src_set=np.arange(azim_min_dist,azim_max_dist,azim_nearest)
 
         
-        #set number of output directions (brir sources)
-        if n_fft == CN.N_FFT:
-            num_brir_sources=7
+        #set number of output directions (brir sources) 
+        if total_measurements < CN.IR_MIN_THRESHOLD_TRANSFORM:
+            raise ValueError( f"AIR array has insufficient number of measurements ({total_measurements}). ")
+        if auto_shape_output:#derive based on number of measurements
+            num_brir_sources = max(2, total_measurements // 360)
         else:
-            num_brir_sources=5#fewer sources if long reverb tail
-        if total_measurements < CN.IR_MIN_THRESHOLD_FULLSET:
-            num_brir_sources=5
-        if subwoofer_mode == True:#only 1 set required if subwoofer response
-            num_brir_sources=1
+            if subwoofer_mode == True:#only 1 set required if subwoofer response
+                num_brir_sources=1
+            elif total_measurements < CN.IR_MIN_THRESHOLD_FULLSET:#not enough measurements for 7.1 set, fallback to 5.1 set
+                num_brir_sources=5
+            else:
+                num_brir_sources=7#default to 7 sources for a 7.1 configuration
    
         log_string_a = 'num_brir_sources: ' + str(num_brir_sources)
         hf.log_with_timestamp(log_string_a)
@@ -1241,7 +990,7 @@ def convert_airs_to_brirs(
         # Sampling spatial coordinates with bias
         num_samples = total_measurements
         biased_centers = np.array([40, 140, 220, 320])#45, 135, 225, 315
-        strength = 51
+        strength = 50#lower is more biased
         azimuths_distribution, elevations_distribution = hf.biased_spherical_coordinate_sampler(
             azim_src_set, elev_src_set, num_samples,
             biased_azimuth_centers=biased_centers,
@@ -1261,54 +1010,63 @@ def convert_airs_to_brirs(
         # Distribution index counter
         dist_counter = 0
         
-        # Loop over each BRIR source direction
+        # Loop over each BRIR source direction 
         for source_num, group in enumerate(measurements_per_source):
             # Initialize accumulators for averaging
             brir_sum_l = np.zeros(n_fft)
             brir_sum_r = np.zeros(n_fft)
-            
+        
             if cancel_event and cancel_event.is_set():
                 gui_logger.log_warning("Operation cancelled by user.")
                 return brir_reverberation, 2
         
-            for measurement in group:
-                # Copy AIR
-                curr_air = np.copy(air_dataset[measurement, :])
+            for i, measurement in enumerate(group):
+                # Copy AIR, wrap around if fewer measurements than sources
+                curr_air = np.copy(air_dataset[measurement % total_measurements, :])
         
-                # Get HRIR from distributed coordinates
-                curr_azim_deg = azimuths_distribution[dist_counter]
-                curr_elev_deg = elevations_distribution[dist_counter]
-                curr_azim_id = int(curr_azim_deg / azim_nearest)
-                curr_elev_id = int((curr_elev_deg - elev_min) / elev_nearest)
+                if binaural_input:
+                    # Alternate contribution between left and right channels
+                    if i % 2 == 0:
+                        brir_sum_l += curr_air[:n_fft]
+                    else:
+                        brir_sum_r += curr_air[:n_fft]
+                else:
+                    # Get HRIR from distributed coordinates
+                    curr_azim_deg = azimuths_distribution[dist_counter]
+                    curr_elev_deg = elevations_distribution[dist_counter]
+                    curr_azim_id = int(curr_azim_deg / azim_nearest)
+                    curr_elev_id = int((curr_elev_deg - elev_min) / elev_nearest)
         
-                curr_hrir_l = np.copy(hrir_list[hrir_id][curr_elev_id][curr_azim_id][0][:])
-                curr_hrir_r = np.copy(hrir_list[hrir_id][curr_elev_id][curr_azim_id][1][:])
+                    curr_hrir_l = np.copy(hrir_selected[curr_elev_id][curr_azim_id][0][:])
+                    curr_hrir_r = np.copy(hrir_selected[curr_elev_id][curr_azim_id][1][:])
         
-                # Convolve AIR with HRIRs
-                #print(f"curr_air shape: {curr_air.shape}, curr_hrir_l shape: {curr_hrir_l.shape}")#debugging
-                curr_brir_l = sp.signal.convolve(curr_air, curr_hrir_l, mode='full', method='auto')
-                curr_brir_r = sp.signal.convolve(curr_air, curr_hrir_r, mode='full', method='auto')
+                    # Convolve AIR with HRIRs
+                    curr_brir_l = sp.signal.convolve(curr_air, curr_hrir_l, mode='full', method='auto')
+                    curr_brir_r = sp.signal.convolve(curr_air, curr_hrir_r, mode='full', method='auto')
         
-                # Accumulate for averaging
-                brir_sum_l += curr_brir_l[:n_fft]
-                brir_sum_r += curr_brir_r[:n_fft]
+                    # Accumulate for averaging
+                    brir_sum_l += curr_brir_l[:n_fft]
+                    brir_sum_r += curr_brir_r[:n_fft]
         
                 # Move to next direction
                 dist_counter += 1
         
-            # Average results and assign to final BRIR array
-            brir_reverberation[0, source_num, 0, :] = brir_sum_l / len(group)
-            brir_reverberation[0, source_num, 1, :] = brir_sum_r / len(group)
+            # Assign averaged results
+            if binaural_input:
+                brir_reverberation[0, source_num, 0, :] = brir_sum_l / ((len(group) + 1) // 2)
+                brir_reverberation[0, source_num, 1, :] = brir_sum_r / (len(group) // 2)
+            else:
+                brir_reverberation[0, source_num, 0, :] = brir_sum_l / len(group)
+                brir_reverberation[0, source_num, 1, :] = brir_sum_r / len(group)
 
 
     
         
         # Window initial rise
-        if ir_set not in CN.AC_SPACE_LIST_SUB:
-            brir_reverberation[0, :, :, :] *= direct_removal_win_b  # broadcasted multiply over channel axis
+        brir_reverberation[0, :, :, :] *= direct_removal_win  # broadcasted multiply over channel axis
         
         # Window tail end of BRIR
-        fade_start = int(44100 * (n_fft / CN.N_FFT))
+        fade_start = int( int(((CN.RT60_MAX_S)/1000)*CN.FS) * (n_fft / CN.N_FFT)) 
         l_fade_win_size = abs(fade_start - n_fft) * 2
         hann_l_fade_full = np.hanning(l_fade_win_size)
         win_l_fade_out = np.split(hann_l_fade_full, 2)[1]  # second half
@@ -1333,17 +1091,17 @@ def convert_airs_to_brirs(
         brir_reverberation[0, :, :, :] /= avg_mag[:, np.newaxis, np.newaxis]
                 
         #
-        #optional: create compensation filter from average response and target, then equalise each BRIR
+        #optional: create correction filter from average response and target, then equalise each BRIR
         #
-        if mag_comp:
+        if mag_comp and correction_factor >= 0.1:
             hf.log_with_timestamp("Compensating BRIRs", gui_logger)
             
             comp_win_size = 7 if subwoofer_mode == True else 7
         
             # Level ends of spectrum
-            high_freq = 12000 if ir_set in CN.AC_SPACE_LIST_SUB or subwoofer_mode == True else 15000
-            low_freq_in = 20 if ir_set in CN.AC_SPACE_LIST_SUB or subwoofer_mode == True else 30
-            low_freq_in_target = 150 if subwoofer_mode == True else low_freq_in#make level in sub frequencies
+            high_freq = 12000 if subwoofer_mode == True else 15000
+            low_freq_in = 20 if subwoofer_mode == True else 30
+            low_freq_in_target = 150 if subwoofer_mode == True else low_freq_in#make target level in sub frequencies
         
             # Load target
             target_path = pjoin(CN.DATA_DIR_INT, 'reverberation', 'reverb_target_mag_response.npy')
@@ -1367,11 +1125,11 @@ def convert_airs_to_brirs(
                 # Convert back to magnitude, level ends, and smooth
                 brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
                 brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, low_freq_in, high_freq, smooth_win=comp_win_size)#6
-                brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, win_size_base = comp_win_size)
+                brir_fft_avg_mag_sm = hf.smooth_freq_octaves(data=brir_fft_avg_mag, win_size_base = comp_win_size)
         
-                # Compensation filter (smoothed)
-                comp_mag = hf.db2mag(hf.mag2db(brir_fft_target_mag) - hf.mag2db(brir_fft_avg_mag_sm))
-                #comp_mag = hf.smooth_fft_octaves(comp_mag, win_size_base = 7)
+                # Compensation filter (smoothed and scaled)
+                comp_mag = hf.db2mag((hf.mag2db(brir_fft_target_mag) - hf.mag2db(brir_fft_avg_mag_sm))*correction_factor)
+                #comp_mag = hf.smooth_freq_octaves(comp_mag, win_size_base = 7)
                 comp_eq_fir = hf.build_min_phase_filter(comp_mag)
         
                 # Equalize both channels (loop still needed for convolution)
@@ -1447,7 +1205,7 @@ def convert_airs_to_brirs(
         #
         #save numpy array for later use in BRIR generation functions
         #
-        if mag_comp == True or ir_set in CN.AC_SPACE_LIST_NOCOMP:#consider nocomp flagged cases as compensated
+        if mag_comp == True:#
             npy_file_name =  'reverberation_dataset_' +ir_set+'.npy'
         else:
             npy_file_name =  'reverberation_dataset_nocomp_' +ir_set+'.npy'
@@ -1587,531 +1345,6 @@ def write_sub_metadata_csv(ir_set, data_rows, gui_logger=None):
     
  
     
-def raw_brirs_to_brir_set(ir_set='fw', df_comp=True, mag_comp=CN.MAG_COMP, lf_align=True,gui_logger=None):
-    """
-    function to convert RIRs to BRIRs
-    :param ir_set: str, name of impulse response set. Must correspond to a folder in ASH-Toolset\data\interim\ir_data\<ir_group>
-    :param df_comp: bool, true = apply diffuse field compensation, false = no compensation
-    :param mag_comp: bool, true = apply target equalisation, false = no eq
-    :param lf_align: bool, true = align brirs in time domain by peaks, false = no alignment
-    :return: None
-    """ 
-    
-    if ir_set in CN.AC_SPACE_LIST_LOWRT60:
-        n_fft=CN.N_FFT
-    else:
-        n_fft=CN.N_FFT_L
-    
-    if ir_set in CN.AC_SPACE_LIST_NOROLL:
-        lf_align=False
-        
-    #set noise reduction based on AC space
-    if ir_set in CN.AC_SPACE_LIST_NR:
-        noise_reduction=1
-    else:
-        noise_reduction=0
- 
-    samp_freq_ash=CN.SAMP_FREQ
-    output_wavs=1
-    
-    #windows
-    data_pad_zeros=np.zeros(n_fft)
-    data_pad_ones=np.ones(n_fft)
-    total_chan_brir=2
-    
-    #direct sound window for 2nd phase
-    direct_hanning_size=300#350
-    direct_hanning_start=51#101
-    hann_direct_full=np.hanning(direct_hanning_size)
-    hann_direct = np.split(hann_direct_full,2)[0]
-    direct_removal_win_b = data_pad_zeros.copy()
-    direct_removal_win_b[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
-    direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
-    
-    #impulse
-    impulse=np.zeros(n_fft)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat = hf.mag2db(fr_flat_mag)
-    #impulse
-    impulse=np.zeros(CN.N_FFT)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat_s = hf.mag2db(fr_flat_mag)
-    
-    #loop through folders
-    ir_in_folder = pjoin(CN.DATA_DIR_RAW, 'ir_data', 'raw_brirs',ir_set)
-    
-    try:
-        
-        log_string_a = 'Analysing inputs'
-        hf.log_with_timestamp(log_string_a, gui_logger)
-    
-        #get number of IRs
-        total_irs=0
-        total_sofa_obj=0
-        total_irs_per_sofa=0
-        min_irs_per_sofa=10000
-        hemi_split_mode=0
-        for root, dirs, files in os.walk(ir_in_folder):
-            for filename in files:
-                #WAV mode: assumes 1 2 channel wav BRIR per direction
-                if '.wav' in filename:
-                    total_irs=total_irs+1
-                    
-                #SOFA mode assumes MultiSpeakerBRIR convention, dim mREn
-                if '.sofa' in filename:
-                    total_sofa_obj=total_sofa_obj+1
-                    
-                    #read SOFA file
-                    sofa_fname = pjoin(root, filename)
-          
-                    #try sofasonix or sofar if fails
-                    loadsofa = hf.sofa_load_object(sofa_fname)#use custom function to load object, returns dict
-                    data = loadsofa['sofa_data_ir']
-                    samplerate = loadsofa['sofa_samplerate']
-         
-                    #calculate total number of IRs available in a sofa obj
-                    shape = data.shape
-                    n_dims= data.ndim
-                    fir_array = hf.reshape_array_to_three_dims(data)#brir case
- 
-                    input_measurements = len(fir_array)#The first dimension is the product of all other dimensions merged together (measurements). 2nd dimension is channels, 3rd dimension is samples
-                    total_irs_per_sofa=input_measurements
-                    if total_irs_per_sofa<min_irs_per_sofa:#find min number of irs in a sofa object
-                        min_irs_per_sofa=total_irs_per_sofa
-                        
-                    #calculate total IRs across all sofa obj
-                    total_irs=total_irs+input_measurements
-          
-        if total_irs == 5 or total_irs == 7 or total_irs > 7:
-            num_out_dirs=total_irs#even if many IRs exist, store each as a distinct set
-        else:
-            raise ValueError('Invalid number of input BRIRs')
-            
-        log_string_a = 'num_out_dirs: ' + str(num_out_dirs)
-        hf.log_with_timestamp(log_string_a, gui_logger)
-        
-        irs_per_dir=int((total_irs/num_out_dirs))
-        dirs_per_hemi = int(np.ceil(num_out_dirs/2))
-        #sofa calculations
-        if total_sofa_obj > 0:
-            #set limits
-            irs_per_sofa_obj = int(total_irs/total_sofa_obj)
-            #limit num irs per sofa to not exceed smallest sofa size
-            irs_per_sofa_obj = min(irs_per_sofa_obj,min_irs_per_sofa)
-     
-            dirs_per_sofa_obj=int(np.ceil(num_out_dirs/total_sofa_obj)) 
-            sofa_obj_per_hemi=int(np.ceil(total_sofa_obj/2))
- 
-            log_string_a = 'dirs_per_hemi: ' + str(dirs_per_hemi) + ', sofa_obj_per_hemi: ' + str(sofa_obj_per_hemi) + ', dirs_per_sofa_obj: ' + str(dirs_per_sofa_obj) + ', irs_per_dir: ' + str(irs_per_dir) + ', num_out_dirs: ' + str(num_out_dirs) + ', irs_per_sofa_obj: ' + str(irs_per_sofa_obj) + ', total_irs: ' + str(total_irs) + ', total_sofa_obj: ' + str(total_sofa_obj) 
-            hf.log_with_timestamp(log_string_a, gui_logger)
-
-        else: 
-            log_string_a = 'dirs_per_hemi: ' + str(dirs_per_hemi) + ', irs_per_dir: ' + str(irs_per_dir) + ', num_out_dirs: ' + str(num_out_dirs)  + ', total_irs: ' + str(total_irs)
-            hf.log_with_timestamp(log_string_a, gui_logger)
-          
-        #numpy array, num sets x num irs in each set x 2 channels x NFFT max samples
-        brir_reverberation=np.zeros((CN.INTERIM_ELEVS,num_out_dirs,2,n_fft))
-        
-        #set counters
-        dir_counter=0
-        
-        log_string_a = 'Loading IR data into array'
-        hf.log_with_timestamp(log_string_a, gui_logger)
-
-        
-        #section to load data into array
-        for root, dirs, files in os.walk(ir_in_folder):
-            for filename in files:
-                #WAV mode: assumes 1 2 channel wav BRIR per direction, simply places each wav into an output set
-                if '.wav' in filename:
-
-                    #read wav files
-                    wav_fname = pjoin(root, filename)
-                    samplerate, data = hf.read_wav_file(wav_fname)
-                    #samp_freq=samplerate
-                    fir_array = data 
-                    fir_length = len(fir_array)
-                    extract_legth = min(n_fft,fir_length)
-                    
-                    #resample if sample rate is not 44100
-                    if samplerate != samp_freq_ash:
-                        fir_array = hf.resample_signal(fir_array, original_rate = samplerate, new_rate = samp_freq_ash)
-                        log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to: '+ str(samp_freq_ash)
-                        hf.log_with_timestamp(log_string_a, gui_logger)
-                        populate_samples_re = round(fir_length * float(samp_freq_ash) / samplerate)#recalculate no. samples from resampled IR
-                        extract_legth = min(n_fft,populate_samples_re)#smallest of nfft or resampled IR length
- 
-                    #load into numpy array
-                    brir_reverberation[0,dir_counter,0,0:extract_legth]=fir_array[0:extract_legth,0]#L
-                    brir_reverberation[0,dir_counter,1,0:extract_legth]=fir_array[0:extract_legth,1]#R
-                    
-                    dir_counter=dir_counter+1
-        
-                if '.sofa' in filename:
-                    #read SOFA file
-                    sofa_fname = pjoin(root, filename)
-                    #try sofasonix or sofar if fails
-                    loadsofa = hf.sofa_load_object(sofa_fname)#use custom function to load object, returns dict
-                    data = loadsofa['sofa_data_ir']
-                    samplerate = loadsofa['sofa_samplerate']
-    
-                    #calculate total number of IRs available in a sofa obj
-                    shape = data.shape
-                    n_dims= data.ndim
-                    fir_array = hf.reshape_array_to_three_dims(data)#Reshapes to meet specific dimension requirements.
-                    fir_array=np.transpose(fir_array)#transpose into required form: samples x channels x measurements
-                    input_meas = len(fir_array[0])
-                    fir_length = len(fir_array)
-                    extract_legth = min(n_fft,fir_length)
-                    
-                    log_string_a = 'SOFA data_ir shape: ' + str(shape) + ', Input Dimensions: ' + str(n_dims)  + ', source samplerate: ' + str(samplerate) + ', input_meas: ' + str(input_meas) + ', fir_length: ' + str(fir_length)
-                    hf.log_with_timestamp(log_string_a, gui_logger)
-                    
-                    #resample if sample rate is not 44100
-                    if samplerate != samp_freq_ash:
-                        fir_array = hf.resample_signal(fir_array, original_rate = samplerate, new_rate = samp_freq_ash)
-                        log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to: '+ str(samp_freq_ash)
-                        hf.log_with_timestamp(log_string_a, gui_logger)
-                        populate_samples_re = round(fir_length * float(samp_freq_ash) / samplerate)#recalculate no. samples from resampled IR
-                        extract_legth = min(n_fft,populate_samples_re)#smallest of nfft or resampled IR length
-                
-  
-                    #sofa_mode == 0 sofa objects are divided evenly among all sets.
-                    for ir_idx in range(irs_per_sofa_obj):
- 
-                        #load into numpy array
-                        brir_reverberation[0,dir_counter,0,0:extract_legth]=fir_array[0:extract_legth,0,ir_idx]#L
-                        brir_reverberation[0,dir_counter,1,0:extract_legth]=fir_array[0:extract_legth,1,ir_idx]#R
-                        
-                        #increment set counter
-                        dir_counter=dir_counter+1
-                        #dont exceed array size
-                        if dir_counter >= num_out_dirs:
-                            break
-          
-                    
-        log_string_a = 'Shifting IRs'
-        hf.log_with_timestamp(log_string_a, gui_logger)            
-    
- 
-        #crop and shift raw IRs so that direct peak is at sample 50
-        index_peak_ref = 40#40
-        
-        for dir_id in range(num_out_dirs):
-            if ir_set in CN.AC_SPACE_LIST_NOROLL:
-                if dir_id == 0:
-                    index_peak_cur = np.argmax(np.abs(brir_reverberation[0,dir_id,0,:]))
-                    ir_shift = index_peak_ref-index_peak_cur
-            else:
-                index_peak_cur = np.argmax(np.abs(brir_reverberation[0,dir_id,0,:]))
-                ir_shift = index_peak_ref-index_peak_cur
-            brir_reverberation[0,dir_id,0,:] = np.roll(brir_reverberation[0,dir_id,0,:],ir_shift)
-            brir_reverberation[0,dir_id,1,:] = np.roll(brir_reverberation[0,dir_id,1,:],ir_shift)
-
-            #set end of array to zero to remove any data shifted to end of array
-            if ir_shift < 0:
-                brir_reverberation[0,dir_id,0,ir_shift:] = brir_reverberation[0,dir_id,0,ir_shift:]*0#left
-                brir_reverberation[0,dir_id,1,ir_shift:] = brir_reverberation[0,dir_id,1,ir_shift:]*0#right
-        
-
-        #remove direction portion of signal
-        for dir_id in range(num_out_dirs):
-            for chan in range(total_chan_brir):
-                # RIR has been shifted so apply fade in window again to remove any overlap with HRIR
-                brir_reverberation[0,dir_id,chan,:] = np.multiply(brir_reverberation[0,dir_id,chan,:],direct_removal_win_b)
-
-        
-        #perform time domain synchronous averaging
-        #align in low frequencies
-        if lf_align == True:
-            log_string_a = 'Aligning in low frequencies'
-            hf.log_with_timestamp(log_string_a, gui_logger)   
-    
-            #contants for TD alignment of BRIRs
-            t_shift_interval = CN.T_SHIFT_INTERVAL
-            min_t_shift = CN.MIN_T_SHIFT_B
-            max_t_shift = CN.MAX_T_SHIFT_B
-            num_intervals = int(np.abs((max_t_shift-min_t_shift)/t_shift_interval))
-            order=CN.ORDER#was 6
-            delay_win_min_t = CN.DELAY_WIN_MIN_A
-            delay_win_max_t = CN.DELAY_WIN_MAX_A
-            delay_win_hop_size = CN.DELAY_WIN_HOP_SIZE
-            delay_win_hops = CN.DELAY_WIN_HOPS_A
-            cutoff_alignment = CN.CUTOFF_ALIGNMENT_BRIR
-            #peak to peak within a sufficiently small sample window
-            peak_to_peak_window = int(np.divide(samp_freq_ash,cutoff_alignment)*0.95) #int(np.divide(samp_freq_ash,cutoff_alignment)) 
-            
-            delay_eval_set = np.zeros((num_out_dirs,num_intervals))
-            
-
-            #go through each room in the ordered list
-            for ir in range(num_out_dirs-1):#room in range(total_airs-1)
-                this_air_orig_idx=ir
-                next_air_orig_idx=ir+1
-
-                #method 2: take sum of all prior rooms and this room
-                rooms_to_add = 0
-                this_air = data_pad_zeros.copy()
-                for cum_air in range(ir+1):
-                    cum_air_orig_idx = cum_air
-                    rooms_to_add = rooms_to_add+1
-                    this_air = np.add(this_air,brir_reverberation[0,cum_air_orig_idx,0,:])
-                this_air = np.divide(this_air,rooms_to_add) 
-
-                calc_delay = 1
-                    
-                if calc_delay == 1:
-                    next_air = np.copy(brir_reverberation[0,next_air_orig_idx,0,:])
-                    this_ir_lp = hf.signal_lowpass_filter(this_air, cutoff_alignment, samp_freq_ash, order)
-                    next_ir_lp = hf.signal_lowpass_filter(next_air, cutoff_alignment, samp_freq_ash, order)
-                    
-                    for delay in range(num_intervals):
-                        
-                        #shift next room BRIR
-                        current_shift = min_t_shift+(delay*t_shift_interval)
-                        next_ir_lp_shift = np.roll(next_ir_lp,current_shift)
-                        #add current room BRIR to shifted next room BRIR
-                        sum_ir_lp = np.add(this_ir_lp,next_ir_lp_shift)
-                        #calculate group delay
-     
-                        peak_to_peak_iter=0
-                        for hop_id in range(delay_win_hops):
-                            samples = hop_id*delay_win_hop_size
-                            peak_to_peak = np.abs(np.max(sum_ir_lp[delay_win_min_t+samples:delay_win_min_t+samples+peak_to_peak_window])-np.min(sum_ir_lp[delay_win_min_t+samples:delay_win_min_t+samples+peak_to_peak_window]))
-                            #if this window has larger pk to pk, store in iter var
-                            if peak_to_peak > peak_to_peak_iter:
-                                peak_to_peak_iter = peak_to_peak
-                        #store largest pk to pk distance of all windows into delay set
-                        delay_eval_set[next_air_orig_idx,delay] = peak_to_peak_iter
-                    
-                    #shift next room by delay that has largest peak to peak distance (method 4 and 5)
-                    index_shift = np.argmax(delay_eval_set[next_air_orig_idx,:])
-    
-                
-                samples_shift=min_t_shift+(index_shift*t_shift_interval)
-                brir_reverberation[0,next_air_orig_idx,0,:] = np.roll(brir_reverberation[0,next_air_orig_idx,0,:],samples_shift)#left
-                brir_reverberation[0,next_air_orig_idx,1,:] = np.roll(brir_reverberation[0,next_air_orig_idx,1,:],samples_shift)#right
-                
-                #20240511: set end of array to zero to remove any data shifted to end of array
-                if samples_shift < 0:
-                    brir_reverberation[0,next_air_orig_idx,0,min_t_shift:] = brir_reverberation[0,next_air_orig_idx,0,min_t_shift:]*0#left
-                    brir_reverberation[0,next_air_orig_idx,1,min_t_shift:] = brir_reverberation[0,next_air_orig_idx,1,min_t_shift:]*0#right
-                        
-     
-        log_string_a = 'Summarising directions'
-        hf.log_with_timestamp(log_string_a, gui_logger)   
-          
-        #
-        #combine data so that no more than 7 output directions. 
-        #Combines samples (dimension 4) of multiple measurements (dimension 2) by summing, reducing the number of measurements to 7.
-        #
-        if total_sofa_obj > 0:
-            log_string_a = 'brir_reverberation shape before: ' + str(brir_reverberation.shape)
-            hf.log_with_timestamp(log_string_a, gui_logger)
-            
-            brir_reverberation=hf.combine_measurements_4d(brir_reverberation)
-            num_out_dirs=7
-            
-            log_string_a = 'brir_reverberation shape after: ' + str(brir_reverberation.shape)
-            hf.log_with_timestamp(log_string_a, gui_logger)
-        
-        log_string_a = 'Applying DF EQ'
-        hf.log_with_timestamp(log_string_a, gui_logger)  
-        
-        #
-        #apply diffuse field compensation
-        #
-        if ir_set in CN.AC_SPACE_LIST_KU100:
-            dummy_head='ku_100'
-        else:
-            dummy_head='other'
-        
-        if dummy_head == 'ku_100':
-        
-            #load compensation for ku100 BRIRs
-            filename = 'ku_100_dummy_head_compensation.wav'
-            wav_fname = pjoin(CN.DATA_DIR_INT, filename)
-            samplerate, df_eq = hf.read_wav_file(wav_fname)
-            df_eq = df_eq 
-        
-        else:
-  
-            #determine magnitude response, assume 0 phase
-            #set magnitude to 0dB
-            #invert response
-            #convert to IR
-            #if using IFFT, result will be 0 phase and symmetric
-            #if using ifftshift, result will be linear phase
-            #get linear phase FIR, window, and convert to minimum phase
-            #window min phase FIR again to remove artefacts
-            
-            num_bairs_avg = 0
-            brir_fft_avg_db = fr_flat.copy()
-            
-            #get diffuse field spectrum
-            for direc in range(num_out_dirs):
-                for chan in range(total_chan_brir):
-                    brir_current = np.copy(brir_reverberation[0,direc,chan,0:CN.N_FFT])#brir_out[elev][azim][chan][:]
-                    brir_current_fft = np.fft.fft(brir_current)#ensure left channel is taken for both channels
-                    brir_current_mag_fft=np.abs(brir_current_fft)
-                    brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
-                    
-                    brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
-                    
-                    num_bairs_avg = num_bairs_avg+1
-            
-            #divide by total number of brirs
-            brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
-            #convert to mag
-            brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-            #level ends of spectrum
-            brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, 40, 19000, smooth_win = 10)#150
-        
-            #smoothing
-            #octave smoothing
-            brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, n_fft=n_fft, win_size_base = 20)
-            
-            #invert response
-            brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
-            #create min phase FIR
-            brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
-            df_eq = brir_df_inv_fir
-            
-        if df_comp == True:
-            #convolve with inverse filter
-            for direc in range(num_out_dirs):
-                for chan in range(total_chan_brir):
-                    brir_eq_b = np.copy(brir_reverberation[0,direc,chan,:])
-                    #apply DF eq
-                    brir_eq_b = sp.signal.convolve(brir_eq_b,df_eq, 'full', 'auto')
-                    brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])
-   
-
-        #set each AIR to 0 level
-        fb_start=int(CN.SPECT_SNAP_F0*CN.N_FFT/samp_freq_ash)
-        fb_end=int(CN.SPECT_SNAP_F1*CN.N_FFT/samp_freq_ash)
-        for dir_id in range(num_out_dirs):
-            data_fft = np.fft.fft(brir_reverberation[0,dir_id,0,0:CN.N_FFT])
-            mag_fft=np.abs(data_fft)
-            average_mag_l = np.mean(mag_fft[fb_start:fb_end])
-            data_fft = np.fft.fft(brir_reverberation[0,dir_id,1,0:CN.N_FFT])
-            mag_fft=np.abs(data_fft)
-            average_mag_r = np.mean(mag_fft[fb_start:fb_end])
-            average_mag=(average_mag_l+average_mag_r)/2
-            if average_mag > 0:
-                for chan in range(total_chan_brir):
-                    brir_reverberation[0,dir_id,chan,:] = np.divide(brir_reverberation[0,dir_id,chan,:],average_mag)
-       
-        
-    
-        #
-        #optional: create compensation filter from average response and target, then equalise each BRIR
-        #
-        if mag_comp == True:
-            
-            log_string_a = 'Compensating FR'
-            hf.log_with_timestamp(log_string_a, gui_logger)  
-            
-            num_bairs_avg = 0
-            brir_fft_avg_db = fr_flat_s.copy()
-            
-            #calculate average response
-            for direc in range(num_out_dirs):
-                for chan in range(total_chan_brir):
-                    brir_current = np.copy(brir_reverberation[0,direc,chan,0:CN.N_FFT])#brir_out[elev][azim][chan][:]
-                    brir_current_fft = np.fft.fft(brir_current)#
-                    brir_current_mag_fft=np.abs(brir_current_fft)
-                    brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
-                    
-                    brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
-                    
-                    num_bairs_avg = num_bairs_avg+1
-            
-            #divide by total number of brirs
-            brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
-            #convert to mag
-            brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-            #level ends of spectrum
-            brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag, 40, 17000, smooth_win = 10)#150
-            brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, win_size_base = 20)
-            
-            #load target
-            npy_file_name =  'reverb_target_mag_response.npy'
-            reverb_folder = pjoin(CN.DATA_DIR_INT, 'reverberation')
-            in_file_path = pjoin(reverb_folder,npy_file_name) 
-            brir_fft_target_mag = np.load(in_file_path)
-            brir_fft_target_mag = hf.level_spectrum_ends(brir_fft_target_mag, 40, 17000, smooth_win = 10)#150
-            
-            #create compensation filter
-            comp_mag = hf.db2mag(np.subtract(hf.mag2db(brir_fft_target_mag),hf.mag2db(brir_fft_avg_mag_sm)))
-            comp_mag = hf.smooth_fft_octaves(data=comp_mag, win_size_base = 30)
-            #create min phase FIR
-            comp_eq_fir = hf.build_min_phase_filter(comp_mag)
- 
-            #equalise each brir with comp filter
-            for direc in range(num_out_dirs):
-                for chan in range(total_chan_brir):
-                    #convolve BRIR with filters
-                    brir_eq_b = np.copy(brir_reverberation[0,direc,chan,:])#
-                    #apply DF eq
-                    brir_eq_b = sp.signal.convolve(brir_eq_b,comp_eq_fir, 'full', 'auto')
-                    brir_reverberation[0,direc,chan,:] = np.copy(brir_eq_b[0:n_fft])#
-
-            if CN.PLOT_ENABLE == True:
-                print(str(num_bairs_avg))
-                hf.plot_data(brir_fft_target_mag,'brir_fft_target_mag', normalise=0)
-                hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag', normalise=0)
-                hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm', normalise=0)  
-                hf.plot_data(comp_mag,'comp_mag', normalise=0) 
-        
-   
-        
-    
-    
-    
-        #
-        #export wavs for testing
-        #
-        brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'comp_brirs',ir_set)
-        for direc in range(num_out_dirs):
-            out_file_name = ir_set+'_'+str(direc)+'_comp_brir.wav'
-            out_file_path = pjoin(brir_out_folder,out_file_name)
-            
-            #create dir if doesnt exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
-            
-            out_wav_array=np.zeros((n_fft,2))
-            #grab BRIR
-            out_wav_array[:,0] = np.copy(brir_reverberation[0,direc,0,:])#L
-            out_wav_array[:,1] = np.copy(brir_reverberation[0,direc,1,:])#R
-            
-            if output_wavs == 1:
-                hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash)
-        
-        #
-        #save numpy array for later use in BRIR generation functions
-        #
-        npy_file_name =  'reverberation_dataset_' +ir_set+'.npy'
-    
-        out_file_path = pjoin(brir_out_folder,npy_file_name)      
-          
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        np.save(out_file_path,brir_reverberation)    
-        
-        log_string_a = 'Exported numpy file to: ' + out_file_path 
-        hf.log_with_timestamp(log_string_a, gui_logger)
-       
-
-    
-    except Exception as ex:
-        log_string = 'Failed to complete BRIR processing for: ' + ir_set 
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-    
     
     
     
@@ -2221,7 +1454,7 @@ def calc_avg_room_target_mag(gui_logger=None):
         
         #smoothing
         #octave smoothing
-        air_fft_avg_mag_sm = hf.smooth_fft_octaves(data=air_fft_avg_mag, n_fft=n_fft)
+        air_fft_avg_mag_sm = hf.smooth_freq_octaves(data=air_fft_avg_mag, n_fft=n_fft)
         
         #create min phase FIR
         #avg_room_min_fir = hf.build_min_phase_filter(air_fft_avg_mag_sm)
@@ -2262,9 +1495,9 @@ def calc_reverb_target_mag(gui_logger=None):
     direct_hanning_start=51#101
     hann_direct_full=np.hanning(direct_hanning_size)
     hann_direct = np.split(hann_direct_full,2)[0]
-    direct_removal_win_b = data_pad_zeros.copy()
-    direct_removal_win_b[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
-    direct_removal_win_b[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
+    direct_removal_win = data_pad_zeros.copy()
+    direct_removal_win[direct_hanning_start:direct_hanning_start+int(direct_hanning_size/2)] = hann_direct
+    direct_removal_win[direct_hanning_start+int(direct_hanning_size/2):]=data_pad_ones[direct_hanning_start+int(direct_hanning_size/2):]
     
     #impulse
     impulse=np.zeros(n_fft)
@@ -2314,7 +1547,7 @@ def calc_reverb_target_mag(gui_logger=None):
         
         #smoothing
         #octave smoothing
-        brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag, n_fft=n_fft)
+        brir_fft_avg_mag_sm = hf.smooth_freq_octaves(data=brir_fft_avg_mag, n_fft=n_fft)
   
  
         if CN.PLOT_ENABLE == True:
@@ -2343,1044 +1576,7 @@ def calc_reverb_target_mag(gui_logger=None):
         log_string = 'Failed to complete BRIR reverb response processing'
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
     
-    
-def calc_subrir(gui_logger=None):
-    """
-    function to calculate time domain average low frequency BRIR
-    :return: None
-    """ 
-    n_fft=CN.N_FFT
-    total_chan_brir=2
-    output_wavs=1
-    sub_eq_mode=CN.SUB_EQ_MODE
-    samp_freq_ash=CN.SAMP_FREQ
   
-    #windows
-    data_pad_zeros=np.zeros(n_fft)
-    data_pad_ones=np.ones(n_fft)
-    
-    #initial rise window for sub
-    initial_hanning_size=50
-    initial_hanning_start=0#190
-    hann_initial_full=np.hanning(initial_hanning_size)
-    hann_initial = np.split(hann_initial_full,2)[0]
-    initial_removal_win_sub = data_pad_zeros.copy()
-    initial_removal_win_sub[initial_hanning_start:initial_hanning_start+int(initial_hanning_size/2)] = hann_initial
-    initial_removal_win_sub[initial_hanning_start+int(initial_hanning_size/2):]=data_pad_ones[initial_hanning_start+int(initial_hanning_size/2):]
-    
-    #window for late reflections
-    target_rt=400#ms
-    n_fade_win_start = int(((target_rt)/1000)*CN.FS)
-    n_fade_win_size=np.abs(8000)*2
-    wind_n_fade_full=np.bartlett(n_fade_win_size)
-    win_n_fade_out = np.split(wind_n_fade_full,2)[1]
-    #additional window to fade out noise
-    n_fade_out_win = data_pad_zeros.copy()
-    n_fade_out_win[0:n_fade_win_start] = data_pad_ones[0:n_fade_win_start]
-    n_fade_out_win[n_fade_win_start:n_fade_win_start+int(n_fade_win_size/2)] = win_n_fade_out
-    
-    #final window for late reflections
-    target_rt=400#ms
-    f_fade_win_start = int(((target_rt)/1000)*CN.FS)
-    f_fade_win_size=np.abs(20000)*2
-    wind_f_fade_full=np.bartlett(f_fade_win_size)
-    win_f_fade_out = np.split(wind_f_fade_full,2)[1]
-    #additional window to fade out noise
-    f_fade_out_win = data_pad_zeros.copy()
-    f_fade_out_win[0:f_fade_win_start] = data_pad_ones[0:f_fade_win_start]
-    f_fade_out_win[f_fade_win_start:f_fade_win_start+int(f_fade_win_size/2)] = win_f_fade_out
-    
-    #impulse
-    impulse=np.zeros(n_fft)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat = hf.mag2db(fr_flat_mag)
-    
-    try:
-        
- 
-        # load reference sub bass BRIR (FIR)
-    
-        selected_sub_brir= 'ash_sub_brir'       
-        mat_fname = pjoin(CN.DATA_DIR_INT, 'sub_brir_dataset.mat')
-        sub_brir_mat = mat73.loadmat(mat_fname)
-        sub_brir_ir = np.zeros((2,n_fft))
-        sub_brir_ir[0,0:CN.N_FFT] = sub_brir_mat[selected_sub_brir][0][0:CN.N_FFT]
-        sub_brir_ir[1,0:CN.N_FFT] = sub_brir_mat[selected_sub_brir][1][0:CN.N_FFT]
-        
-        #variable crossover depending on RT60
-        f_crossover_var=CN.CUTOFF_ALIGNMENT_SUBRIR#
-        peak_to_peak_window_sub = int(np.divide(samp_freq_ash,f_crossover_var)*0.95)
-        
-        mag_range_a=int(30*(n_fft/CN.N_FFT))
-        mag_range_b=int(290*(n_fft/CN.N_FFT))
-        
-        #set level of reference sub BRIR to 0 at low freqs
-        data_fft = np.fft.fft(sub_brir_ir[0][:])
-        mag_fft=np.abs(data_fft)
-        average_mag = np.mean(mag_fft[mag_range_a:mag_range_b])
-        if average_mag == 0:
-            if CN.LOG_INFO == True:
-                logging.info('0 magnitude detected')
-        for chan in range(CN.TOTAL_CHAN_BRIR):
-            sub_brir_ir[chan][:] = np.divide(sub_brir_ir[chan][:],average_mag)
-        
-        #
-        #section for loading estimated sub BRIR datasets and integrating into reference
-        #
-        dir_id=0
-        num_sub_sets_new=6#5 #input sets, not including reference sub brir
-        num_sub_sets_total=num_sub_sets_new+1#total input sets, including reference sub brir
-        eval_polarity = CN.EVAL_POLARITY
-        #eval_polarity = False
-        
-        #create numpy array for new BRIR dataset   
-        subrir_sets=np.zeros((num_sub_sets_total,1,total_chan_brir,n_fft))
-        subrir_sets_interim=np.zeros((num_sub_sets_total,1,total_chan_brir,n_fft))
-        
-        #copy reference BRIR into subrir_sets array
-        for chan in range(CN.TOTAL_CHAN_BRIR):
-            subrir_sets[0,dir_id,chan,:] = np.copy(sub_brir_ir[chan][:])
-            subrir_sets_interim[0,dir_id,chan,:] = np.copy(sub_brir_ir[chan][:])
-        
-        for sub_set_id in range(num_sub_sets_new):
-
-            # load sub bass BRIR (estimated)
-            if sub_set_id == 0:
-                ir_set='sub_set_b'#woofer
-            elif sub_set_id == 1:
-                ir_set='sub_set_c'#subrir
-            elif sub_set_id == 2:
-                ir_set='sub_set_d'#various AIRs    
-            elif sub_set_id == 3:
-                ir_set='sub_set_e'#ASH listening set
-            elif sub_set_id == 4:
-                ir_set='sub_set_f'#studio A
-            elif sub_set_id == 5:
-                ir_set='sub_set_g'
-            elif sub_set_id == 6:
-                ir_set='sub_set_h'
-            if ir_set == 'sub_set_e':#wav
-                brir_reverberation=np.zeros((CN.INTERIM_ELEVS,1,2,n_fft))
-                #read wav files
-                brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
-                if ir_set == 'sub_set_e':
-                    filename='BRIR_R32_C1_E0_A30_eq.wav'
-                # if sub_set_id == 6:
-                #     filename='BRIR_R05_C2_E0_A-30 EQ.wav'
-                wav_fname = pjoin(brir_out_folder, filename)
-                samplerate, data = hf.read_wav_file(wav_fname)
-                #samp_freq=samplerate
-                fir_array = data 
-                fir_length = len(fir_array)
-                extract_legth = min(n_fft,fir_length)
-                
-                #resample if sample rate is not 44100
-                if samplerate != samp_freq_ash:
-                    fir_array = hf.resample_signal(fir_array, original_rate = samplerate, new_rate = samp_freq_ash)
-                    log_string_a = 'source samplerate: ' + str(samplerate) + ', resampled to: '+ str(samp_freq_ash)
-                    hf.log_with_timestamp(log_string_a, gui_logger)
-                    populate_samples_re = round(fir_length * float(samp_freq_ash) / samplerate)#recalculate no. samples from resampled IR
-                    extract_legth = min(n_fft,populate_samples_re)#smallest of nfft or resampled IR length
-        
-                #load into numpy array
-                brir_reverberation[0,0,0,0:extract_legth]=fir_array[0:extract_legth,0]#L
-                brir_reverberation[0,0,1,0:extract_legth]=fir_array[0:extract_legth,1]#R
-  
-            
-            else:
-                brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
-                npy_file_name =  'reverberation_dataset_' +ir_set+'.npy' #'reverberation_dataset_nocomp_'
-                out_file_path = pjoin(brir_out_folder,npy_file_name)  
-                brir_reverberation = np.load(out_file_path)
-                
-            
-
-            #set level of subrir set est brir to 0 at low freqs
-            #set each AIR to 0 level
-            
-            data_fft = np.fft.fft(brir_reverberation[0,dir_id,0,0:CN.N_FFT])
-            mag_fft=np.abs(data_fft)
-            average_mag_l = np.mean(mag_fft[mag_range_a:mag_range_b])
-            data_fft = np.fft.fft(brir_reverberation[0,dir_id,1,0:CN.N_FFT])
-            mag_fft=np.abs(data_fft)
-            average_mag_r = np.mean(mag_fft[mag_range_a:mag_range_b])
-            average_mag=(average_mag_l+average_mag_r)/2
-            if average_mag > 0:
-                for chan in range(total_chan_brir):
-                    brir_reverberation[0,dir_id,chan,:] = np.divide(brir_reverberation[0,dir_id,chan,:],average_mag)
- 
-            #copy result into subrir_sets array
-            for chan in range(CN.TOTAL_CHAN_BRIR):
-                subrir_sets[sub_set_id+1,dir_id,chan,:] = np.copy(brir_reverberation[0,dir_id,chan,:])
-                
-            log_string_a = 'loaded sub_set_id: ' + str(sub_set_id )
-            hf.log_with_timestamp(log_string_a, gui_logger)
-        
-        #
-        #align BRIRs in time domain
-        #
-    
-        
-        delay_eval_set_sub_p = np.zeros((CN.NUM_INTERVALS_S))
-        delay_eval_set_sub_n = np.zeros((CN.NUM_INTERVALS_S))
-        #section to calculate best delay for next ir to align with this ir
-        brir_sample = np.copy(sub_brir_ir[0][:])
-        
-        #go through each room in the ordered list
-        for sub_set_id in range(num_sub_sets_total):#add 1 to include reference ir
-            chan_ref=0
-            this_ir_idx=sub_set_id
-            
-            if sub_set_id > 0:#ignore reference ir
-                #take sum of all prior irs to get reference
-                irs_to_add = 0
-                prev_ir = data_pad_zeros.copy()
-                for cum_air in range(sub_set_id):
-                    irs_to_add = irs_to_add+1
-                    prev_ir = np.add(prev_ir, subrir_sets[cum_air,dir_id,chan_ref,:])
-                prev_ir = np.divide(prev_ir,irs_to_add) 
-                brir_sample =prev_ir
-            
-                #current sample that will be shifted
-                subrir_sample_p = np.copy(subrir_sets[sub_set_id,dir_id,chan_ref,:])#check first ir, first channel
-                subrir_sample_n = np.multiply(np.copy(subrir_sets[sub_set_id,dir_id,chan_ref,:]),-1)
-            
-                #run once for positive polarity
-                for delay in range(CN.NUM_INTERVALS_S):
-                
-                    #shift next ir (BRIR)
-                    current_shift = CN.MIN_T_SHIFT_S+(delay*CN.T_SHIFT_INTERVAL_S)
-                    subrir_shift_c = np.roll(subrir_sample_p,current_shift)
-                    
-                    #add current ir (SUBBRIR) to shifted next ir (BRIR)
-                    sum_ir_c = np.add(brir_sample,subrir_shift_c)
-            
-                    #method 5: calculate distance from peak to peak within a 400 sample window
-                    sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
-                    peak_to_peak_iter=0
-                    for hop_id in range(CN.DELAY_WIN_HOPS):
-                        samples = hop_id*CN.DELAY_WIN_HOP_SIZE
-                        local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window_sub])
-                        local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window_sub])
-                        peak_to_peak = np.abs(local_max)#now only looking at positive peak, was np.abs(local_max-local_min)
-                        #if this window has larger pk to pk, store in iter var
-                        if peak_to_peak > peak_to_peak_iter:
-                            peak_to_peak_iter = peak_to_peak
-                    #store largest pk to pk distance of all windows into delay set
-                    delay_eval_set_sub_p[delay] = peak_to_peak_iter
-            
-                peak_to_peak_max_p = np.max(delay_eval_set_sub_p[:])
-                index_shift_p = np.argmax(delay_eval_set_sub_p[:])
-                
-                #run once for negative polarity
-                for delay in range(CN.NUM_INTERVALS_S):
-                
-                    #shift next ir (BRIR)
-                    current_shift = CN.MIN_T_SHIFT_S+(delay*CN.T_SHIFT_INTERVAL_S)
-                    subrir_shift_c = np.roll(subrir_sample_n,current_shift)
-                    
-                    #add current ir (SUBBRIR) to shifted next ir (BRIR)
-                    sum_ir_c = np.add(brir_sample,subrir_shift_c)
-            
-                    #method 5: calculate distance from peak to peak within a 400 sample window
-                    sum_ir_lp = hf.signal_lowpass_filter(sum_ir_c, f_crossover_var, CN.FS, CN.ORDER)
-                    peak_to_peak_iter=0
-                    for hop_id in range(CN.DELAY_WIN_HOPS):
-                        samples = hop_id*CN.DELAY_WIN_HOP_SIZE
-                        local_max=np.max(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window_sub])
-                        local_min=np.min(sum_ir_lp[CN.DELAY_WIN_MIN_T+samples:CN.DELAY_WIN_MIN_T+samples+peak_to_peak_window_sub])
-                        peak_to_peak = np.abs(local_max)
-                        #if this window has larger pk to pk, store in iter var
-                        if peak_to_peak > peak_to_peak_iter:
-                            peak_to_peak_iter = peak_to_peak
-                    #store largest pk to pk distance of all windows into delay set
-                    delay_eval_set_sub_n[delay] = peak_to_peak_iter
-            
-                peak_to_peak_max_n = np.max(delay_eval_set_sub_n[:])
-                index_shift_n = np.argmax(delay_eval_set_sub_n[:])
-                
-                if peak_to_peak_max_p > peak_to_peak_max_n or eval_polarity == False:#or sub_set_id == 3 or sub_set_id == 6
-                    index_shift=index_shift_p
-                    sub_polarity=1
-                else:
-                    index_shift=index_shift_n
-                    sub_polarity=-1
-                
-                #shift next ir by delay that has largest peak to peak distance
-                samples_shift=CN.MIN_T_SHIFT_S+(index_shift*CN.T_SHIFT_INTERVAL_S)
-                
-            
-                for chan in range(CN.TOTAL_CHAN_BRIR):
-                    #roll subrir
-                    subrir_sets[sub_set_id,dir_id,chan,:] = np.roll(subrir_sets[sub_set_id,dir_id,chan,:],samples_shift)
-                    #change polarity if applicable
-                    subrir_sets[sub_set_id,dir_id,chan,:] = np.multiply(subrir_sets[sub_set_id,dir_id,chan,:],sub_polarity)
-                    #set end of array to zero to remove any data shifted to end of array
-                    if samples_shift < 0:
-                        subrir_sets[sub_set_id,dir_id,chan,samples_shift:] = subrir_sets[sub_set_id,dir_id,chan,samples_shift:]*0#left
-                        subrir_sets[sub_set_id,dir_id,chan,:] = np.multiply(subrir_sets[sub_set_id,dir_id,chan,:],initial_removal_win_sub)
-                    #also apply fade out window
-                    subrir_sets[sub_set_id,dir_id,chan,:] = np.multiply(subrir_sets[sub_set_id,dir_id,chan,:],n_fade_out_win)
-                
-                
-                if CN.LOG_INFO == True:
-                    logging.info('delay index = ' + str(index_shift))
-                    logging.info('sub polarity = ' + str(sub_polarity))
-                    logging.info('samples_shift = ' + str(samples_shift))
-                    logging.info('peak_to_peak_max_n = ' + str(peak_to_peak_max_n))
-                    logging.info('peak_to_peak_max_p = ' + str(peak_to_peak_max_p))
-        
-                log_string_a = 'aligned sub_set_id: ' + str(sub_set_id )
-                hf.log_with_timestamp(log_string_a, gui_logger)
-                
-        
-        #alignment completed
-        log_string_a = 'alignment complete'
-        hf.log_with_timestamp(log_string_a, gui_logger)
-        
-        ir_set = 'sub_set_average'
-        #folder for saving outputs
-        brir_out_folder = pjoin(CN.DATA_DIR_INT, 'ir_data', 'est_brirs',ir_set)
-        
-        #
-        #save wavs
-        #
-        
-        out_file_name = 'pre_eq_sub_brir_orginal.wav'
-        out_file_path = pjoin(brir_out_folder,out_file_name)
-        #create dir if doesnt exist
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        out_wav_array=np.zeros((n_fft,2))
-        #grab BRIR
-        out_wav_array[:,0] = np.copy(sub_brir_ir[0][:])#L
-        out_wav_array[:,1] = np.copy(sub_brir_ir[1][:])#R
-        if output_wavs == 1:
-            hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash)
-    
-        for sub_set_id in range(num_sub_sets_total):
-            out_file_name = str(sub_set_id) + '_pre_eq_rolled_brir.wav'
-            out_file_path = pjoin(brir_out_folder,out_file_name)
-            #create dir if doesnt exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
-            out_wav_array=np.zeros((n_fft,2))
-            #grab BRIR
-            out_wav_array[:,0] = np.copy(subrir_sets[sub_set_id,dir_id,0,:])#L
-            out_wav_array[:,1] = np.copy(subrir_sets[sub_set_id,dir_id,1,:])#R
-            if output_wavs == 1:
-                hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash)
-        
-        #
-        # first stage of EQ
-        #
-        
-        for sub_set_id in range(num_sub_sets_total):
-            sub_brir_ir_new = np.zeros((2,n_fft))
-            sub_brir_ir_new[0,0:CN.N_FFT] = np.copy(subrir_sets[sub_set_id,dir_id,0,:])
-            sub_brir_ir_new[1,0:CN.N_FFT] = np.copy(subrir_sets[sub_set_id,dir_id,1,:])
-             
-            if sub_set_id > 0:#ignore reference
-                #auto filtering
-                if sub_eq_mode == 1:
-     
-                    num_bairs_avg = 0
-                    brir_fft_avg_db = fr_flat.copy()
-                    #get diffuse field spectrum
-                    for chan in range(total_chan_brir):
-                        brir_current = np.copy(sub_brir_ir_new[chan,0:CN.N_FFT])
-                        brir_current_fft = np.fft.fft(brir_current)#ensure left channel is taken for both channels
-                        brir_current_mag_fft=np.abs(brir_current_fft)
-                        brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
-                        brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
-                        num_bairs_avg = num_bairs_avg+1
-                    #divide by total number of brirs
-                    brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
-                    #convert to mag
-                    brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-                    #level ends of spectrum
-                    brir_fft_avg_mag_sm = hf.level_spectrum_ends(brir_fft_avg_mag, 5, 200, smooth_win = 15)#150
-                    #smoothing
-                    #octave smoothing
-                    #brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag_sm, n_fft=n_fft, win_size_base = 20)
-                    #invert response
-                    brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
-                    #create min phase FIR
-                    brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
-                    df_eq = brir_df_inv_fir
-                    #convolve with inverse filter
-                    for chan in range(total_chan_brir):
-                        brir_eq_b = np.copy(sub_brir_ir_new[chan,:])
-                        #apply DF eq
-                        brir_eq_b = sp.signal.convolve(brir_eq_b,df_eq, 'full', 'auto')
-                        sub_brir_ir_new[chan,0:CN.N_FFT] = np.copy(brir_eq_b[0:CN.N_FFT])
-                    if CN.PLOT_ENABLE == True:
-                        hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag ' + str(sub_set_id))
-                        hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm ' + str(sub_set_id))
-                        hf.plot_data(brir_fft_avg_mag_inv,'brir_fft_avg_mag_inv ' + str(sub_set_id))
-                
-                
-                #manual filtering
-                elif sub_eq_mode == 0:
-                    
-                    if sub_set_id == 1:
-                        filter_type="peaking"
-                        fc=18
-                        sr=samp_freq_ash
-                        q=2
-                        gain_db=-1
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                
-                        filter_type="peaking"
-                        fc=38
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=-3
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=43
-                        sr=samp_freq_ash
-                        q=4
-                        gain_db=-1.0
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=56
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=-5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                 
-                        filter_type="peaking"
-                        fc=72
-                        sr=samp_freq_ash
-                        q=4.0
-                        gain_db=-1
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=127
-                        sr=samp_freq_ash
-                        q=7.0
-                        gain_db=-2.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=149
-                        sr=samp_freq_ash
-                        q=4.0
-                        gain_db=-0.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=95
-                        sr=samp_freq_ash
-                        q=2.0
-                        gain_db=0.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                    elif sub_set_id == 2:
-                        filter_type="peaking"
-                        fc=25
-                        sr=samp_freq_ash
-                        q=5
-                        gain_db=-7
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=38
-                        sr=samp_freq_ash
-                        q=5
-                        gain_db=-2.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=48
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=-5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=76
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=-2
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=109
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=-3
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                    elif sub_set_id == 3:
-                        filter_type="peaking"
-                        fc=48
-                        sr=samp_freq_ash
-                        q=2.5
-                        gain_db=-4
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=59
-                        sr=samp_freq_ash
-                        q=4
-                        gain_db=-7
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=82
-                        sr=samp_freq_ash
-                        q=5
-                        gain_db=-5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=111
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=-9
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=130
-                        sr=samp_freq_ash
-                        q=7
-                        gain_db=-4
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=150
-                        sr=samp_freq_ash
-                        q=2.5
-                        gain_db=-2
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                    
-                    elif sub_set_id == 4:
-                        
-                        filter_type="peaking"
-                        fc=9
-                        sr=samp_freq_ash
-                        q=2.5
-                        gain_db=-5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=14
-                        sr=samp_freq_ash
-                        q=10
-                        gain_db=-3
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=29
-                        sr=samp_freq_ash
-                        q=2.5
-                        gain_db=-1
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=61
-                        sr=samp_freq_ash
-                        q=2.5
-                        gain_db=-1
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=143
-                        sr=samp_freq_ash
-                        q=9
-                        gain_db=-1
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=198
-                        sr=samp_freq_ash
-                        q=9
-                        gain_db=-1
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                    elif sub_set_id == 5:
-                        
-                        filter_type="peaking"
-                        fc=45
-                        sr=samp_freq_ash
-                        q=4
-                        gain_db=-3
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=77
-                        sr=samp_freq_ash
-                        q=7
-                        gain_db=-2.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=89
-                        sr=samp_freq_ash
-                        q=7
-                        gain_db=-2.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=105
-                        sr=samp_freq_ash
-                        q=7
-                        gain_db=-2.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-           
-                        filter_type="peaking"
-                        fc=119
-                        sr=samp_freq_ash
-                        q=10
-                        gain_db=-0.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)                    
-           
-                        filter_type="peaking"
-                        fc=133
-                        sr=samp_freq_ash
-                        q=6
-                        gain_db=2
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=154
-                        sr=samp_freq_ash
-                        q=10
-                        gain_db=-2
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=170
-                        sr=samp_freq_ash
-                        q=7
-                        gain_db=3.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=186
-                        sr=samp_freq_ash
-                        q=10
-                        gain_db=-4
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="lowshelf"
-                        fc=20
-                        sr=samp_freq_ash
-                        q=1.0
-                        gain_db=3.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                    elif sub_set_id == 6:
-                        
-                        filter_type="lowshelf"
-                        fc=40
-                        sr=samp_freq_ash
-                        q=1.0
-                        gain_db=8
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=26
-                        sr=samp_freq_ash
-                        q=4
-                        gain_db=-3
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=27
-                        sr=samp_freq_ash
-                        q=7
-                        gain_db=-1.5
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                        filter_type="peaking"
-                        fc=65
-                        sr=samp_freq_ash
-                        q=2
-                        gain_db=-3
-                        pyquad = pyquadfilter.PyQuadFilter(sr)
-                        pyquad.set_params(filter_type, fc, q, gain_db)
-                        sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-                        sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-                        
-                    
-            #save interim result
-            out_file_name = str(sub_set_id) + '_after_eq_rolled_brir.wav'
-            out_file_path = pjoin(brir_out_folder,out_file_name)
-            #create dir if doesnt exist
-            output_file = Path(out_file_path)
-            output_file.parent.mkdir(exist_ok=True, parents=True)
-            out_wav_array=np.zeros((n_fft,2))
-            #grab BRIR
-            out_wav_array[:,0] = np.copy(sub_brir_ir_new[0][:])#L
-            out_wav_array[:,1] = np.copy(sub_brir_ir_new[1][:])#R
-            if output_wavs == 1:
-                hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash) 
-        
-            #set level of subrir set est brir to 0 at low freqs
-            #set each AIR to 0 level
-            data_fft = np.fft.fft(sub_brir_ir_new[0][:])
-            mag_fft=np.abs(data_fft)
-            average_mag_l = np.mean(mag_fft[mag_range_a:mag_range_b])
-            data_fft = np.fft.fft(sub_brir_ir_new[1][:])
-            mag_fft=np.abs(data_fft)
-            average_mag_r = np.mean(mag_fft[mag_range_a:mag_range_b])
-            average_mag=(average_mag_l+average_mag_r)/2
-            if average_mag > 0:
-                for chan in range(total_chan_brir):
-                    out_wav_array[:,chan] = np.divide(out_wav_array[:,chan],average_mag)
-        
-            #copy result into subrir_sets array
-            for chan in range(CN.TOTAL_CHAN_BRIR):
-                subrir_sets_interim[sub_set_id,dir_id,chan,:] = np.copy(sub_brir_ir_new[chan][:])
-                
-            log_string_a = 'applied EQ to sub_set_id: ' + str(sub_set_id )
-            hf.log_with_timestamp(log_string_a, gui_logger)
-  
-        #ratios for merging
-        #manual weighting
-        #ratio_list = [0.05,0.21,0.16,0.14,0.28,0.16] #=sub_brir_dataset_a    
-        #0(1), 3(4) & 4(5) are highest quality
-        #20250405: new ratio = [0.05,0.30,0.05,0.05,0.25,0.25, 0.05]  #sub_brir_dataset_b
-        #ratio_list = [0.02,0.02,0.01,0.02,0.90,0.02, 0.01] #sub_brir_dataset_c     
-        #ratio_list = [0.01,0.30,0.01,0.01,0.01,0.65, 0.01] #sub_brir_dataset_d
-        
-        ratio_list = [0.01,0.30,0.01,0.01,0.01,0.65, 0.01]    #
-        
-        #calculated
-        #ratio_list = hf.create_weighted_list(num_sub_sets_total, hot_index=1)
-        #ratio_list = hf.create_weighted_list(num_sub_sets_total, randomize=True, seed=42)
-        #ratio_list = hf.create_weighted_list(num_sub_sets_total)
-
-        sub_brir_ir_new = np.zeros((2,n_fft))
-        #prepopulate with reference subrir
-        sub_brir_ir_new[0,0:CN.N_FFT] = np.multiply(sub_brir_ir[0][:],ratio_list[0])
-        sub_brir_ir_new[1,0:CN.N_FFT] = np.multiply(sub_brir_ir[1][:],ratio_list[0])
-        for sub_set_id in range(num_sub_sets_total):
-            #merge
-            for chan in range(CN.TOTAL_CHAN_BRIR):
-                sub_brir_ir_new[chan,0:CN.N_FFT] = np.add(np.multiply(subrir_sets_interim[sub_set_id,dir_id,chan,:],ratio_list[sub_set_id]),np.copy(sub_brir_ir_new[chan,0:CN.N_FFT]))
-
-        
-        
-        #save interim result
-        out_file_name = 'pre_eq_after_merge_brir.wav'
-        out_file_path = pjoin(brir_out_folder,out_file_name)
-        #create dir if doesnt exist
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        out_wav_array=np.zeros((n_fft,2))
-        #grab BRIR
-        out_wav_array[:,0] = np.copy(sub_brir_ir_new[0][:])#L
-        out_wav_array[:,1] = np.copy(sub_brir_ir_new[1][:])#R
-        if output_wavs == 1:
-            hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash) 
-        
-        
-        #auto filtering
-        if sub_eq_mode == 1:
-
-            num_bairs_avg = 0
-            brir_fft_avg_db = fr_flat.copy()
-            #get diffuse field spectrum
-            for chan in range(total_chan_brir):
-                brir_current = np.copy(sub_brir_ir_new[chan,0:CN.N_FFT])
-                brir_current_fft = np.fft.fft(brir_current)#ensure left channel is taken for both channels
-                brir_current_mag_fft=np.abs(brir_current_fft)
-                brir_current_db_fft = hf.mag2db(brir_current_mag_fft)
-                brir_fft_avg_db = np.add(brir_fft_avg_db,brir_current_db_fft)
-                num_bairs_avg = num_bairs_avg+1
-            #divide by total number of brirs
-            brir_fft_avg_db = brir_fft_avg_db/num_bairs_avg
-            #convert to mag
-            brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-            #level ends of spectrum
-            brir_fft_avg_mag_sm = hf.level_spectrum_ends(brir_fft_avg_mag, 3, 200, smooth_win = 3)#150
-            #smoothing
-            #octave smoothing
-            #brir_fft_avg_mag_sm = hf.smooth_fft_octaves(data=brir_fft_avg_mag_sm, n_fft=n_fft, win_size_base = 20)
-            #invert response
-            brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
-            #create min phase FIR
-            brir_df_inv_fir = hf.build_min_phase_filter(brir_fft_avg_mag_inv)
-            df_eq = brir_df_inv_fir
-            #convolve with inverse filter
-            for chan in range(total_chan_brir):
-                brir_eq_b = np.copy(sub_brir_ir_new[chan,:])
-                #apply DF eq
-                brir_eq_b = sp.signal.convolve(brir_eq_b,df_eq, 'full', 'auto')
-                sub_brir_ir_new[chan,0:CN.N_FFT] = np.copy(brir_eq_b[0:CN.N_FFT])
-            if CN.PLOT_ENABLE == True:
-                hf.plot_data(brir_fft_avg_mag,'brir_fft_avg_mag after merge')
-                hf.plot_data(brir_fft_avg_mag_sm,'brir_fft_avg_mag_sm after merge')
-                hf.plot_data(brir_fft_avg_mag_inv,'brir_fft_avg_mag_inv after merge')
-        
-            
-            
-            #sub set D = N/A
-            
-            filter_type="peaking"
-            fc=32
-            sr=samp_freq_ash
-            q=3.0
-            gain_db=0.2
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            filter_type="peaking"
-            fc=39
-            sr=samp_freq_ash
-            q=3.0
-            gain_db=-0.2
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            filter_type="peaking"
-            fc=91
-            sr=samp_freq_ash
-            q=10
-            gain_db=0.1
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            filter_type="peaking"
-            fc=126
-            sr=samp_freq_ash
-            q=7
-            gain_db=0.2
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            filter_type="peaking"
-            fc=130
-            sr=samp_freq_ash
-            q=10
-            gain_db=-0.1
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            filter_type="peaking"
-            fc=151
-            sr=samp_freq_ash
-            q=20
-            gain_db=-1
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-        
-        #manual filtering
-        elif sub_eq_mode == 0:
-  
-            filter_type="lowshelf"
-            fc=13
-            sr=samp_freq_ash
-            q=1.0
-            gain_db=10.5#9.3
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-            
-            filter_type="peaking"
-            fc=2
-            sr=samp_freq_ash
-            q=2.0
-            gain_db=-6.0
-            pyquad = pyquadfilter.PyQuadFilter(sr)
-            pyquad.set_params(filter_type, fc, q, gain_db)
-            sub_brir_ir_pre = np.copy(sub_brir_ir_new)
-            sub_brir_ir_new = pyquad.filter(sub_brir_ir_pre)
-           
-            #add more filters as required
-  
-
-            if CN.LOG_INFO == True:
-                logging.info('filter_type = ' + str(filter_type))
-                logging.info('fc = ' + str(fc))
-                logging.info('sr = ' + str(sr))
-                logging.info('q = ' + str(q))
-                logging.info('gain_db = ' + str(gain_db))
-        
-    
-        #final windowing
-        sub_brir_ir_new[0][:] = np.multiply(sub_brir_ir_new[0][:],f_fade_out_win)#L
-        sub_brir_ir_new[1][:] = np.multiply(sub_brir_ir_new[1][:],f_fade_out_win)#R
-    
-        log_string_a = 'Merged and applied final EQ '
-        hf.log_with_timestamp(log_string_a, gui_logger)
-    
-        #
-        #export wavs for testing
-        #
-
-        
-        out_file_name = 'after_eq_sub_brir_new.wav'
-        out_file_path = pjoin(brir_out_folder,out_file_name)
-        
-        #create dir if doesnt exist
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        out_wav_array=np.zeros((n_fft,2))
-        #grab BRIR
-        out_wav_array[:,0] = np.copy(sub_brir_ir_new[0][:])#L
-        out_wav_array[:,1] = np.copy(sub_brir_ir_new[1][:])#R
-        
-        if output_wavs == 1:
-            hf.write2wav(file_name=out_file_path, data=out_wav_array, prevent_clipping=1, samplerate=samp_freq_ash)
-
-        
-        #
-        #save numpy array for later use in BRIR generation functions
-        #
-        npy_file_name =  'sub_brir_new.npy'
-        
-        out_file_path = pjoin(brir_out_folder,npy_file_name)      
-          
-        output_file = Path(out_file_path)
-        output_file.parent.mkdir(exist_ok=True, parents=True)
-        
-        np.save(out_file_path,sub_brir_ir_new)    
-        
-        log_string_a = 'Exported numpy file to: ' + out_file_path 
-        hf.log_with_timestamp(log_string_a, gui_logger)
-    
-    except Exception as ex:
-        logging.error("Error occurred", exc_info = ex)
-        log_string = 'Failed to complete sub BRIR processing'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-    
-    
 
 def calc_room_target_dataset(gui_logger=None):
     """
@@ -3437,7 +1633,7 @@ def calc_room_target_dataset(gui_logger=None):
                 room_target_mag=np.abs(data_fft)
                 #level ends of spectrum
                 room_target_mag_new = hf.level_spectrum_ends(room_target_mag, 20, 20000, smooth_win = 3)#150
-                room_target_mag_new_sm = hf.smooth_fft_octaves(data=room_target_mag_new, n_fft=n_fft,fund_freq=150,win_size_base = 3)
+                room_target_mag_new_sm = hf.smooth_freq_octaves(data=room_target_mag_new, n_fft=n_fft,fund_freq=150,win_size_base = 3)
                 #create min phase FIR
                 room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
 
@@ -3455,7 +1651,7 @@ def calc_room_target_dataset(gui_logger=None):
             room_target_mag=np.abs(data_fft)
             #level ends of spectrum
             room_target_mag_new = hf.level_spectrum_ends(room_target_mag, 20, 1000, smooth_win = 3)#150
-            room_target_mag_new_sm = hf.smooth_fft(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
+            room_target_mag_new_sm = hf.smooth_freq(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
             
             #create min phase FIR
             room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
@@ -3479,7 +1675,7 @@ def calc_room_target_dataset(gui_logger=None):
             room_target_mag=np.abs(data_fft)
             #level ends of spectrum
             room_target_mag_new = hf.level_spectrum_ends(room_target_mag, 20, 5000, smooth_win = 3)#150
-            room_target_mag_new_sm = hf.smooth_fft(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
+            room_target_mag_new_sm = hf.smooth_freq(data=room_target_mag_new, n_fft=n_fft, crossover_f=2000, win_size_a = 3, win_size_b = 500)
             
             #create min phase FIR
             room_target_min_fir = hf.build_min_phase_filter(room_target_mag_new_sm)
@@ -3529,136 +1725,184 @@ def calc_room_target_dataset(gui_logger=None):
         hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
             
                 
+
+
 def acoustic_space_updates(download_updates=False, gui_logger=None):
-    """ 
-    Function finds latest versions of acoustic spaces, compares with current versions
     """
-    
-    
+    Function finds latest versions of acoustic spaces, compares with current versions.
+    Downloads updates when enabled.
+    """
+
     try:
-        
-        #log results
-        log_string = 'Checking for acoustic space updates'
-        hf.log_with_timestamp(log_string, gui_logger)
-        
-        #read local metadata from reverberation_metadata.csv
-        #place rows into dictionary list
+        hf.log_with_timestamp("Checking for acoustic space updates", gui_logger)
+
+        # ---------------------------
+        # Load LOCAL metadata
+        # ---------------------------
+        csv_directory = pjoin(CN.DATA_DIR_INT, "reverberation")
+        metadata_file = pjoin(csv_directory, CN.REV_METADATA_FILE_NAME)
+
         local_meta_dict_list = []
-
-        #directories
-        csv_directory = pjoin(CN.DATA_DIR_INT, 'reverberation')
-        #read metadata from csv. Expects reverberation_metadata.csv 
-        metadata_file_name = CN.REV_METADATA_FILE_NAME
-        metadata_file = pjoin(csv_directory, metadata_file_name)
-        with open(metadata_file, encoding='utf-8-sig', newline='') as inputfile:
+        with open(metadata_file, encoding="utf-8-sig", newline="") as inputfile:
             reader = DictReader(inputfile)
-            for row in reader:#rows 2 and onward
-                #store each row as a dictionary
-                #append to list of dictionaries
+            for row in reader:
                 local_meta_dict_list.append(row)
-                    
-                
-        #download latest metadata file from gdrive
-        #read metadata file
-        #place into dictionary list
-        web_meta_dict_list = []
-        
-        #get version of online database
-        url = "https://drive.google.com/file/d/14eX5wLiyMCuS4-2aYBfbWRMXFgYc6Bm-/view?usp=drive_link"
-        dl_file = pjoin(csv_directory, 'reverberation_metadata_latest.csv')
-        gdown.download(url, dl_file, fuzzy=True)
 
-        with open(dl_file, encoding='utf-8-sig', newline='') as inputfile:
-            reader = DictReader(inputfile)
-            for row in reader:#rows 2 and onward
-                #store each row as a dictionary
-                #append to list of dictionaries
-                web_meta_dict_list.append(row)
- 
-        mismatches=0
-        updates_perf=0
-        if not web_meta_dict_list:
-            raise ValueError('latest metadata is empty')
         if not local_meta_dict_list:
-            raise ValueError('local metadata is empty') 
-            
-        #for each space in latest dict list
-        for space_w in web_meta_dict_list:
-            name_w = space_w.get('name_src')
-            name_gui_w = space_w.get('name_gui')
-            vers_w = space_w.get('version')
-            gdrive_link = space_w.get('gdrive_link')
-            rev_folder = space_w.get('folder')
-            file_name = space_w.get('file_name')
-            dl_file = pjoin(csv_directory,rev_folder, file_name+'.npy')
-            match_found=0
-            update_required=0
-            for space_l in local_meta_dict_list:
-                name_l = space_l.get('name_src')
-                vers_l = space_l.get('version')
-                #find matching space in local version
-                if name_w == name_l:
-                    match_found=1
-                    #compare version with local version
-                    #case for mismatching versions for matching name
-                    if vers_w != vers_l:
-                        mismatches=mismatches+1 
-                        update_required=1
-                        #if not matching, print details
-                        log_string = 'New version ('+vers_w+') available for: ' + name_gui_w
-                        hf.log_with_timestamp(log_string, gui_logger)
+            raise ValueError("local metadata is empty")
 
-                            
-            #this space not found in local metadata, must be new space
-            if match_found==0:
-                mismatches=mismatches+1 
-                update_required=1
-                log_string = 'New acoustic space available: ' + name_gui_w
-                hf.log_with_timestamp(log_string, gui_logger)
-                    
-            #if download updates enabled
-            #for each version mismatch, download latest dataset from gdrive and place into relevant folder
-            if download_updates == True and update_required > 0:
-                log_string = 'Downloading update'
-                hf.log_with_timestamp(log_string, gui_logger)
-   
-                gdown.download(gdrive_link, dl_file, fuzzy=True)
-                
-                log_string = 'Latest version of dataset: ' + name_gui_w + ' downloaded and saved to: ' + dl_file
-                hf.log_with_timestamp(log_string, gui_logger)
-                updates_perf=updates_perf+1
-                    
-        #finally, download latest metadata file and replace local file
-        if updates_perf >=1: 
-            url = "https://drive.google.com/file/d/14eX5wLiyMCuS4-2aYBfbWRMXFgYc6Bm-/view?usp=drive_link"
-            dl_file = pjoin(csv_directory, CN.REV_METADATA_FILE_NAME)
-            gdown.download(url, dl_file, fuzzy=True)
-        
-        
-        #if no mismatches flagged, print message
+        # ---------------------------
+        # Load ONLINE metadata from GitHub
+        # ---------------------------
+        ghub_meta_url = CN.AS_META_URL
+
+        remote_meta_tmp = pjoin(csv_directory, "reverberation_metadata_latest.csv")
+
+        # Prefer GitHub directly — always first
+        hf.log_with_timestamp("Downloading latest metadata...", gui_logger)
+        response = hf.download_file(url=ghub_meta_url, save_location=remote_meta_tmp, gui_logger=gui_logger)
+
+        if response is not True:
+            raise ValueError("Failed to download latest metadata")
+
+        web_meta_dict_list = []
+        with open(remote_meta_tmp, encoding="utf-8-sig", newline="") as inputfile:
+            reader = DictReader(inputfile)
+            for row in reader:
+                web_meta_dict_list.append(row)
+
+        if not web_meta_dict_list:
+            raise ValueError("latest metadata is empty")
+
+        mismatches = 0
+        updates_perf = 0
+
+        # -------------------------------------------------
+        # Compare versions + download updates (Github preferred)
+        # -------------------------------------------------
+        for space_w in web_meta_dict_list:
+            name_w = space_w.get("name_src")
+            name_gui_w = space_w.get("name_gui")
+            vers_w = space_w.get("version")
+
+            ghub_url = space_w.get("ghub_link")  #
+            primary_url = space_w.get("gdrive_link")
+            alternate_url = space_w.get("alternative_link")
+
+            rev_folder = space_w.get("folder")
+            file_name = space_w.get("file_name")
+
+            local_file_path = pjoin(csv_directory, rev_folder, file_name + ".npy")
+
+            match_found = False
+            update_required = False
+
+            # ----- Compare local/remote versions -----
+            for space_l in local_meta_dict_list:
+                if space_l.get("name_src") == name_w:
+                    match_found = True
+                    if space_l.get("version") != vers_w:
+                        mismatches += 1
+                        update_required = True
+                        hf.log_with_timestamp(
+                            f"New version ({vers_w}) available for: {name_gui_w}",
+                            gui_logger,
+                        )
+                    break
+
+            if not match_found:
+                mismatches += 1
+                update_required = True
+                hf.log_with_timestamp(
+                    f"New acoustic space available: {name_gui_w}",
+                    gui_logger,
+                )
+
+            # --------------------------------------------------
+            # Download update (Github preferred)
+            # --------------------------------------------------
+            if download_updates and update_required:
+
+                hf.log_with_timestamp(f"Downloading update for {name_gui_w}", gui_logger)
+
+                # Github always first
+                download_sources = [
+                    ("github", ghub_url),
+                    ("primary", primary_url),
+                    ("alternate", alternate_url),
+                ]
+
+                success = False
+
+                for source_name, url in download_sources:
+                    if not url:
+                        continue
+
+                    hf.log_with_timestamp(f"Attempting {source_name} download...", gui_logger)
+
+                    response = hf.download_file(url=url, save_location=local_file_path, gui_logger=gui_logger)
+                    if response is True:
+                        # Validate by loading
+                        try:
+                            arr = hf.load_convert_npy_to_float64(local_file_path)
+                            if arr is not None and len(arr) > 0:
+                                hf.log_with_timestamp(
+                                    f"Successfully downloaded {name_gui_w} from {source_name}",
+                                    gui_logger,
+                                )
+                                success = True
+                                updates_perf += 1
+                                break
+                            else:
+                                hf.log_with_timestamp(
+                                    f"Invalid/empty dataset after {source_name} download.",
+                                    gui_logger,
+                                )
+                        except Exception:
+                            hf.log_with_timestamp(
+                                f"Dataset failed to load after {source_name} download.",
+                                gui_logger,
+                            )
+                    else:
+                        hf.log_with_timestamp(f"{source_name.capitalize()} download failed.", gui_logger)
+
+                if not success:
+                    raise ValueError(f"Failed to download updated dataset for {name_gui_w}")
+
+        # --------------------------------------------------
+        # Replace local metadata file after updates
+        # --------------------------------------------------
+        if updates_perf >= 1:
+            hf.download_file(
+                url=ghub_meta_url,
+                save_location=metadata_file,
+                gui_logger=gui_logger
+            )
+            hf.log_with_timestamp("Local metadata updated to latest version.", gui_logger)
+
+        # --------------------------------------------------
+        # Summary
+        # --------------------------------------------------
         if mismatches == 0:
-            log_string = 'No updates available'
-            hf.log_with_timestamp(log_string, gui_logger)
+            hf.log_with_timestamp("No updates available", gui_logger)
+
+        # --------------------------------------------------
+        # NEW: Save timestamp of update check
+        # --------------------------------------------------
+        last_checked_path = pjoin(csv_directory, "last_checked_updates.json")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with open(last_checked_path, "w", encoding="utf-8") as f:
+            json.dump({"last_checked": ts}, f, indent=4)
 
     except Exception as ex:
-        log_string = 'Failed to validate versions or update data'
-        hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    #print message
-    
+        hf.log_with_timestamp(
+            log_string="Failed to validate versions or update data",
+            gui_logger=gui_logger,
+            log_type=2,
+            exception=ex,
+        )
+
     
     
     

@@ -43,6 +43,640 @@ import json
 from pathlib import Path
 from scipy.signal import resample_poly
 import sounddevice as sd
+import numpy as np
+from numpy.fft import fft
+from numpy import unwrap, diff
+from scipy.signal import savgol_filter, windows
+from scipy.ndimage import gaussian_filter1d
+from numpy.fft import fft, fftfreq
+from numpy.fft import rfft, rfftfreq  
+
+
+def plot_data(
+    mag_response,
+    title_name='Output',
+    n_fft=65536,
+    samp_freq=44100,
+    y_lim_adjust=0,
+    y_lim_a=-25,
+    y_lim_b=15,
+    x_lim_adjust=0,
+    x_lim_a=20,
+    x_lim_b=20000,
+    save_plot=0,
+    plot_path=CN.DATA_DIR_OUTPUT,
+    normalise=1,
+    level_ends=0,
+    plot_dest=0,  # kept for compatibility, ignored
+):
+    """
+    Matplotlib-only plotting helper for debugging.
+
+    This function previously supported DearPyGui plotting via plot_dest.
+    plot_dest is now ignored but retained for backward compatibility.
+    """
+
+    # -----------------------------
+    # Pre-processing
+    # -----------------------------
+    if level_ends == 1:
+        mag_response = level_spectrum_ends(
+            mag_response, 200, 19000, n_fft=n_fft
+        )
+        mag_response = smooth_freq_octaves(
+            data=mag_response, n_fft=n_fft
+        )
+
+    n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
+    freq_array = np.arange(0, n_unique_pts) * (samp_freq / n_fft)
+
+    mag_response = mag_response[:n_unique_pts]
+    mag_response_log = 20 * np.log10(np.maximum(mag_response, 1e-12))
+
+    # -----------------------------
+    # Normalisation
+    # -----------------------------
+    if normalise == 1:
+        mag_response_log -= np.mean(mag_response_log[:200])
+    elif normalise == 2:
+        mag_response_log -= np.mean(
+            mag_response_log[
+                CN.SPECT_SNAP_M_F0 : CN.SPECT_SNAP_M_F1
+            ]
+        )
+
+    # -----------------------------
+    # Matplotlib plotting
+    # -----------------------------
+    plt.figure()
+    plt.plot(freq_array, mag_response_log, label="FR")
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Magnitude (dB)")
+    plt.xscale("log")
+    plt.grid(True, which="both", linestyle="--", alpha=0.5)
+
+    if x_lim_adjust:
+        plt.xlim(x_lim_a, x_lim_b)
+    else:
+        plt.xlim(20, 20000)
+
+    if y_lim_adjust:
+        plt.ylim(y_lim_a, y_lim_b)
+
+    plt.title(title_name)
+    plt.tight_layout()
+
+    if save_plot == 1:
+        out_file_name = f"{title_name}.png"
+        out_file_path = pjoin(plot_path, out_file_name)
+        plt.savefig(out_file_path, dpi=150)
+
+    plt.show()
+
+     
+
+    
+def _resolve_plot_tags(plot_dest):
+    tag_map = {
+        2: 'fde_series_tag',
+        1: 'qc_series_tag',
+        3: 'qc_ia_series_tag'
+    }
+    x_axis_map = {
+        2: 'fde_x_axis',
+        1: 'qc_x_axis',
+        3: 'qc_ia_x_axis'
+    }
+    y_axis_map = {
+        2: 'fde_y_axis',
+        1: 'qc_y_axis',
+        3: 'qc_ia_y_axis'
+    }
+
+    return (
+        tag_map.get(plot_dest),
+        x_axis_map.get(plot_dest),
+        y_axis_map.get(plot_dest)
+    )
+
+def _extract_fir(fir_array):
+    fir = np.asarray(fir_array)
+    while fir.ndim > 1:
+        fir = fir[0]
+    return fir.astype(np.float64)
+
+def plot_fir_generic(
+    fir_array,
+    view="magnitude",
+    title_name="Output",
+    samp_freq=CN.SAMP_FREQ,
+    n_fft=CN.N_FFT,
+    normalise=1,
+    level_ends=0,
+    decay_start_ms=0.0,
+    decay_end_ms=1000.0,
+    decay_step_ms=100.0,
+    decay_win_ms=100.0,
+    plot_dest=1,
+    x_lim_adjust=0, x_lim_a=20, x_lim_b=20000,
+    y_lim_adjust=0, y_lim_a=-25, y_lim_b=15,smooth_win_base=3
+):
+    """
+    Plot a FIR using DearPyGui in multiple common views.
+    
+    Supports magnitude response, impulse response, group delay, and decay plots.
+    The FIR may have any number of dimensions; only the first item is used and
+    the last dimension is assumed to contain samples.
+    
+    Parameters
+    ----------
+    fir_array : np.ndarray
+        FIR array with samples along the last dimension.
+    
+    view : {"Magnitude Response", "Impulse Response", "Group Delay", "Decay"}
+        Plot type to render.
+    
+    samp_freq : int or float
+        Sample rate in Hz.
+    
+    n_fft : int
+        FFT size for frequency-domain plots.
+    
+    normalise : int
+        Magnitude plot only. Normalise response if non-zero.
+    
+    level_ends : int
+        Magnitude plot only. Apply end-level conditioning.
+    
+    decay_start_ms, decay_end_ms, decay_step_ms, decay_win_ms : float
+        Decay plot only. Control time range and resolution of decay slices.
+    
+    plot_dest : int
+        Selects which DearPyGui plot instance to update.
+    
+    x_lim_adjust, x_lim_a, x_lim_b :
+        Optional manual x-axis limits.
+    
+    y_lim_adjust, y_lim_a, y_lim_b :
+        Optional manual y-axis limits.
+    """
+
+    fir = _extract_fir(fir_array)
+    
+    # Always zero-pad FIR if n_fft is larger
+    if n_fft > len(fir):
+        padded = np.zeros(n_fft, dtype=fir.dtype)
+        padded[:len(fir)] = fir
+        fir = padded
+
+    series_tag, x_axis_tag, y_axis_tag = _resolve_plot_tags(plot_dest)
+    if series_tag is None:
+        return
+    
+    #update user data dict with plot information, so that it can be regenerated when plot type changes
+    if plot_dest == CN.TAB_QC_CODE:
+        plot_type_tag = "qc_plot_type"
+    elif plot_dest == CN.TAB_FDE_CODE:
+        plot_type_tag = "fde_plot_type"
+    elif plot_dest == CN.TAB_QC_IA_CODE:
+        plot_type_tag = "qc_ia_plot_type"
+    else:
+        return
+    
+    plot_state = dpg.get_item_user_data(plot_type_tag)
+    if plot_state is None:
+        plot_state = {}
+    plot_state.clear()
+    plot_state.update(dict(
+        fir=fir,
+        title=title_name,
+        samp_freq=samp_freq,
+        n_fft=n_fft,
+        normalise=normalise,
+        level_ends=level_ends,
+        decay_start_ms=decay_start_ms,
+        decay_end_ms=decay_end_ms,
+        decay_step_ms=decay_step_ms,
+        decay_win_ms=decay_win_ms,
+        x_lim_adjust=x_lim_adjust,
+        x_lim_a=x_lim_a,
+        x_lim_b=x_lim_b,
+        plot_dest=plot_dest,
+        y_lim_adjust=y_lim_adjust,
+        y_lim_a=y_lim_a,
+        y_lim_b=y_lim_b,
+    ))
+
+    # Clear existing plot data
+    dpg.set_value(series_tag, [[], []])
+    dpg.set_item_label(series_tag, title_name)
+
+    if view == "Magnitude Response":
+        _plot_magnitude_dpg(
+            fir, samp_freq, n_fft,
+            series_tag, x_axis_tag, y_axis_tag,
+            normalise, level_ends,
+            x_lim_adjust, x_lim_a, x_lim_b,
+            y_lim_adjust, y_lim_a, y_lim_b,smooth_win_base=smooth_win_base
+        )
+
+    elif view == "Impulse Response":
+        _plot_impulse_dpg(
+            fir, samp_freq,
+            series_tag, x_axis_tag, y_axis_tag,
+            x_lim_adjust, x_lim_a, x_lim_b,
+            y_lim_adjust, y_lim_a, y_lim_b
+        )
+
+    elif view == "Group Delay":
+        _plot_group_delay_dpg(
+            fir, samp_freq, n_fft,
+            series_tag, x_axis_tag, y_axis_tag,
+            x_lim_adjust, x_lim_a, x_lim_b,
+            y_lim_adjust, y_lim_a, y_lim_b
+        )
+
+    elif view == "Decay":
+        _plot_decay_dpg(
+            fir, samp_freq, n_fft,
+            series_tag, x_axis_tag, y_axis_tag,
+            decay_start_ms, decay_end_ms,
+            decay_step_ms, decay_win_ms,
+            x_lim_adjust, x_lim_a, x_lim_b,
+            y_lim_adjust, y_lim_a, y_lim_b
+        )
+
+    else:
+        raise ValueError(f"Unsupported view: {view}")
+
+def _plot_magnitude_dpg(
+    fir, samp_freq, n_fft,
+    series_tag, x_axis_tag, y_axis_tag,
+    normalise, level_ends,
+    x_lim_adjust, x_lim_a, x_lim_b,
+    y_lim_adjust, y_lim_a, y_lim_b,smooth_win_base=3
+):
+    
+    _clear_decay_children(y_axis_tag, series_tag)
+    n_fft = max(n_fft, len(fir))
+    F = np.fft.rfft(fir, n=n_fft)
+    mag = np.abs(F)
+
+    if level_ends:
+        mag = level_spectrum_ends(mag, 220, 19000, n_fft=n_fft)
+    if x_lim_b > 200:
+        mag = smooth_freq_octaves(mag, n_fft=n_fft,fund_freq=100,win_size_base=smooth_win_base)
+
+    mag_db = 20 * np.log10(np.maximum(mag, 1e-12))
+
+    if normalise == 1:#low frequencies
+        mag_db -= np.mean(mag_db[:200])
+    elif normalise == 2:#mid frequencies
+        mag_db -= np.mean(mag_db[700:1300])
+
+    freqs = np.fft.rfftfreq(n_fft, 1 / samp_freq)
+
+    dpg.set_value(series_tag, [freqs, mag_db])
+    dpg.set_item_label(y_axis_tag, "Magnitude (dB)")
+    dpg.set_item_label(x_axis_tag, "Frequency (Hz)")
+    dpg.configure_item(x_axis_tag, scale=dpg.mvPlotScale_Log10)
+
+    _apply_axis_limits(
+        x_axis_tag, y_axis_tag,
+        x_lim_adjust, x_lim_a, x_lim_b,
+        y_lim_adjust, y_lim_a, y_lim_b,
+        series_tag=series_tag, mode="magnitude"
+    )
+
+
+
+
+def _plot_impulse_dpg(
+    fir, samp_freq,
+    series_tag, x_axis_tag, y_axis_tag,
+    x_lim_adjust, x_lim_a, x_lim_b,
+    y_lim_adjust, y_lim_a, y_lim_b
+):
+    
+    _clear_decay_children(y_axis_tag, series_tag)
+    t_ms = np.arange(len(fir)) / samp_freq * 1000
+
+    dpg.set_value(series_tag, [t_ms, fir])
+    dpg.set_item_label(x_axis_tag, "Time (ms)")
+    dpg.set_item_label(y_axis_tag, "Amplitude")
+    dpg.configure_item(x_axis_tag, scale=dpg.mvPlotScale_Linear)
+
+    _apply_axis_limits(
+        x_axis_tag, y_axis_tag,
+        x_adj=False,y_adj=False,series_tag=series_tag, mode="time"
+    )
+
+def _plot_group_delay_dpg(
+    fir, samp_freq, n_fft,
+    series_tag, x_axis_tag, y_axis_tag,
+    x_lim_adjust, x_lim_a, x_lim_b,
+    y_lim_adjust, y_lim_a, y_lim_b
+):
+    
+    _clear_decay_children(y_axis_tag, series_tag)
+    freqs, gd = calc_group_delay_from_ir(
+        y=fir,
+        sr=samp_freq
+    )
+    
+    dpg.set_value(series_tag, [freqs, gd])
+    dpg.set_item_label(x_axis_tag, "Frequency (Hz)")
+    dpg.set_item_label(y_axis_tag, "Group Delay (ms)")
+    dpg.configure_item(x_axis_tag, scale=dpg.mvPlotScale_Log10)
+
+    _apply_axis_limits(
+        x_axis_tag, y_axis_tag,
+        x_adj=x_lim_adjust, x_a=x_lim_a, x_b=x_lim_b,
+        y_adj=True, y_a=-100, y_b=100,
+        series_tag=series_tag, mode="magnitude"
+    )
+
+
+
+
+
+
+
+def _plot_decay_dpg(
+    fir, samp_freq, n_fft,
+    series_tag, x_axis_tag, y_axis_tag,
+    start_ms, end_ms, step_ms, win_ms,
+    x_lim_adjust, x_lim_a, x_lim_b,
+    y_lim_adjust, y_lim_a, y_lim_b,
+    normalise=1  # 0 = no norm, 1 = normalize so reference = 0 dB
+):
+    """
+    Plot REW-style decay curves with:
+    - octave smoothing applied to ALL slices
+    - shared normalization so reference curve = 0 dB
+    """
+
+    label_prefix = 'decay'
+
+    # Prepare decay plot
+    _prepare_decay_plot(y_axis_tag, series_tag)
+
+    # ---------------- Full response ----------------
+    n_fft_full = max(n_fft, len(fir))
+    freqs_full = np.fft.rfftfreq(n_fft_full, 1 / samp_freq)
+
+    F_full = np.fft.rfft(fir, n=n_fft_full)
+    mag_full = np.abs(F_full)
+
+    # ALWAYS smooth (matches magnitude plot)
+    mag_full = smooth_freq_octaves(mag_full, n_fft=n_fft_full,fund_freq=100,win_size_base=6)
+
+    mag_db_full = 20 * np.log10(np.maximum(mag_full, 1e-12))
+
+    # Shared normalization reference
+    if normalise:
+        norm_offset = np.max(mag_db_full)
+        mag_db_full -= norm_offset
+    else:
+        norm_offset = 0.0
+
+    # Used for axis autoscaling
+    dpg.set_value(series_tag, [freqs_full, mag_db_full])
+
+    # ---------------- Time windows ----------------
+    win_len = int(win_ms * samp_freq / 1000)
+    times = np.arange(start_ms, end_ms + step_ms, step_ms)
+    n_slices = len(times)
+
+    # ---------------- Full response line ----------------
+    full_series_id = dpg.add_line_series(
+        freqs_full, mag_db_full,
+        parent=y_axis_tag,
+        label=f"{label_prefix}_full_response"
+    )
+
+    with dpg.theme() as full_theme:
+        with dpg.theme_component(dpg.mvLineSeries):
+            dpg.add_theme_color(
+                dpg.mvPlotCol_Line,
+                (255, 255, 255),
+                category=dpg.mvThemeCat_Plots
+            )
+    dpg.bind_item_theme(full_series_id, full_theme)
+
+    # ---------------- Slice colours ----------------
+    cmap = plt.get_cmap('viridis')
+    colors = [
+        tuple(int(c * 255) for c in cmap((n_slices - 1 - i) / n_slices)[:3])
+        for i in range(n_slices)
+    ]
+
+    # ---------------- Decay slices ----------------
+    for i, t in enumerate(times):
+        start = int(t * samp_freq / 1000)
+        end = start + win_len
+        if end > len(fir):
+            break
+
+        # Windowed segment
+        seg = fir[start:end] * np.hanning(win_len)
+
+        # FFT
+        F_slice = np.fft.rfft(seg, n=n_fft)
+        mag_slice = np.abs(F_slice)
+
+        # ALWAYS smooth slice
+        mag_slice = smooth_freq_octaves(mag_slice, n_fft=n_fft,fund_freq=100,win_size_base=6)
+
+        mag_db_slice = 20 * np.log10(np.maximum(mag_slice, 1e-12))
+
+        # Apply SAME normalization
+        if normalise:
+            mag_db_slice -= norm_offset
+
+        center_ms = t + (win_ms / 2)
+        display_label = f"{label_prefix}_{center_ms:.1f} ms"
+
+        series_id = dpg.add_line_series(
+            freqs_full, mag_db_slice,
+            parent=y_axis_tag,
+            label=display_label
+        )
+
+        with dpg.theme() as theme_id:
+            with dpg.theme_component(dpg.mvLineSeries):
+                dpg.add_theme_color(
+                    dpg.mvPlotCol_Line,
+                    colors[i],
+                    category=dpg.mvThemeCat_Plots
+                )
+        dpg.bind_item_theme(series_id, theme_id)
+
+    # ---------------- Axis setup ----------------
+    dpg.set_item_label(x_axis_tag, "Frequency (Hz)")
+    dpg.set_item_label(y_axis_tag, "Magnitude (dB)")
+    dpg.configure_item(x_axis_tag, scale=dpg.mvPlotScale_Log10)
+
+    # ---------------- Limits ----------------
+    _apply_axis_limits(
+        x_axis_tag, y_axis_tag,
+        x_adj=x_lim_adjust, x_a=x_lim_a, x_b=x_lim_b,
+        y_adj=True, y_a=-80, y_b=10,
+        series_tag=series_tag,
+        mode="decay"
+    )
+
+def _clear_decay_children(y_axis_tag, series_tag):
+    """unhide main series and delete previous decay slices."""
+    label_prefix = 'decay_'
+    if dpg.does_item_exist(series_tag):
+        dpg.configure_item(series_tag, show=True)
+
+    if dpg.does_item_exist(y_axis_tag):
+        children = dpg.get_item_children(y_axis_tag, slot=1)  # slot=1 = mvLineSeries
+        if children:
+            for child in children:
+                # Only delete children that were previously created by decay plotting
+                if label_prefix in dpg.get_item_label(child):
+                    dpg.delete_item(child)
+                    
+def _prepare_decay_plot(y_axis_tag, series_tag):
+    """Hide main series and delete previous decay slices for decay plotting."""
+    label_prefix = 'decay_'
+    # Hide the main series
+    if dpg.does_item_exist(series_tag):
+        dpg.configure_item(series_tag, show=False)
+
+    # Delete previous decay lines under the y-axis
+    if dpg.does_item_exist(y_axis_tag):
+        children = dpg.get_item_children(y_axis_tag, slot=1)  # slot=1 = mvLineSeries
+        if children:
+            for child in children:
+                # Only delete children that were previously created by decay plotting
+                if label_prefix in dpg.get_item_label(child):
+                    dpg.delete_item(child)
+                    
+
+                    
+def _apply_axis_limits(
+    x_axis_tag, y_axis_tag,
+    x_adj=False, x_a=10, x_b=20000,
+    y_adj=False, y_a=-10, y_b=10,
+    series_tag=None,
+    x_margin=0.0,
+    y_margin=5.0,
+    mode="magnitude",      # "magnitude" or "time"
+    min_threshold=CN.THRESHOLD_CROP  # for time-domain
+):
+    if series_tag is None:
+        dpg.set_axis_limits(x_axis_tag, x_a, x_b)
+        dpg.set_axis_limits(y_axis_tag, y_a, y_b)
+        return
+
+    series_value = dpg.get_value(series_tag)
+    if not series_value or len(series_value) != 2:
+        dpg.set_axis_limits(x_axis_tag, x_a, x_b)
+        dpg.set_axis_limits(y_axis_tag, y_a, y_b)
+        return
+
+    x_vals = np.array(series_value[0], dtype=float)
+    y_vals = np.array(series_value[1], dtype=float)
+    if len(x_vals) == 0 or len(y_vals) == 0:
+        dpg.set_axis_limits(x_axis_tag, x_a, x_b)
+        dpg.set_axis_limits(y_axis_tag, y_a, y_b)
+        return
+
+    # ----------------- Y-axis -----------------
+    if mode in ("magnitude", "decay"):
+        if mode == "magnitude":
+            y_upper = 10.0
+            y_lower = 10.0
+        elif mode == "decay":
+            y_upper = 10.0
+            y_lower = 80.0
+
+        # Restrict median calculation to x_a..x_b when x_adj is active
+        if x_adj:
+            mask = (x_vals >= x_a) & (x_vals <= x_b)
+            y_subset = y_vals[mask]
+            if y_subset.size > 0 and not np.all(np.isnan(y_subset)):
+                y_med = np.nanmedian(y_subset)
+            else:
+                y_med = np.nanmedian(y_vals)
+        else:
+            y_med = np.nanmedian(y_vals)
+
+        y_min = y_med - y_lower
+        y_max = y_med + y_upper
+
+    elif mode == "time":
+        # For time domain, use absolute min/max but clip at threshold
+        y_max = np.max(y_vals)
+        y_min = np.min(y_vals)
+    else:
+        y_min, y_max = np.min(y_vals), np.max(y_vals)
+
+    # Determine true min/max within mask
+    if x_adj:
+        mask = (x_vals >= x_a) & (x_vals <= x_b)
+        y_subset = y_vals[mask]
+        if y_subset.size == 0:
+            y_subset = y_vals
+    else:
+        y_subset = y_vals
+    
+    y_true_min = np.nanmin(y_subset)
+    y_true_max = np.nanmax(y_subset)
+    
+    # Apply Y-axis margin
+    y_margin_val = (y_true_max - y_true_min) * (y_margin / 100)
+    
+    if y_adj:
+        # Expand existing limits if data exceeds them
+        new_y_a = min(y_a, y_true_min - y_margin_val)
+        new_y_b = max(y_b, y_true_max + y_margin_val)
+        dpg.set_axis_limits(y_axis_tag, new_y_a, new_y_b)
+    else:
+        #dpg.set_axis_limits(y_axis_tag, y_true_min - y_margin_val, y_true_max + y_margin_val)
+        dpg.set_axis_limits(y_axis_tag, y_min - y_margin_val, y_max + y_margin_val)
+
+    # ----------------- X-axis -----------------
+    if x_adj:
+        dpg.set_axis_limits(x_axis_tag, x_a, x_b)
+    else:
+        if mode == "magnitude":
+            # X-limits where y is within ±y_upper / ±y_lower of median
+            indices = np.where((y_vals >= y_min) & (y_vals <= y_max))[0]
+        elif mode == "decay":
+            # X-limits where y is within -y_lower / +y_upper of median
+            indices = np.where((y_vals >= y_min) & (y_vals <= y_max))[0]
+        elif mode == "time":
+            # X-limits where y is above min_threshold
+            indices = np.where(y_vals >= min_threshold)[0]
+        else:
+            indices = np.arange(len(x_vals))
+
+        if len(indices) > 0:
+            x_min = x_vals[indices[0]]
+            x_max = x_vals[indices[-1]]
+            x_range = x_max - x_min
+            x_min -= x_range * x_margin
+            x_max += x_range * x_margin
+            # Clamp to reliable frequency range
+            if mode != "time":
+                x_min = max(x_min, x_a)
+                x_max = min(x_max, x_b)
+            
+            # Guard against inverted range
+            if x_min < x_max:
+                dpg.set_axis_limits(x_axis_tag, float(x_min), float(x_max))
+            else:
+                dpg.set_axis_limits(x_axis_tag, x_a, x_b)
+        else:
+            # fallback if no indices
+            dpg.set_axis_limits(x_axis_tag, x_vals[0], x_vals[-1])
+
+
 
 
 def sort_names_by_values(names, values, descending=False):
@@ -205,124 +839,151 @@ def octave_smooth_slow(freqs, values, fraction=1/3):
     return smoothed
 
 
-def calc_group_delay_from_ir(y, sr=None, n_fft=2048, hop_length=512, smoothing_type='hann', smoothing_window=31, system_delay_ms=None, verbose=False):
+
+
+
+def calc_group_delay_from_ir(
+    y,
+    sr=None,
+    n_fft=CN.N_FFT,
+    hop_length=512,
+    smoothing_type='octave',
+    smoothing_window=18,
+    system_delay_ms=None,
+    verbose=False
+):
     """
-    Calculates the group delay from a 1D NumPy array representing an impulse response.
-
-    Args:
-        y (np.ndarray): 1D NumPy array representing the impulse response.
-        sr (int): Sample rate of the impulse response in Hz.
-        n_fft (int, optional): Length of the FFT window. Defaults to 2048.
-        hop_length (int, optional): Number of samples between successive FFT windows. Defaults to 512.
-        smoothing_type (str, optional): Type of smoothing ('none', 'hann', 'gaussian', 'savitzky-golay', 'octave'). Defaults to 'hann'.
-        smoothing_window (int, optional): Window size for smoothing (depends on the type). Defaults to 31.
-        system_delay_ms (float, optional): An estimated constant system delay in milliseconds to subtract.
-                                            If None, the function will attempt to estimate it.
-                                            Defaults to None.
-
-    Returns:
-        tuple: A tuple containing two NumPy arrays:
-               - frequencies (np.ndarray): Array of frequencies in Hz.
-               - averaged_group_delay_ms (np.ndarray): Array of averaged group delay values in milliseconds.
+    Calculate the group delay from a 1D impulse response with robust handling.
+    Uses log_with_timestamp for all logging instead of print.
     """
-    import numpy as np
-    from numpy.fft import fft
-    from numpy import unwrap, diff
-    from scipy.signal import savgol_filter, windows
-    from scipy.ndimage import gaussian_filter1d
-
-    
 
     if not isinstance(y, np.ndarray) or y.ndim != 1:
         raise ValueError("Input 'y' must be a 1D NumPy array.")
     if not isinstance(sr, (int, float)) or sr <= 0:
-        raise ValueError("Input 'sr' must be a positive number representing the sample rate.")
+        raise ValueError("Input 'sr' must be a positive number.")
 
-    n_frames = (len(y) - n_fft) // hop_length + 1
-    freq_bins = np.fft.fftfreq(n_fft, 1 / sr)
+    ir_len = len(y)
+
+    # --- Zero-pad IR if shorter than n_fft ---
+    if ir_len < n_fft:
+        pad_len = n_fft - ir_len
+        y = np.pad(y, (0, pad_len), mode="constant")
+        if verbose:
+            log_with_timestamp(
+                f"Zero-padding IR: {ir_len} → {len(y)} samples"
+            )
+
+    padded_len = len(y)
+
+    # --- Frame count (now always valid) ---
+    n_frames = max((padded_len - n_fft) // hop_length + 1, 1)
+
+    # Positive frequencies only
+    freq_bins = rfftfreq(n_fft, 1 / sr)
+    delta_f = freq_bins[1] - freq_bins[0]
+
     group_delays = []
 
     if verbose:
-        print("Starting group delay calculation...")
+        log_with_timestamp(
+            f"Group delay calculation: IR length={ir_len}, "
+            f"padded_length={padded_len}, n_fft={n_fft}, "
+            f"hop_length={hop_length}, n_frames={n_frames}"
+        )
 
+    # --- Compute group delay per frame ---
     for frame in range(n_frames):
         start_idx = frame * hop_length
         end_idx = start_idx + n_fft
+
         frame_data = y[start_idx:end_idx]
 
-        yf = fft(frame_data, n=n_fft)
+        # Safety (should not be needed now, but cheap)
+        if len(frame_data) < n_fft:
+            frame_data = np.pad(frame_data, (0, n_fft - len(frame_data)))
+
+        yf = rfft(frame_data, n=n_fft)
+
         phase = np.angle(yf)
         unwrapped_phase = unwrap(phase)
-        delta_phase = diff(unwrapped_phase)
-        delta_f = np.diff(freq_bins)
-        group_delay = -delta_phase / (2 * np.pi * delta_f)
-        group_delay_ms = group_delay * 1000
-        group_delays.append(group_delay_ms)
 
+        delta_phase = diff(unwrapped_phase)
+
+        gd = -delta_phase / (2 * np.pi * delta_f)  # seconds
+        gd_ms = gd * 1000                          # milliseconds
+
+        group_delays.append(gd_ms)
+
+    # --- Average across frames ---
     averaged_group_delay_ms = np.mean(group_delays, axis=0)
 
-    if verbose:
-        print(f"Group delay (before smoothing): Min = {np.nanmin(averaged_group_delay_ms)} ms, "
-              f"Max = {np.nanmax(averaged_group_delay_ms)} ms, "
-              f"Mean = {np.nanmean(averaged_group_delay_ms)} ms, "
-              f"Std = {np.nanstd(averaged_group_delay_ms)} ms")
-
-    if np.any(np.isnan(averaged_group_delay_ms)) and verbose:
-        print("Warning: NaN values detected in the averaged group delay.")
+    # --- Smoothing ---
+    smoothed_group_delay_ms = averaged_group_delay_ms.copy()
 
     if smoothing_type == 'savitzky-golay' and smoothing_window > 1:
-        smoothed_group_delay_ms = savgol_filter(averaged_group_delay_ms, smoothing_window, 3)
+        smoothed_group_delay_ms = savgol_filter(
+            averaged_group_delay_ms, smoothing_window, 3
+        )
+
     elif smoothing_type == 'hann' and smoothing_window > 1 and smoothing_window % 2 == 1:
-        window = windows.hann(smoothing_window)
-        window /= np.sum(window)
-        smoothed_group_delay_ms = np.convolve(averaged_group_delay_ms, window, mode='same')
+        win = windows.hann(smoothing_window)
+        win /= np.sum(win)
+        smoothed_group_delay_ms = np.convolve(
+            averaged_group_delay_ms, win, mode='same'
+        )
+
     elif smoothing_type == 'gaussian' and smoothing_window > 0:
-        smoothed_group_delay_ms = gaussian_filter1d(averaged_group_delay_ms, smoothing_window)
+        smoothed_group_delay_ms = gaussian_filter1d(
+            averaged_group_delay_ms, smoothing_window
+        )
+
     elif smoothing_type == 'octave':
-        freqs = freq_bins[1:len(averaged_group_delay_ms)+1]
-        smoothed_group_delay_ms = octave_smooth(freqs, averaged_group_delay_ms, fraction=1/smoothing_window)
-    else:
-        smoothed_group_delay_ms = averaged_group_delay_ms
+        freqs_smooth = freq_bins[1:]
+        smoothed_group_delay_ms = octave_smooth(
+            freqs_smooth,
+            averaged_group_delay_ms,
+            fraction=1 / smoothing_window
+        )
 
-    if verbose:
-        print(f"Group delay (after smoothing): Min = {np.nanmin(smoothed_group_delay_ms)} ms, "
-              f"Max = {np.nanmax(smoothed_group_delay_ms)} ms, "
-              f"Mean = {np.nanmean(smoothed_group_delay_ms)} ms, "
-              f"Std = {np.nanstd(smoothed_group_delay_ms)} ms")
-
-    if np.any(np.isnan(smoothed_group_delay_ms)) and verbose:
-        print("Warning: NaN values detected in the smoothed group delay.")
-
+    # --- System delay subtraction (bass-referenced) ---
     if system_delay_ms is None:
-        if smoothed_group_delay_ms.size > 0:
-            mid_freq_start = int(len(smoothed_group_delay_ms) * 0.1)
-            mid_freq_end = int(len(smoothed_group_delay_ms) * 0.4)
-            mid_freq_slice = smoothed_group_delay_ms[mid_freq_start:mid_freq_end]
-            if mid_freq_slice.size > 0 and not np.all(np.isnan(mid_freq_slice)):
-                system_delay_ms_estimated = np.nanmedian(mid_freq_slice)
-                if not np.isnan(system_delay_ms_estimated):
-                    smoothed_group_delay_ms -= system_delay_ms_estimated
-                    if verbose:
-                        print(f"Estimated system delay (ms): {system_delay_ms_estimated}")
+        # Bass reference range (Hz)
+        bass_lo = 20.0
+        bass_hi = 200.0
+
+        freqs_ref = freq_bins[1:]  # matches GD vector
+        bass_mask = (freqs_ref >= bass_lo) & (freqs_ref <= bass_hi)
+
+        bass_slice = smoothed_group_delay_ms[bass_mask]
+
+        if bass_slice.size and not np.all(np.isnan(bass_slice)):
+            estimated_delay = np.nanmedian(bass_slice)
+
+            if not np.isnan(estimated_delay):
+                smoothed_group_delay_ms -= estimated_delay
+
+                if verbose:
+                    log_with_timestamp(
+                        f"Estimated system delay (bass {bass_lo:.0f}–{bass_hi:.0f} Hz): "
+                        f"{estimated_delay:.3f} ms"
+                    )
     else:
         smoothed_group_delay_ms -= system_delay_ms
         if verbose:
-            print(f"Applied system delay (ms): {system_delay_ms}")
-
-    if np.all(smoothed_group_delay_ms == smoothed_group_delay_ms[0]) and verbose:
-        print("Warning: Smoothed group delay is constant across all frequencies.")
-
-    if np.any(np.isnan(smoothed_group_delay_ms)):
-        print("Warning: Final result contains NaN values.")
+            log_with_timestamp(
+                f"Applied system delay: {system_delay_ms:.3f} ms"
+            )
 
     if verbose:
-        print(f"Final group delay: Min = {np.nanmin(smoothed_group_delay_ms)} ms, "
-              f"Max = {np.nanmax(smoothed_group_delay_ms)} ms, "
-              f"Mean = {np.nanmean(smoothed_group_delay_ms)} ms, "
-              f"Std = {np.nanstd(smoothed_group_delay_ms)} ms")
-        print("Group delay calculation completed.")
+        log_with_timestamp(
+            f"Final group delay: min={np.nanmin(smoothed_group_delay_ms):.3f} ms, "
+            f"max={np.nanmax(smoothed_group_delay_ms):.3f} ms, "
+            f"mean={np.nanmean(smoothed_group_delay_ms):.3f} ms"
+        )
 
-    return freq_bins[1:len(smoothed_group_delay_ms)+1], smoothed_group_delay_ms
+    return freq_bins[1:], smoothed_group_delay_ms
+
+
 
 
 def save_group_delay_to_csv(frequencies, group_delay_ms, filename="group_delay_analysis.csv"):
@@ -741,33 +1402,7 @@ def compute_best_shift(reference: np.ndarray, target: np.ndarray, max_shift: int
     return best_lag
 
 
-def plot_summed_measurements(file_path: str):
-    """
-    Loads a 2D NumPy array (measurements x samples) from the given file path,
-    sums all measurements, and plots the resulting 1D array.
 
-    Parameters:
-        file_path (str): Path to the .npy file containing the 2D matrix.
-    """
-    # Load the matrix
-    matrix = np.load(file_path)
-
-    if matrix.ndim != 2:
-        raise ValueError(f"Expected a 2D array, but got shape {matrix.shape}")
-
-    # Sum across measurements (rows)
-    summed = np.sum(matrix, axis=0)
-
-    # Plot the result
-    plt.figure(figsize=(10, 4))
-    plt.plot(summed, label="Summed Measurements")
-    plt.title("Sum of All Measurements")
-    plt.xlabel("Sample Index")
-    plt.ylabel("Amplitude")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
 
 def plot_average_measurements(file_path: str):
     """
@@ -819,186 +1454,210 @@ def plot_average_measurements(file_path: str):
 
 
 
+
 def expand_measurements_with_pitch_shift(
     measurement_array: np.ndarray,
     desired_measurements: int,
     fs: int = CN.SAMP_FREQ,
-    pitch_range: tuple = (0, 24),
+    pitch_range: tuple = (-12, 12),
     shuffle: bool = False,
-    antialias: bool = False,#disable due to artefacts #unused
+    antialias: bool = False,   # unused
     seed=65529189939976765123732762606216328531,
-    plot_sample: int = 0,#unused
+    plot_sample: int = 0,      # unused
     num_threads: int = 4,
     gui_logger=None,
     cancel_event=None,
     pitch_shift_comp=True,
-    ignore_ms: float = CN.IGNORE_MS,  # 0
+    ignore_ms: float = CN.IGNORE_MS,
     report_progress=0
 ) -> tuple[np.ndarray, int]:
     """
-    Expand a smaller measurement array to a desired number of measurements
-    using randomized pitch shifting, with optional anti-aliasing, using multithreading.
-    
+    Expand a measurement array by generating pitch-shifted variants.
+    Includes optional per-IR compensation, multithreading, and progress updates.
+
     Returns:
-        Tuple[np.ndarray, int]: The expanded 2D array and status code:
-            0 = Success, 1 = Failure, 2 = Cancelled
+        output array (N, L), status code:
+            0 = success
+            1 = failure
+            2 = cancelled
     """
 
-    def apply_pitch_shift(ir, fs, n_steps, antialias):
-        shifted = librosa.effects.pitch_shift(ir, sr=fs, n_steps=n_steps, res_type="kaiser_best")
-        return shifted
+    # ------------------------------------------------------------
+    # Constants & Setup
+    # ------------------------------------------------------------
+    n_fft        = 4096
+    truncate_len = 512
+    f_min        = 20
+    f_max        = 20000
 
     measurement_array = measurement_array.astype(np.float64, copy=False)
     base_n, sample_len = measurement_array.shape
+
     output = np.empty((desired_measurements, sample_len), dtype=np.float64)
     status = 1
-    
-    # Convert ms to fade-in samples
-    fade_in_samples = int((ignore_ms / 1000.0) * fs)
-    if fade_in_samples >= sample_len:
-        raise ValueError(f"fade_in_samples ({fade_in_samples}) must be less than the measurement length ({sample_len})")
-    
-    # Generate fade-in window
-    fade_in_window = np.ones(sample_len)
-    if fade_in_samples > 0:
-        hanning = np.hanning(fade_in_samples * 2)
-        fade_in_window[:fade_in_samples] = hanning[:fade_in_samples]
 
+
+
+    # ------------------------------------------------------------
+    # Precompute magnitude spectra of ORIGINAL IRs for compensation
+    # ------------------------------------------------------------
+    orig_mag = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
+
+    # ------------------------------------------------------------
+    # Pitch shift value generator
+    # ------------------------------------------------------------
+    if abs(pitch_range[0]) < 1e-6 and abs(pitch_range[1]) < 1e-6:
+        pitch_range = (-12, 12)
+        log_with_timestamp("Invalid pitch range, resetting to default (0, 24)", gui_logger)
+
+    if seed == "random":
+        seed = np.random.SeedSequence().entropy
+
+    rng = np.random.default_rng(seed)
+    pitch_shifts = rng.uniform(pitch_range[0], pitch_range[1], desired_measurements)
+
+    # ------------------------------------------------------------
+    # Helper: Pitch shift
+    # ------------------------------------------------------------
+    def apply_pitch_shift(ir, shift_val):
+        return librosa.effects.pitch_shift(
+            ir, sr=fs, n_steps=shift_val, res_type="kaiser_best"
+        )
+
+    # ------------------------------------------------------------
+    # Helper: Build compensation filter for ONE IR
+    # ------------------------------------------------------------
+    def build_compensation_filter(shifted_ir, ir_index):
+        shifted_mag = np.abs(np.fft.rfft(shifted_ir, n=n_fft))
+        ref_mag     = orig_mag[ir_index]
+
+        comp_mag = ref_mag / np.maximum(shifted_mag, 1e-12)
+        
+        # === Apply HF taper to stabilise high-frequency compensation ===
+        hf_start = 7500.0     #8000 start taper (Hz)
+        hf_end   = 9000.0    #1000 full stop (Hz)
+        
+        # frequency bin conversion (resolution = fs / n_fft)
+        bin_start = int(np.round(hf_start * n_fft / fs))
+        bin_end   = int(np.round(hf_end   * n_fft / fs))
+        
+        # clamp to valid bins of comp_mag
+        n_bins = comp_mag.shape[-1]
+        bin_start = max(0, min(bin_start, n_bins - 1))
+        bin_end   = max(0, min(bin_end, n_bins))
+        
+        # if there is no taper region, simply force HF to 1.0
+        if bin_end <= bin_start:
+            comp_mag[bin_start:] = 1.0
+        else:
+            # build cosine taper that goes 1 -> 0 across the region
+            length = bin_end - bin_start
+            t = np.linspace(0.0, np.pi, length, endpoint=True)
+            taper = 0.5 * (1.0 + np.cos(t))   # 1 -> 0
+        
+            # Blend comp_mag toward 1.0 across the taper window:
+            seg = comp_mag[bin_start:bin_end]
+            comp_mag[bin_start:bin_end] = seg * taper + (1.0 - taper)
+        
+            # Above the taper region, disable compensation entirely
+            comp_mag[bin_end:] = 1.0
+
+        smoothed_mag = smooth_freq_octaves(
+            comp_mag,
+            fund_freq=120,
+            win_size_base=36,#30
+            n_fft=n_fft,
+            fs=fs,
+            to_full=False
+        )
+
+        return build_min_phase_filter(
+            smoothed_mag,
+            fs,
+            n_fft=n_fft,
+            truncate_len=truncate_len,
+            f_min=f_min,
+            f_max=f_max,
+            band_limit=True
+        )
+
+    # ------------------------------------------------------------
+    # Thread Process Function
+    # ------------------------------------------------------------
     count_lock = threading.Lock()
     count = 0
     last_print_time = time.time()
-    
-    #set appropriate range
-    # If both elements are numerically zero (e.g., 0 or 0.0)
-    if abs(pitch_range[0]) < 1e-6 and abs(pitch_range[1]) < 1e-6:
-        pitch_range = (0, 24)  # replace with default
-        log_with_timestamp("Invalid pitch range provided, resetting to default (0,24)", gui_logger)
 
+    def process_one(i):
+        nonlocal count, last_print_time
+
+        if cancel_event and cancel_event.is_set():
+            return None
+
+        ir_index = i % base_n
+        ir       = measurement_array[ir_index]
+        shift    = pitch_shifts[i]
+
+        try:
+            # 1) Pitch shift
+            shifted = apply_pitch_shift(ir, shift)
+
+            # 2) Pad or crop to original length
+            if len(shifted) < sample_len:
+                temp = np.zeros(sample_len)
+                temp[:len(shifted)] = shifted
+                shifted = temp
+            else:
+                shifted = shifted[:sample_len]
+
+            # 3) Compensation
+            if pitch_shift_comp:
+                comp = build_compensation_filter(shifted, ir_index)
+                shifted = sp.signal.fftconvolve(shifted, comp, mode="same")
+
+            # 4) Progress tracking
+            with count_lock:
+                count += 1
+                now = time.time()
+                if (count % 100 == 0) or (count == desired_measurements) or (now - last_print_time >= 5.0):
+                    log_with_timestamp(
+                        f"Expansion Progress: {count}/{desired_measurements} measurements processed.",
+                        gui_logger
+                    )
+                    last_print_time = now
+
+                    if report_progress > 0:
+                        a, b = 0.1, 0.35
+                        progress = a + (count / desired_measurements) * (b - a)
+                        update_gui_progress(report_progress, progress=progress)
+
+            return i, shifted
+
+        except Exception as e:
+            log_with_timestamp(f"Error processing measurement {i}: {e}", gui_logger)
+            return i, None
+
+    # ------------------------------------------------------------
+    # ThreadPool execution
+    # ------------------------------------------------------------
     try:
-        if seed == "random":
-            seed = np.random.SeedSequence().entropy
-        rng = np.random.default_rng(seed)
-
-        # Pre-generate pitch shift values
-        pitch_shifts = rng.uniform(pitch_range[0], pitch_range[1], desired_measurements)
-
-        if pitch_shift_comp:
-            # --- Compensation Filter Setup ---
-            n_fft = 2048
-            truncate_len = 512
-            f_min = 20
-            f_max = 20000
-            # Precompute FFT magnitudes of base measurements once
-            #base_mags = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
-            base_mags = np.abs(np.fft.rfft(measurement_array * fade_in_window, n=n_fft, axis=1))
-            avg_mag = np.mean(base_mags, axis=0)
-            # Sample compensation points across pitch range
-            pitch_probe_points = np.linspace(pitch_range[0], pitch_range[1], 20)#increase to improve quality
-            compensation_filters = {}
-            log_with_timestamp("Building compensation curves...", gui_logger)
-            max_base = 20  # Limit number of base measurements used
-            for p in pitch_probe_points:
-                # Pitch shift all base measurements for this probe once
-                shifted_irs = [
-                    apply_pitch_shift(measurement_array[i], fs, p, antialias)[:sample_len] * fade_in_window
-                    for i in range(min(base_n, max_base))
-                ]
-                
-                # Compute FFT magnitudes once per shifted IR
-                shifted_mags = np.abs(np.fft.rfft(np.stack(shifted_irs), n=n_fft, axis=1))
-                shifted_mag_mean = np.mean(shifted_mags, axis=0)
-    
-                comp_mag = avg_mag / np.maximum(shifted_mag_mean, 1e-6)
-                log_mag_db = savgol_filter(20 * np.log10(comp_mag), window_length=31, polyorder=3)
-                smoothed_mag = 10 ** (log_mag_db / 20)
-                impulse = build_min_phase_filter(
-                    smoothed_mag, fs, n_fft=n_fft, truncate_len=truncate_len, f_min=f_min, f_max=f_max, band_limit=True
-                )
-                compensation_filters[p] = impulse
-
-        if CN.PLOT_ENABLE and pitch_shift_comp:
-            log_with_timestamp("Plotting compensation curves...", gui_logger)
-            import matplotlib.pyplot as plt
-            freqs = np.fft.rfftfreq(n_fft, 1 / fs)
-            plt.figure(figsize=(10, 6))
-            for p in sorted(pitch_probe_points):
-                mag = np.abs(np.fft.rfft(compensation_filters[p], n=n_fft))
-                mag_db = 20 * np.log10(np.maximum(mag, 1e-8))
-                plt.plot(freqs, mag_db, label=f"{p:+.1f} semitones")
-            plt.title("Band-limited, Min-Phase Compensation Curves")
-            plt.xlabel("Frequency (Hz)")
-            plt.ylabel("Gain (dB)")
-            plt.xscale("log")
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.show()
-
-        def process_one(i):
-            nonlocal count, last_print_time
-            if cancel_event and cancel_event.is_set():
-                return None
-
-            ir = measurement_array[i % base_n]
-            pitch_shift = pitch_shifts[i]
-            try:
-                result = apply_pitch_shift(ir, fs, pitch_shift, antialias)
-
-                if len(result) < sample_len:
-                    padded = np.zeros(sample_len)
-                    padded[:len(result)] = result
-                    result = padded
-                else:
-                    result = result[:sample_len]
-
-                if pitch_shift_comp:
-                    # Find closest compensation filter for pitch shift
-                    closest_pitch = min(compensation_filters.keys(), key=lambda x: abs(x - pitch_shift))
-                    comp_filter = compensation_filters[closest_pitch]
-    
-                    # Use fftconvolve for faster convolution
-                    result = sp.signal.fftconvolve(result, comp_filter, mode='same')
-
-                with count_lock:
-                    count += 1
-                    current_time = time.time()
-                    if count % 100 == 0 or count == desired_measurements or current_time - last_print_time >= 5.0:
-                        log_with_timestamp(
-                            f"Expansion Progress: {count}/{desired_measurements} measurements processed.", gui_logger
-                        )
-                        last_print_time = current_time
-                        if report_progress > 0:
-                            a_point = 0.1
-                            b_point = 0.35
-                            progress = a_point + (float(count) / desired_measurements) * (b_point - a_point)
-                            update_gui_progress(report_progress, progress=progress)
-
-                return (i, result)
-
-            except Exception as e:
-                log_with_timestamp(f"Error processing measurement {i}: {e}", gui_logger)
-                return (i, None)
-
-        # Keep your threading code unchanged:
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(process_one, i) for i in range(desired_measurements)]
-            for future in concurrent.futures.as_completed(futures):
+
+            for f in concurrent.futures.as_completed(futures):
                 if cancel_event and cancel_event.is_set():
                     status = 2
-                    log_with_timestamp("Expansion was cancelled by user.", gui_logger)
+                    log_with_timestamp("Expansion cancelled by user.", gui_logger)
                     return output, status
 
-                result = future.result()
+                result = f.result()
                 if result is None:
                     status = 2
-                    log_with_timestamp("Expansion was cancelled by user.", gui_logger)
+                    log_with_timestamp("Expansion cancelled by user.", gui_logger)
                     return output, status
 
-                i, shifted_measurement = result
-                if shifted_measurement is not None:
-                    output[i] = shifted_measurement
-                else:
-                    output[i] = np.zeros(sample_len)
+                idx, shifted = result
+                output[idx] = shifted if shifted is not None else np.zeros(sample_len)
 
         status = 0
         log_with_timestamp("Expansion complete.", gui_logger)
@@ -1011,7 +1670,6 @@ def expand_measurements_with_pitch_shift(
         status = 1
 
     return output, status
-
 
 
 
@@ -1489,25 +2147,44 @@ def combine_dims(a, start=0, count=2):
     return np.reshape(a, s[:start] + (-1,) + s[start+count:])
 
 
-def get_elevation_list(spatial_res=0):
-    """ 
-    Function returns list of elevations based on spatial resolution
+def azimuth_to_circular(angle):
     """
-    try:
-        if spatial_res == 0:
-            elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
-        elif spatial_res == 1:
-            elevation_list_sel= CN.ELEV_ANGLES_WAV_MED
-        elif spatial_res == 2:
-            elevation_list_sel= CN.ELEV_ANGLES_WAV_HI
-        elif spatial_res == 3:
-            elevation_list_sel= CN.ELEV_ANGLES_WAV_MAX
-        else:
-            elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
-    except:
-        elevation_list_sel= CN.ELEV_ANGLES_WAV_LOW
-        
-    return elevation_list_sel
+    Convert an azimuth angle from -180..180 (left negative, right positive)
+    into circular CCW format 0..360 degrees.
+
+    Examples:
+        -30  -> 30
+        30   -> 330
+        180  -> 180
+        -180 -> 180
+        0    -> 0
+    """
+    return (360 - angle) % 360
+
+
+def circular_to_azimuth(circ_angle):
+    """
+    Convert a circular CCW azimuth (0..360) back into -180..180 system.
+
+    Examples:
+        30   -> -30
+        330  -> 30
+        210  -> -150
+        180  -> 180
+        0    -> 0
+    """
+    # Normalize to 0–360 just in case
+    circ_angle = circ_angle % 360
+
+    # 0–180 maps to positive/right (mirrored)
+    # 180–360 maps to negative/left when converted back
+    angle = (360 - circ_angle) % 360
+
+    # Convert 181–359 into -179..-1
+    if angle > 180:
+        angle -= 360
+
+    return angle
 
 def print_message(message):
     """
@@ -1526,255 +2203,10 @@ def round_to_multiple(number, multiple):
 def round_down_even(n):
     return 2 * int(n // 2) 
 
-def plot_data(mag_response, title_name = 'Output', n_fft = 65536, samp_freq = 44100, y_lim_adjust = 0, y_lim_a=-25, y_lim_b=15, x_lim_adjust = 0,x_lim_a=20, x_lim_b=20000, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT, normalise=1, level_ends=0, plot_type=0):
-    """
-    Function takes a magnitude reponse array as an input and plots the reponse
-    :param mag_response: numpy array 1d, magnitude reponse array
-    :param title_name: string, name of plot
-    :param n_fft: int, fft size
-    :param samp_freq: int, sample frequency in Hz
-    :param y_lim_adjust: int, 1 = adjust y axis to specified range, 0 = no adjustment 
-    :param x_lim_adjust: int, 1 = adjust x axis to specified range, 0 = no adjustment 
-    :param save_plot: int, 1 = save plot to file, 0 = dont save plot
-    :param plot_path: string, path to save plot 
-    :param normalise: int, 0 = dont normalise, 1 = normalise low frequencies to 0db
-    :param plot_type: int, 0 = matplotlib, 1 = dearpygui (series 1 - filter export), 2 = dearpygui (series 2 - quick config), 3 = dearpygui (series 3 - lfa)
-    :return: None
-    """
-
-    #level ends of spectrum
-    if level_ends == 1:
-        mag_response = level_spectrum_ends(mag_response, 200, 19000, n_fft=n_fft)#320, 19000 340, 19000
-        #octave smoothing
-        mag_response = smooth_fft_octaves(data=mag_response, n_fft=n_fft)
-        
-    nUniquePts = int(np.ceil((n_fft+1)/2.0))
-    sampling_ratio = samp_freq/n_fft
-    freqArray = np.arange(0, nUniquePts, 1.0) * sampling_ratio    
-    
-    #mag_response = mag_response / float(n_fft)
-    mag_response = mag_response[0:nUniquePts]
-    mag_response_log = 20*np.log10(mag_response)
-    
-    
-    #normalise to 0db
-    if normalise == 1:
-        mag_response_log = mag_response_log-np.mean(mag_response_log[0:200])
-    elif normalise == 2:
-        mag_response_log = mag_response_log-np.mean(mag_response_log[CN.SPECT_SNAP_M_F0:CN.SPECT_SNAP_M_F1])#1200:1800
-
-    if plot_type == 0:
-        plt.figure()
-        plt.plot(freqArray, mag_response_log, color='k', label="FR")
-        plt.xlabel("Frequency (Hz)")
-        plt.ylabel("Magnitude (dB)")
-        plt.xscale("log")
-        plt.grid()
-        if x_lim_adjust == 1:
-            plt.xlim([x_lim_a, x_lim_b])
-        else:
-            plt.xlim([20, 20000])
-        if y_lim_adjust == 1:
-            plt.ylim([np.ceil(mag_response_log.max())-y_lim_a, np.ceil(mag_response_log.max())+y_lim_b])
-        plt.title(title_name)
-        plt.show()
-        
-        if save_plot == 1:
-            out_file_name = title_name + '.png'
-            out_file_path = pjoin(plot_path, out_file_name)
-            plt.savefig(out_file_path)
-    elif plot_type == 1:#filter and dataset tab
-        dpg.set_value('series_tag', [freqArray, mag_response_log])
-        dpg.set_item_label('series_tag', title_name)
-        if y_lim_adjust == 1:
-            dpg.set_axis_limits("y_axis", y_lim_a, y_lim_b)
-        else:
-            dpg.set_axis_limits("y_axis", -20, 15)
-        if x_lim_adjust == 1:
-            dpg.set_axis_limits("x_axis", x_lim_a, x_lim_b)
-        else:
-            dpg.set_axis_limits("x_axis", 10, 20000)
-    elif plot_type == 2:#QC tab
-        dpg.set_value('qc_series_tag', [freqArray, mag_response_log])
-        dpg.set_item_label('qc_series_tag', title_name)
-        if y_lim_adjust == 1:
-            dpg.set_axis_limits("qc_y_axis", y_lim_a, y_lim_b)
-        else:
-            dpg.set_axis_limits("qc_y_axis", -20, 15)
-        if x_lim_adjust == 1:
-            dpg.set_axis_limits("qc_x_axis", x_lim_a, x_lim_b)
-        else:
-            dpg.set_axis_limits("qc_x_axis", 10, 20000)
-    elif plot_type == 3:#LF analysis
-        dpg.set_value('qc_lfa_series_tag', [freqArray, mag_response_log])
-        dpg.set_item_label('qc_lfa_series_tag', title_name)
-        if y_lim_adjust == 1:
-            dpg.set_axis_limits("qc_lfa_y_axis", y_lim_a, y_lim_b)
-        else:
-            dpg.set_axis_limits("qc_lfa_y_axis", -20, 15)
-        if x_lim_adjust == 1:
-            dpg.set_axis_limits("qc_lfa_x_axis", x_lim_a, x_lim_b)
-        else:
-            dpg.set_axis_limits("qc_lfa_x_axis", 10, 20000)
-            
-            
-def plot_data_generic(
-    plot_data_array, 
-    freqs=None,
-    title_name='Output',
-    data_type='magnitude',  # NEW: 'magnitude' or 'group_delay'
-    n_fft=CN.N_FFT,
-    samp_freq=44100,
-    y_lim_adjust=0, y_lim_a=-25, y_lim_b=15,
-    x_lim_adjust=0, x_lim_a=20, x_lim_b=20000,
-    save_plot=0,
-    plot_path=CN.DATA_DIR_OUTPUT,
-    normalise=1,
-    level_ends=0,
-    plot_type=0
-):
-    """
-    Generalised plotting function to support magnitude or group delay plots.
-
-    :param plot_data_array: numpy array (1D), magnitude or group delay data
-    :param data_type: str, 'magnitude' or 'group_delay'
-    """
-    
-
-    if level_ends == 1 and data_type == 'magnitude':
-        plot_data_array = level_spectrum_ends(plot_data_array, 200, 19000, n_fft=n_fft)
-        plot_data_array = smooth_fft_octaves(data=plot_data_array, n_fft=n_fft)
-
-    nUniquePts = int(np.ceil((n_fft + 1) / 2.0))
-    sampling_ratio = samp_freq / n_fft
-    if freqs is None:
-        # Default frequency array from FFT
-        freqArray = np.arange(0, nUniquePts, 1.0) * sampling_ratio
-        plot_data_array = plot_data_array[0:nUniquePts]
-    else:
-        freqArray = freqs[0:nUniquePts-2]
-        plot_data_array = plot_data_array[0:nUniquePts-2]
-
-    if data_type == 'magnitude':
-        plot_vals = 20 * np.log10(np.maximum(plot_data_array, 1e-12))  # avoid log(0)
-        if normalise == 1:
-            plot_vals -= np.mean(plot_vals[0:200])
-        elif normalise == 2:
-            plot_vals -= np.mean(plot_vals[CN.SPECT_SNAP_M_F0:CN.SPECT_SNAP_M_F1])
-        y_label = "Magnitude (dB)"
-    elif data_type == 'group_delay':
-        plot_vals = plot_data_array  # assumed to be in ms already
-        y_label = "Group Delay (ms)"
-    else:
-        raise ValueError("Unsupported data_type: use 'magnitude' or 'group_delay'")
-
-    if plot_type == 0:  # Matplotlib
-        plt.figure()
-        plt.plot(freqArray, plot_vals, color='k', label=title_name)
-        plt.xlabel("Frequency (Hz)")
-        plt.ylabel(y_label)
-        plt.xscale("log")
-        plt.grid()
-        if x_lim_adjust:
-            plt.xlim([x_lim_a, x_lim_b])
-        else:
-            plt.xlim([20, 20000])
-        if y_lim_adjust:
-            plt.ylim([y_lim_a, y_lim_b])
-        plt.title(title_name)
-        plt.show()
-
-        if save_plot:
-            out_file_name = title_name + '.png'
-            out_file_path = pjoin(plot_path, out_file_name)
-            plt.savefig(out_file_path)
-
-    else:
-        tag_map = {
-            1: 'series_tag',
-            2: 'qc_series_tag',
-            3: 'qc_lfa_series_tag'
-        }
-        x_axis_map = {
-            1: 'x_axis',
-            2: 'qc_x_axis',
-            3: 'qc_lfa_x_axis'
-        }
-        y_axis_map = {
-            1: 'y_axis',
-            2: 'qc_y_axis',
-            3: 'qc_lfa_y_axis'
-        }
-
-        series_tag = tag_map.get(plot_type)
-        x_axis_tag = x_axis_map.get(plot_type)
-        y_axis_tag = y_axis_map.get(plot_type)
-
-        if series_tag:
-            
-            dpg.set_value(series_tag, [[], []])
-            dpg.set_value(series_tag, [freqArray, plot_vals])
-            dpg.set_item_label(series_tag, title_name)
-
-            # Set axis limits
-            if x_lim_adjust:
-                dpg.set_axis_limits(x_axis_tag, x_lim_a, x_lim_b)
-            else:
-                dpg.set_axis_limits(x_axis_tag, 10, 20000)
-
-            if y_lim_adjust:
-                dpg.set_axis_limits(y_axis_tag, y_lim_a, y_lim_b)
-            else:
-                dpg.set_axis_limits(y_axis_tag, -20, 15)
-
-            # Set y-axis label
-            dpg.set_item_label(y_axis_tag, y_label)
-            
-    # print("Plot summary:")
-    # print(f"Freq range: {freqArray.min()} Hz – {freqArray.max()} Hz")
-    # print(f"Group delay range: {plot_vals.min()} ms – {plot_vals.max()} ms")
-    # print(f"Data points: {len(freqArray)}")
-            
-    # if np.any(~np.isfinite(plot_vals)):
-    #     print(f"[WARNING] plot_vals contains invalid entries (NaN or inf)")
-
-    # if len(freqArray) != len(plot_vals):
-    #     print(f"[WARNING] Frequency and value arrays are mismatched: {len(freqArray)} vs {len(plot_vals)}")
 
 
-def plot_geq(geq_dict, title_name = 'Output', y_lim_adjust = 0, save_plot=0, plot_path=CN.DATA_DIR_OUTPUT):
-    """
-    Function takes a magnitude reponse dictionary as an input and plots the reponse
-    :param geq_dict: dictionary, graphic eq dictionary with magnitude reponse
-    :param title_name: string, name of plot
-    :param y_lim_adjust: int, 1 = adjust y axis to 30db range, 0 = no adjustment 
-    :param save_plot: int, 1 = save plot to file, 0 = dont save plot
-    :param plot_path: string, path to save plot 
-    :return: None
-    """   
-    
-   
-    # split dictionary into keys and values
-    keys = list(geq_dict.keys())
-    keys_float = [float(i) for i in keys]
-    values = np.array(list(geq_dict.values()))
-    
-    plt.figure()
-    plt.plot(keys_float, values, color='k', label="FR")
-    plt.xlabel("Frequency (Hz)")
-    plt.ylabel("Magnitude (dB)")
-    plt.xscale("log")
-    plt.grid()
-    plt.xlim([20, 20000])
-    if y_lim_adjust == 1:
-        plt.ylim([np.ceil(values.max())-25, np.ceil(values.max())+5])
-    plt.title(title_name)
-    plt.show()
-    
-    if save_plot == 1:
-        out_file_name = title_name + '.png'
-        out_file_path = pjoin(plot_path, out_file_name)
-        plt.savefig(out_file_path)
+
+
     
 
 def plot_td(signal, title_name = 'Output', samp_freq = 44100):
@@ -1869,33 +2301,43 @@ def list_diff(list1,list2):
         
     return result
   
-# function to write wav file 
-def write2wav(file_name, data, samplerate = 44100, prevent_clipping = 0, bit_depth='PCM_24'):
+
+    
+def write2wav(file_name, data, samplerate=CN.SAMP_FREQ, prevent_clipping=0, bit_depth='PCM_24', enable_resample=False, resample_mode='fast'):
     """
-    Function takes a time domain signal as an input and writes wav file 
+    Write a WAV file, optionally resampling the signal if samplerate != CN.SAMP_FREQ.
+
     :param data: numpy array, time domain signal
-    :param file_name: string, name of wav
-    :param samplerate: int, sample frequency in Hz
-    :param prevent_clipping: int, 1 = reduce amplitude to prevent clipping
-    :return: None
-    """    
-    
-    #old method using scipy
-    #write("example.wav", samplerate, data.astype(np.int32))
-    
-    # Ensure data is float for proper PCM conversion
+    :param file_name: output wav filename
+    :param samplerate: int, requested output sample rate
+    :param prevent_clipping: 1 to normalize to avoid clipping
+    :param bit_depth: WAV subtype (default PCM_24)
+    :param enable_resample: bool, if True resamples input to `samplerate` - disabled by default as resampling is handled elsewhere
+    :param resample_mode: 'fast' | 'best' | etc., passed to resample_signal()
+    """
+
+    # Ensure numpy float32
     data = np.asarray(data, dtype=np.float32)
-    
-    # Prevent clipping
+
+    # Optional resampling
+    if enable_resample and samplerate != CN.SAMP_FREQ:
+        data = resample_signal(
+            signal=data,
+            original_rate=CN.SAMP_FREQ,
+            new_rate=samplerate,
+            axis=0,
+            scale=False,
+            mode=resample_mode
+        )
+
+    # Optional clipping protection
     if prevent_clipping == 1:
         max_amp = np.max(np.abs(data))
         if max_amp > 1:
             data = data / max_amp
-    
+
     # Write WAV
     sf.write(file_name, data, samplerate, subtype=bit_depth)
-    
-
     
 def read_wav_file(audiofilename):
     """
@@ -2323,16 +2765,16 @@ def compute_band_rt60s(ir, fs=CN.FS, bands=CN.OCTAVE_BANDS):
     return results
 
 
-#Example Usage
-# # Load your impulse response as `ir` (e.g., from WAV) and define the sample rate `fs`
-# band_rt60s = compute_band_rt60s(ir, fs)
-# # Print estimated RT60s for each frequency band
-# for band, rt in band_rt60s.items():
-#     print(f"{band} Hz: Topt ≈ {rt:.2f} s" if rt is not None else f"{band} Hz: N/A")
-# Calculate average Topt across all bands
-# topt_values = band_rt60s["Topt"]
-# topt_mean = np.nanmean(topt_values)
-# print(f"Average Topt across bands: {topt_mean:.3f} seconds")
+    #Example Usage
+    # # Load your impulse response as `ir` (e.g., from WAV) and define the sample rate `fs`
+    # band_rt60s = compute_band_rt60s(ir, fs)
+    # # Print estimated RT60s for each frequency band
+    # for band, rt in band_rt60s.items():
+    #     print(f"{band} Hz: Topt ≈ {rt:.2f} s" if rt is not None else f"{band} Hz: N/A")
+    # Calculate average Topt across all bands
+    # topt_values = band_rt60s["Topt"]
+    # topt_mean = np.nanmean(topt_values)
+    # print(f"Average Topt across bands: {topt_mean:.3f} seconds")
 
 
 def signal_lowpass_filter(data, cutoff, fs, order=5, method=1, filtfilt=False):
@@ -2427,6 +2869,9 @@ def get_filter_sos( cutoff, fs, order=5, method=1, filtfilt=False, b_type='high'
     """  
     if filtfilt == True:#doubles the effective order of the filtering when compared to a simple forward filter. 
         order=int(order/2)
+        
+    if cutoff < CN.MIN_FILT_FREQ:
+        return None
 
     if method == 1:
         #method 1
@@ -2521,36 +2966,30 @@ def group_delay(sig):
 
 
 
-def smooth_fft(
+
+def smooth_freq(
     data,
     crossover_f=1000,
     win_size_a=150,
     win_size_b=750,
     n_fft=CN.N_FFT,
     fs=CN.FS,
-    to_full=False
+    to_full=False,
+    log_domain=False
 ):
     """
     Applies two-stage smoothing to a magnitude FFT spectrum with different smoothing window
     sizes below and above a crossover frequency.
-
-    Parameters:
-        data (np.ndarray): Input magnitude spectrum (half or full).
-        crossover_f (float): Frequency in Hz at which smoothing window changes.
-        win_size_a (float): Smoothing window size in Hz for frequencies < crossover_f.
-        win_size_b (float): Smoothing window size in Hz for frequencies >= crossover_f.
-        n_fft (int): FFT size used to compute the original spectrum.
-        fs (int): Sampling rate in Hz.
-        to_full (bool): If True and input is half-spectrum, output a mirrored full-spectrum.
-
-    Returns:
-        np.ndarray: Smoothed spectrum (same type as input unless to_full=True).
+    Optionally performs smoothing in the log magnitude domain using mag2db/db2mag.
     """
     is_half = len(data) == n_fft // 2 + 1
     nyq_bin = n_fft // 2
 
-    # Ensure we are smoothing the positive frequency part only
-    spectrum = data[:nyq_bin + 1] if not is_half else data.copy()
+    # Work on the positive frequency half only
+    spectrum = data[:nyq_bin + 1].copy() if is_half else data.copy()
+
+    if log_domain:
+        spectrum = mag2db(np.maximum(spectrum, 1e-12))
 
     # Convert smoothing windows and crossover to bins
     crossover_bin = int(round(crossover_f * n_fft / fs))
@@ -2558,41 +2997,44 @@ def smooth_fft(
     win_b_bins = max(1, int(round(win_size_b * n_fft / fs)))
     win_c_bins = min(win_a_bins, win_b_bins)
 
-    # Apply smoothing with different window sizes
+    # Two-stage smoothing
     smooth_a = sp.ndimage.uniform_filter1d(spectrum, size=win_a_bins)
     smooth_b = sp.ndimage.uniform_filter1d(spectrum, size=win_b_bins)
 
-    # Combine both smoothed results at the crossover point
     combined = np.empty_like(spectrum)
     combined[:crossover_bin] = smooth_a[:crossover_bin]
     combined[crossover_bin:] = smooth_b[crossover_bin:]
 
-    # Final pass of light smoothing
+    # Final light smoothing
     smoothed = sp.ndimage.uniform_filter1d(combined, size=win_c_bins)
 
-    if not is_half:
-        # Full input: re-insert the mirrored upper half
+    if log_domain:
+        smoothed = db2mag(smoothed)
+
+    # Return in correct format
+    if is_half:
+        if to_full:
+            full_spec = np.empty(n_fft, dtype=smoothed.dtype)
+            full_spec[:nyq_bin + 1] = smoothed
+            full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+            return full_spec
+        return smoothed
+    else:
+        # Already full spectrum, replace mirrored part
         result = np.empty_like(data)
-        result[:nyq_bin + 1] = smoothed
+        result[:nyq_bin + 1] = smoothed[:nyq_bin + 1]
         result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
         return result
 
-    if to_full:
-        # Generate full spectrum from half
-        result = np.empty(n_fft, dtype=smoothed.dtype)
-        result[:nyq_bin + 1] = smoothed
-        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
-        return result
 
-    return smoothed
-
-def smooth_fft_octaves(
+def smooth_freq_octaves(
     data,
     fund_freq=120,
     win_size_base=15,
     n_fft=CN.N_FFT,
     fs=CN.FS,
-    to_full=False
+    to_full=False,
+    log_domain=True
 ):
     """
     Applies multi-band smoothing based on octave scaling of smoothing windows.
@@ -2606,6 +3048,7 @@ def smooth_fft_octaves(
         n_fft (int): FFT size used to calculate the spectrum.
         fs (int): Sampling rate in Hz.
         to_full (bool): If True and input is half-spectrum, mirror to full spectrum on return.
+        log_domain (bool): If True, smoothing is applied in dB.
 
     Returns:
         np.ndarray: Octave-smoothed spectrum (same type as input unless to_full=True).
@@ -2616,42 +3059,35 @@ def smooth_fft_octaves(
     max_freq = fs / 2
     num_octaves = int(np.log2(max_freq / fund_freq))
 
-    # Work on a copy of the input
+    # Work on a copy
     smoothed = data.copy()
 
-    # Apply octave-band smoothing iteratively
+    # Iteratively smooth each octave band
     for i in range(num_octaves):
         factor = 2 ** i
         cutoff = fund_freq * factor
         win_a = win_size_base
         win_b = win_size_base * factor
 
-        smoothed = smooth_fft(
+        smoothed = smooth_freq(
             smoothed,
             crossover_f=cutoff,
             win_size_a=win_a,
             win_size_b=win_b,
             n_fft=n_fft,
             fs=fs,
-            to_full=False  # Always keep it half during iteration
+            to_full=False,      # Keep half-spectrum during iteration
+            log_domain=log_domain
         )
 
     # Return in desired format
-    if not is_half:
-        return smoothed  # Already full-spectrum, nothing more to do
-
-    if to_full:
-        # Mirror to create full-spectrum
+    if is_half and to_full:
         full_spec = np.empty(n_fft, dtype=smoothed.dtype)
         full_spec[:nyq_bin + 1] = smoothed
         full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
         return full_spec
-    else:
-        return smoothed
 
-
-
-
+    return smoothed
      
     
 def build_min_phase_filter(
@@ -2667,7 +3103,7 @@ def build_min_phase_filter(
     Build a minimum-phase FIR filter from a magnitude spectrum (half or full).
     
     Parameters:
-        smoothed_mag (np.ndarray): Magnitude spectrum (half-spectrum or full-spectrum).
+        smoothed_mag (np.ndarray): Magnitude spectrum (half-spectrum or full-spectrum). Not log scale.
         fs (int): Sampling frequency in Hz.
         n_fft (int): FFT size.
         truncate_len (int): Length to truncate time-domain IR.
@@ -2795,6 +3231,58 @@ def build_min_phase_filter_intrp(
     impulse = impulse[:truncate_len]
     fade_out = np.hanning(2 * truncate_len)[truncate_len:]
     impulse *= fade_out
+
+    return impulse
+
+def build_min_phase_and_save(
+    mag_response,
+    file_path,
+    fs=CN.FS,
+    n_fft=CN.N_FFT,
+    truncate_len=4096,
+    f_min=20,
+    f_max=20000,
+    band_limit=False,
+    prevent_clipping=1,
+    bit_depth="PCM_24"
+):
+    """
+    Build a minimum-phase FIR filter from a magnitude response and save it as a WAV file.
+
+    Parameters:
+        mag_response (np.ndarray): Magnitude response in *linear* scale.
+        file_path (str): Output WAV path.
+        fs (int): Sample rate.
+        n_fft (int): FFT size used for MP reconstruction.
+        truncate_len (int): Output IR length.
+        f_min, f_max (float): Band-limit frequencies.
+        band_limit (bool): Apply band-limiting before MP conversion.
+        prevent_clipping (int): Apply amplitude normalization before exporting.
+        bit_depth (str): WAV subtype (e.g., "PCM_16", "PCM_24").
+
+    Returns:
+        np.ndarray: The generated minimum-phase FIR filter.
+    """
+
+    # ---- Build Minimum-Phase Filter ----
+    impulse = build_min_phase_filter(
+        smoothed_mag=mag_response,
+        fs=fs,
+        n_fft=n_fft,
+        truncate_len=truncate_len,
+        f_min=f_min,
+        f_max=f_max,
+        band_limit=band_limit
+    )
+
+    # ---- Save to WAV ----
+    write2wav(
+        file_name=file_path,
+        data=impulse,
+        samplerate=fs,
+        prevent_clipping=prevent_clipping,
+        bit_depth=bit_depth
+    )
 
     return impulse
 
@@ -3022,14 +3510,7 @@ def find_delay_and_roll_lf(arr_a, arr_b):
 
         
     #
-    #rolling code
-    #
-    # air_data[set_num,this_air_idx,0,:] = np.roll(air_data[set_num,this_air_idx,0,:],samples_shift)#left
-    
-    # #set end of array to zero to remove any data shifted to end of array
-    # if samples_shift < 0:
-    #     air_data[set_num,this_air_idx,0,min_t_shift:] = air_data[set_num,this_air_idx,0,min_t_shift:]*0#left
-    
+
     
     
     
@@ -3319,13 +3800,13 @@ def check_stop_thread(gui_logger=None):
    
                  
               
-def check_and_download_file(file_path, gdrive_link, download=False, gui_logger=None):
+def check_and_download_file(file_path, file_link, download=False, gui_logger=None):
     """
     Checks if the specified file exists, and if not, downloads it from the provided Google Drive link.
     
     Args:
         file_path (str): Full path to the file to check.
-        gdrive_link (str): Direct Google Drive download link.
+        file_link (str): Direct  download link.
         download (bool): Whether to attempt downloading the file if missing.
         gui_logger (callable, optional): Logger for GUI output.
 
@@ -3341,7 +3822,7 @@ def check_and_download_file(file_path, gdrive_link, download=False, gui_logger=N
             log_with_timestamp("File already exists.", gui_logger)
         elif download:
             log_with_timestamp("File not found. Starting download...", gui_logger)
-            download_file(gdrive_link, file_path, gui_logger=gui_logger)
+            download_file(file_link, file_path, gui_logger=gui_logger)
             log_with_timestamp(f"File downloaded to: {file_path}", gui_logger)
 
         status = 0  # success
@@ -3351,54 +3832,58 @@ def check_and_download_file(file_path, gdrive_link, download=False, gui_logger=N
 
     return status 
 
-def download_file(url, save_location, gui_logger=None):
+
+    
+def download_file(url, save_location, gui_logger=None, overwrite=True):
     """
     Downloads a file from a URL and saves it to the specified location.
 
     Args:
         url (str): The URL of the file to download.
         save_location (str): The full path (including filename) where the file should be saved.
-        gui_logger:  A logger object for GUI logging (optional).
+        gui_logger: A logger object for GUI logging (optional).
+        overwrite (bool): If True, re-download and overwrite the file even if it exists.
     """
-    # Example Usage
-    # url = "https://www.example.com/somefile.txt"  # Replace with the actual URL
-    # save_path = "/path/to/save/myfile.txt"      # Replace with the desired save location
-    # download_file(url, save_path)
-    
+
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(save_location), exist_ok=True)
 
     # Check if the file already exists
-    if os.path.exists(save_location):
+    if os.path.exists(save_location) and not overwrite:
         log_string = f"File already exists at: {save_location}"
         log_with_timestamp(log_string, gui_logger)
-        return True  # Treat as success since the file is already present 
+        return True  # Treat as success since the file is already present
 
     try:
-        
+        # Google Drive download
         if 'drive.google' in url:
-            gdown.download(url, save_location, fuzzy=True)#google drive link
+            gdown.download(url, save_location, fuzzy=True)  # google drive link
+
         else:
             response = requests.get(url, timeout=10)
-            response.raise_for_status()  # Raise an exception for bad status codes
-    
+            response.raise_for_status()
+
+            # Write file (overwrites if it already exists)
             with open(save_location, 'wb') as file:
                 file.write(response.content)
 
-        log_string = f"File downloaded successfully and saved to: {save_location}"
+        log_string = (
+            f"File downloaded successfully and saved to: {save_location}"
+            if not os.path.exists(save_location) or overwrite
+            else f"File already existed and was overwritten at: {save_location}"
+        )
         log_with_timestamp(log_string, gui_logger)
         return True
 
     except requests.exceptions.RequestException as e:
         log_string = f"Error downloading file: {e}"
-        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=e)#log error
+        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type=2, exception=e)
         return False
-    
+
     except Exception as ex:
         log_string = "An unexpected error occurred"
-        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 2, exception=ex)#log error  
+        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type=2, exception=ex)
         return False
-    
 
 
 def get_files_with_extension(directory, extension):
@@ -3943,4 +4428,54 @@ def update_default_output_text(reset_sd=True):
         log_with_timestamp(msg)
         
         
-        
+def map_array_value_lookup(value, array_gui, array_internal, default=None):
+    """
+    Bi-directional mapping between GUI labels and internal values.
+    Automatically detects the type of `value` and returns the corresponding value
+    from the other array.
+
+    Parameters
+    ----------
+    value : any
+        The value to map. Can be a GUI label or internal value.
+    array_gui : list
+        List of GUI labels.
+    array_internal : list
+        List of corresponding internal values.
+    default : any
+        Value to return if `value` is not found. Defaults to None.
+
+    Returns
+    -------
+    any
+        Mapped value from the corresponding array, or `default` if not found.
+    """
+    try:
+        if value in array_gui:
+            return array_internal[array_gui.index(value)]
+        elif value in array_internal:
+            return array_gui[array_internal.index(value)]
+        else:
+            return default
+    except Exception:
+        return default        
+
+def set_checkbox_and_sync_button(checkbox_tag, button_tag, value, on_texture=CN.BUTTON_IMAGE_ON,off_texture= CN.BUTTON_IMAGE_OFF):
+    """
+    Set the value of a hidden checkbox and synchronise the corresponding image button.
+
+    Parameters:
+    - checkbox_tag: tag of the hidden checkbox
+    - button_tag: tag of the image button
+    - value: True/False, new checkbox state
+    - on_texture: texture tag for ON state
+    - off_texture: texture tag for OFF state
+    """
+    # Set checkbox value (authoritative state)
+    dpg.set_value(checkbox_tag, value)
+
+    # Update button image to match
+    dpg.configure_item(
+        button_tag,
+        texture_tag=on_texture if value else off_texture
+    )

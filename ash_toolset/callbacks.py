@@ -40,12 +40,10 @@ import json
 import urllib.request
 
 
-#
-#
-## Settings related
-#
-#
 
+############################################### Settings and preset related
+#
+#
 
 
 def reset_settings(sender=None, app_data=None, user_data=None):
@@ -87,13 +85,13 @@ def reset_settings(sender=None, app_data=None, user_data=None):
         dpg.configure_item('qc_hrtf_remove_favourite',show=False)
         dpg.configure_item('qc_hrtf_average_favourite',show=False)
         dpg.configure_item('qc_open_user_sofa_folder',show=False)
-        dpg.configure_item('hrtf_add_favourite',show=True)
-        dpg.configure_item('hrtf_remove_favourite',show=False)
-        dpg.configure_item('hrtf_average_favourite',show=False)
-        dpg.configure_item('open_user_sofa_folder',show=False)
+        dpg.configure_item('fde_hrtf_add_favourite',show=True)
+        dpg.configure_item('fde_hrtf_remove_favourite',show=False)
+        dpg.configure_item('fde_hrtf_average_favourite',show=False)
+        dpg.configure_item('fde_open_user_sofa_folder',show=False)
         updated_fav_list = CN.HRTF_BASE_LIST_FAV
         # Replace user data
-        dpg.configure_item('hrtf_add_favourite', user_data=updated_fav_list)
+        dpg.configure_item('fde_hrtf_add_favourite', user_data=updated_fav_list)
     
         # Reset HRTF selection items
         dpg.configure_item('fde_brir_hrtf', items=CN.DEFAULTS["brir_hrtf_listener_list"])
@@ -102,8 +100,8 @@ def reset_settings(sender=None, app_data=None, user_data=None):
         dpg.configure_item('qc_brir_hrtf_dataset', items=CN.DEFAULTS["brir_hrtf_dataset_list"])
     
         # Reset progress bars and GUI toggles
-        reset_hpcf_progress()
-        reset_brir_progress()
+        fde_reset_hpcf_progress()
+        fde_reset_brir_progress()
         qc_reset_progress()
         e_apo_toggle_hpcf_gui(app_data=False)
         e_apo_toggle_brir_gui(app_data=False)
@@ -384,7 +382,7 @@ def save_settings(update_hpcf_pars=False, update_brir_pars=False, preset_name=No
     # --- Core metadata ---
     #not stored directly in gui elements
     config['DEFAULT']['version'] = __version__
-    config['DEFAULT']['hrtf_list_favs'] = json.dumps(dpg.get_item_user_data("hrtf_add_favourite") or [])
+    config['DEFAULT']['hrtf_list_favs'] = json.dumps(dpg.get_item_user_data("fde_hrtf_add_favourite") or [])
     config['DEFAULT']['path'] = dpg.get_value('selected_folder_base')
 
     # --- Define deferred keys ---
@@ -419,12 +417,7 @@ def save_settings(update_hpcf_pars=False, update_brir_pars=False, preset_name=No
         with open(settings_file, 'w') as configfile:
             config.write(configfile)
     
-        # log_string = f"Settings successfully saved to '{settings_file}'."
-        # if settings_file == CN.SETTINGS_FILE:
-        #     hf.log_with_timestamp(log_string=log_string)
-        # else:
-        #     hf.log_with_timestamp(log_string=log_string, gui_logger=logz)
-            
+ 
         log_string = f"Preset successfully saved to '{settings_file}'."
         if settings_file != CN.SETTINGS_FILE:
             hf.log_with_timestamp(log_string=log_string, gui_logger=logz)
@@ -442,10 +435,7 @@ def save_settings(update_hpcf_pars=False, update_brir_pars=False, preset_name=No
 
 
 
-
-#
-#
-## GUI Functions - HPCFs
+######################################  GUI Functions - HPCFs
 #
 #
 
@@ -626,7 +616,7 @@ def change_hpcf_database(selected_db,use_previous_settings=False):
                     dpg.configure_item('qc_hpcf_sample', items=sample_list_sorted)
                     dpg.set_value("qc_hpcf_sample", sample_applied)
                     # update plot
-                    hpcf_functions.hpcf_to_plot(conn, headphone_applied, sample_applied, plot_type=2)
+                    hpcf_functions.hpcf_to_plot(conn, headphone_applied, sample_applied, plot_dest=CN.TAB_QC_CODE)
         
         #reset search bars
         dpg.set_value("qc_hpcf_brand_search", "")
@@ -636,7 +626,7 @@ def change_hpcf_database(selected_db,use_previous_settings=False):
         #will reset progress bars  
         dpg.set_value("qc_toggle_hpcf_history", False)
         qc_reset_progress()
-        reset_hpcf_progress()
+        fde_reset_hpcf_progress()
         
     except Exception as e:
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)    
@@ -664,7 +654,7 @@ def filter_hpcf_lists(tab_prefix, search_type, app_data):
         brand_combo = f"{tab_prefix}_hpcf_brand"
         headphone_combo = f"{tab_prefix}_hpcf_headphone"
         sample_combo = f"{tab_prefix}_hpcf_sample"
-        plot_type = 1 if tab_prefix == "fde" else 2
+        plot_dest = 2 if tab_prefix == "fde" else 1
         hpcf_database_sel = dpg.get_value('fde_hpcf_active_database') if tab_prefix == "fde" else dpg.get_value('qc_hpcf_active_database')
     
         search_str = app_data.strip() if app_data else ""
@@ -712,14 +702,14 @@ def filter_hpcf_lists(tab_prefix, search_type, app_data):
         dpg.set_value(sample_combo, sample_default)
     
         # --- Update plot ---
-        hpcf_functions.hpcf_to_plot(conn, headphone, sample_default, plot_type=plot_type)
+        hpcf_functions.hpcf_to_plot(conn, headphone, sample_default, plot_dest=plot_dest)
     
         # --- Reset progress ---
         if tab_prefix == "qc":
             dpg.set_value("qc_toggle_hpcf_history", False)
             qc_reset_progress()
         else:
-            reset_hpcf_progress()
+            fde_reset_hpcf_progress()
     
         save_settings()
         
@@ -817,7 +807,7 @@ def qc_show_hpcf_history(sender=None, app_data=None):
       
             #also update plot to Sample A
             #sample = CN.HPCF_SAMPLE_DEFAULT
-            hpcf_functions.hpcf_to_plot(conn, default_headphone, sample_new, plot_type=2)
+            hpcf_functions.hpcf_to_plot(conn, default_headphone, sample_new, plot_dest=CN.TAB_QC_CODE)
             
             #reset sample list to Sample A
             dpg.set_value("qc_hpcf_sample", sample_new)
@@ -844,7 +834,7 @@ def qc_show_hpcf_history(sender=None, app_data=None):
 
             dpg.configure_item('qc_hpcf_sample',items=sample_list_sorted)
             #also update plot
-            hpcf_functions.hpcf_to_plot(conn, headphone_selected, sample_selected, plot_type=2)
+            hpcf_functions.hpcf_to_plot(conn, headphone_selected, sample_selected, plot_dest=CN.TAB_QC_CODE)
             #reset sample list
             dpg.set_value("qc_hpcf_sample", sample_selected)
             
@@ -886,9 +876,9 @@ def handle_hpcf_update(tab_prefix, update_type, changed_item=None, brand=None, h
         #     logz = None
         logz = None
     
-        plot_type = 1 if tab_prefix == "fde" else 2
+        plot_dest = 2 if tab_prefix == "fde" else 1
         hpcf_database_sel = dpg.get_value(f'{tab_prefix}_hpcf_active_database')
-        reset_func = reset_hpcf_progress if tab_prefix == "fde" else qc_reset_progress
+        reset_func = fde_reset_hpcf_progress if tab_prefix == "fde" else qc_reset_progress
         auto_apply_id = f"{tab_prefix}_auto_apply_hpcf_sel"
         brand_id = f"{tab_prefix}_hpcf_brand"
         headphone_id = f"{tab_prefix}_hpcf_headphone"
@@ -914,7 +904,7 @@ def handle_hpcf_update(tab_prefix, update_type, changed_item=None, brand=None, h
     
             if sample_to_use:
                 hf.log_with_timestamp(f"Plotting HPCF: {headphone} | {sample_to_use}", logz)
-                hpcf_functions.hpcf_to_plot(conn, headphone, sample_to_use, plot_type=plot_type)
+                hpcf_functions.hpcf_to_plot(conn, headphone, sample_to_use, plot_dest=plot_dest)
     
             if sample_list_sorted:
                 refresh_dropdown(sample_id, sample_list_sorted, sample_to_use)
@@ -933,7 +923,7 @@ def handle_hpcf_update(tab_prefix, update_type, changed_item=None, brand=None, h
             refresh_dropdown(headphone_id, hpcf_functions.get_headphone_list(conn, brand) or [], headphone)
             refresh_dropdown(sample_id, sorted(hpcf_functions.get_samples_list(conn, headphone) or []), sample)
             hf.log_with_timestamp(f"Full update set: brand={brand}, headphone={headphone}, sample={sample}", logz)
-            hpcf_functions.hpcf_to_plot(conn, headphone, sample, plot_type=plot_type)
+            hpcf_functions.hpcf_to_plot(conn, headphone, sample, plot_dest=plot_dest)
     
         elif update_type in ("full_reset", "brand", "headphone"):
             if update_type == "full_reset":
@@ -973,7 +963,7 @@ def handle_hpcf_update(tab_prefix, update_type, changed_item=None, brand=None, h
             sample_to_use = changed_item
             if sample_to_use and headphone_selected:
                 hf.log_with_timestamp(f"Sample changed: {sample_to_use} for headphone {headphone_selected}", logz)
-                hpcf_functions.hpcf_to_plot(conn, headphone_selected, sample_to_use, plot_type=plot_type)
+                hpcf_functions.hpcf_to_plot(conn, headphone_selected, sample_to_use, plot_dest=plot_dest)
     
         # Reset progress and save
         reset_func()
@@ -1009,18 +999,18 @@ def qc_plot_sample(sender, app_data, user_data):
 
 
  
-def export_hpcf_file_toggle(sender, app_data):
+def fde_export_hpcf_file_toggle(sender, app_data):
     """ 
     GUI function to trigger save and refresh
     """
 
     save_settings()
     #reset progress
-    reset_hpcf_progress()
+    fde_reset_hpcf_progress()
 
 
     
-def process_hpcfs(sender=None, app_data=None, user_data=None):
+def fde_process_hpcfs(sender=None, app_data=None, user_data=None):
     """GUI function to process HPCFs (FDE tab) safely with validation and logging."""
 
     try:
@@ -1055,12 +1045,12 @@ def process_hpcfs(sender=None, app_data=None, user_data=None):
         # Retrieve export options
         output_path = dpg.get_value("selected_folder_base")
     
-        fir_export = dpg.get_value("fir_hpcf_toggle")
-        fir_stereo_export = dpg.get_value("fir_st_hpcf_toggle")
-        geq_export = dpg.get_value("geq_hpcf_toggle")
-        geq_31_export = dpg.get_value("geq_31_hpcf_toggle")
+        fir_export = dpg.get_value("fde_fir_hpcf_toggle")
+        fir_stereo_export = dpg.get_value("fde_fir_st_hpcf_toggle")
+        geq_export = dpg.get_value("fde_geq_hpcf_toggle")
+        geq_31_export = dpg.get_value("fde_geq_31_hpcf_toggle")
         geq_103_export = False
-        hesuvi_export = dpg.get_value("hesuvi_hpcf_toggle")
+        hesuvi_export = dpg.get_value("fde_hesuvi_hpcf_toggle")
     
         samp_freq_str = dpg.get_value("fde_wav_sample_rate")
         samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str)
@@ -1184,13 +1174,14 @@ def qc_process_hpcfs(force_output=False):
         hf.log_with_timestamp("HPCF bulk export encountered errors.", logz, log_type=1)
     else:
         # Update displayed names and save settings
-        filter_name = calc_hpcf_name(full_name=False)
-        filter_name_full = calc_hpcf_name(full_name=True)
+        filter_name = qc_calc_hpcf_name(full_name=False)
+        filter_name_full = qc_calc_hpcf_name(full_name=True)
         dpg.set_value("qc_e_apo_curr_hpcf", filter_name)
         dpg.set_value("qc_e_apo_sel_hpcf", filter_name_full)
         
         # Update configuration
-        dpg.set_value("e_apo_hpcf_conv", True)
+        #dpg.set_value("e_apo_hpcf_conv", True)
+        hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_hpcf_conv",button_tag="e_apo_hpcf_conv_btn",value=True)
         e_apo_config_acquire()
   
         save_settings(update_hpcf_pars=True)
@@ -1202,14 +1193,14 @@ def qc_process_hpcfs(force_output=False):
     
 #
 #
-## GUI Functions - BRIRs
+################# GUI Functions - BRIR parameter Related Callbacks
 #
 #
 
 
 
 
-def select_spatial_resolution(sender, app_data):
+def fde_select_spatial_resolution(sender, app_data):
     """ 
     GUI function to update spatial resolution based on input
     """
@@ -1222,29 +1213,29 @@ def select_spatial_resolution(sender, app_data):
         #set some to false and hide irrelevant options
         if app_data == 'High':
     
-            dpg.configure_item("ts_brir_toggle", show=True)
-            dpg.configure_item("hesuvi_brir_toggle", show=True)
-            dpg.configure_item("multi_chan_brir_toggle", show=True)
-            dpg.configure_item("sofa_brir_toggle", show=True)
+            dpg.configure_item("fde_ts_brir_toggle", show=True)
+            dpg.configure_item("fde_hesuvi_brir_toggle", show=True)
+            dpg.configure_item("fde_multi_chan_brir_toggle", show=True)
+            dpg.configure_item("fde_sofa_brir_toggle", show=True)
      
-            dpg.configure_item("ts_brir_tooltip", show=True)
-            dpg.configure_item("hesuvi_brir_tooltip", show=True)
-            dpg.configure_item("multi_chan_brir_tooltip", show=True)
-            dpg.configure_item("sofa_brir_tooltip", show=True)
+            dpg.configure_item("fde_ts_brir_tooltip", show=True)
+            dpg.configure_item("fde_hesuvi_brir_tooltip", show=True)
+            dpg.configure_item("fde_multi_chan_brir_tooltip", show=True)
+            dpg.configure_item("fde_sofa_brir_tooltip", show=True)
             
         else:
     
-            dpg.set_value("sofa_brir_toggle", False)
+            dpg.set_value("fde_sofa_brir_toggle", False)
     
-            dpg.configure_item("ts_brir_toggle", show=True)
-            dpg.configure_item("hesuvi_brir_toggle", show=True)
-            dpg.configure_item("multi_chan_brir_toggle", show=True)
-            dpg.configure_item("sofa_brir_toggle", show=False)
+            dpg.configure_item("fde_ts_brir_toggle", show=True)
+            dpg.configure_item("fde_hesuvi_brir_toggle", show=True)
+            dpg.configure_item("fde_multi_chan_brir_toggle", show=True)
+            dpg.configure_item("fde_sofa_brir_toggle", show=False)
     
-            dpg.configure_item("ts_brir_tooltip", show=True)
-            dpg.configure_item("hesuvi_brir_tooltip", show=True)
-            dpg.configure_item("multi_chan_brir_tooltip", show=True)
-            dpg.configure_item("sofa_brir_tooltip", show=False)
+            dpg.configure_item("fde_ts_brir_tooltip", show=True)
+            dpg.configure_item("fde_hesuvi_brir_tooltip", show=True)
+            dpg.configure_item("fde_multi_chan_brir_tooltip", show=True)
+            dpg.configure_item("fde_sofa_brir_tooltip", show=False)
         
       
         if fde_brir_hrtf_type == CN.HRTF_TYPE_LIST[0]:
@@ -1255,7 +1246,7 @@ def select_spatial_resolution(sender, app_data):
             dpg.configure_item('fde_brir_hrtf',items=hrtf_list_new)
                 
         #reset progress bar
-        update_brir_param()
+        fde_update_brir_param()
         
     except Exception as e:
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
@@ -1265,42 +1256,70 @@ def select_spatial_resolution(sender, app_data):
     
 
 
+def fde_select_hp_comp(sender, app_data):
+    _handle_hp_comp_selection(tab_code=CN.TAB_FDE_CODE)
 
-def select_hp_comp(sender, app_data):
-    """ 
-    GUI function to update brir based on input
+
+def qc_select_hp_comp(sender, app_data):
+    _handle_hp_comp_selection(tab_code=CN.TAB_QC_CODE)
+
+def _handle_hp_comp_selection(tab_code):
     """
-    impulse=CN.IMPULSE
-    hp_type = dpg.get_value("fde_brir_hp_type")
-    pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
-    pinna_comp = pinna_comp_int
-    
-    #run plot
+    Unified handler for headphone compensation selection.
+    tab_code: CN.TAB_FDE_CODE or CN.TAB_QC_CODE
+    """
+
+    # Get selected HP type depending on tab
+    hp_type = dpg.get_value(
+        "fde_brir_hp_type" if tab_code == CN.TAB_FDE_CODE else "qc_brir_hp_type"
+    )
+
+    pinna_comp = CN.HP_COMP_LIST.index(hp_type)
+
     try:
-        # load pinna comp filter (FIR)
+        # Load FIR dataset
         npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
         ear_comp_fir_dataset = hf.load_convert_npy_to_float64(npy_fname)
-        pinna_comp_fir_loaded = ear_comp_fir_dataset[pinna_comp,:]
+        pinna_comp_fir_loaded = ear_comp_fir_dataset[pinna_comp, :]
+
+        # Zero-pad / place FIR into FFT buffer
+        pinna_comp_fir = np.zeros(CN.N_FFT)
+        pinna_comp_fir[:1024] = pinna_comp_fir_loaded[:1024]
+
+        # Plot
+        plot_title = f"Headphone Compensation: {hp_type}"
+
+        view = dpg.get_value("qc_plot_type") if tab_code == CN.TAB_QC_CODE else dpg.get_value("fde_plot_type") 
+
+        # Plot using the new generic function
+        hf.plot_fir_generic(
+            fir_array=pinna_comp_fir,
+            view=view,
+            title_name=plot_title,
+            samp_freq=CN.SAMP_FREQ,
+            n_fft=CN.N_FFT,
+            normalise=1,
+            level_ends=0,
+            x_lim_adjust=True,
+            x_lim_a=20,
+            x_lim_b=20000,
+            y_lim_adjust=True,
+            y_lim_a=-10,
+            y_lim_b=10,
+            plot_dest=tab_code
+        )
+
+    except Exception as e:
+        hf.log_with_timestamp(f"_handle_hp_comp_selection failed: {e}")
+
+    # Tab-specific BRIR update
+    if tab_code == CN.TAB_FDE_CODE:
+        fde_update_brir_param()
+    else:
+        qc_update_brir_param()
         
-
-
-        pinna_comp_fir=np.zeros(CN.N_FFT)
-        pinna_comp_fir[0:1024] = pinna_comp_fir_loaded[0:1024]
-        data_fft = np.fft.fft(pinna_comp_fir)
-        mag_response=np.abs(data_fft)
-        plot_tile = 'Headphone Compensation: ' + hp_type
-        hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1,y_lim_a=-10, y_lim_b=10, save_plot=0, normalise=2, level_ends=1, plot_type=1)
-
-    except:
-        pass
-
-    #reset progress bar
-    update_brir_param()
-
-
-
-
-def update_direct_gain(sender, app_data):
+        
+def fde_update_direct_gain(sender, app_data):
     """ 
     GUI function to update brir based on input
     """
@@ -1308,9 +1327,9 @@ def update_direct_gain(sender, app_data):
     dpg.set_value("fde_direct_gain_slider", d_gain)
 
     #reset progress bar
-    update_brir_param()
+    fde_update_brir_param()
 
-def update_direct_gain_slider(sender, app_data):
+def fde_update_direct_gain_slider(sender, app_data):
     """ 
     GUI function to update brir based on input
     """
@@ -1319,9 +1338,33 @@ def update_direct_gain_slider(sender, app_data):
     dpg.set_value("fde_direct_gain", d_gain)
 
     #reset progress bar
-    update_brir_param()
+    fde_update_brir_param()
  
-def update_crossover_f(sender=None, app_data=None, user_data=None):
+def qc_update_direct_gain(sender, app_data):
+    """ 
+    GUI function to update brir based on input
+    """
+    d_gain=app_data
+    dpg.set_value("qc_direct_gain_slider", d_gain)
+
+    #reset progress bar
+    qc_update_brir_param()
+    
+
+def qc_update_direct_gain_slider(sender, app_data):
+    """ 
+    GUI function to update brir based on input
+    """
+    
+    d_gain=app_data
+    dpg.set_value("qc_direct_gain", d_gain)
+
+    #reset progress bar
+    qc_update_brir_param()    
+ 
+    
+ 
+def fde_update_crossover_f(sender=None, app_data=None, user_data=None):
     """ 
     GUI function to make updates to freq crossover parameters
     """
@@ -1335,42 +1378,157 @@ def update_crossover_f(sender=None, app_data=None, user_data=None):
     if type(app_data) is int:
         dpg.set_value("fde_crossover_f_mode", CN.SUB_FC_SETTING_LIST[1])#set mode to custom
         
-    update_brir_param()
+    fde_update_brir_param()
 
-def update_ac_space(sender, app_data, user_data):
+def qc_update_crossover_f(sender=None, app_data=None, user_data=None):
+    """ 
+    GUI function to make updates to freq crossover parameters
+    """
+    if app_data == CN.SUB_FC_SETTING_LIST[0]:
+        ac_space = dpg.get_value("qc_acoustic_space")
+        ac_space_int = CN.AC_SPACE_LIST_GUI.index(ac_space)
+        ac_space_src = CN.AC_SPACE_LIST_SRC[ac_space_int]
+        f_crossover_var,order_var= brir_generation.get_ac_f_crossover(name_src=ac_space_src)
+        dpg.set_value("qc_crossover_f", f_crossover_var)
+        
+    if type(app_data) is int:
+        dpg.set_value("qc_crossover_f_mode", CN.SUB_FC_SETTING_LIST[1])#set mode to custom
+        
+    qc_update_brir_param()
+
+
+def fde_update_ac_space(sender, app_data, user_data):
     """ 
     GUI function to make updates to acoustic spaces
     """
     crossover_mode = dpg.get_value("fde_crossover_f_mode")
     if crossover_mode == CN.SUB_FC_SETTING_LIST[0]:
-        update_crossover_f(app_data=crossover_mode)
+        fde_update_crossover_f(app_data=crossover_mode)
         
-    update_brir_param()
+    fde_ac_space = app_data
+    fde_ac_space_int = CN.AC_SPACE_LIST_GUI.index(fde_ac_space)
+    fde_ac_space_src = CN.AC_SPACE_LIST_SRC[fde_ac_space_int]
+    plot_ac_space(ac_space_gui=fde_ac_space,ac_space_src=fde_ac_space_src, plot_dest=CN.TAB_FDE_CODE)
+    
+    fde_update_brir_param()
 
- 
-def select_room_target(sender, app_data):
-    """Callback for room target tab 1, uses plot_type=1."""
-    plot_room_target(app_data, plot_type=1)
-    update_brir_param()
+def qc_update_ac_space(sender, app_data, user_data):
+    """ 
+    GUI function to make updates to acoustic spaces
+    """
+    crossover_mode = dpg.get_value("qc_crossover_f_mode")
+    if crossover_mode == CN.SUB_FC_SETTING_LIST[0]:
+        qc_update_crossover_f(app_data=crossover_mode)
+        
+    qc_ac_space = app_data
+    qc_ac_space_int = CN.AC_SPACE_LIST_GUI.index(qc_ac_space)
+    qc_ac_space_src = CN.AC_SPACE_LIST_SRC[qc_ac_space_int]
+    plot_ac_space(ac_space_gui=qc_ac_space,ac_space_src=qc_ac_space_src, plot_dest=CN.TAB_QC_CODE)
+    
+    qc_update_brir_param()
+
+def plot_ac_space(ac_space_gui, ac_space_src, plot_dest):
+    """
+    Shared function to plot an acoustic space response.
+
+    Parameters:
+    - ac_space_gui: str, gui name of acoustic space
+    - ac_space_src: str, source name of acoustic space
+    - plot_dest: int, different plot styles (1 or 2)
+    """
+    try:
+  
+        reverb_data=CN.reverb_data
+        as_file_name = CN.extract_column(data=reverb_data, column='file_name', condition_key='name_src', condition_value=ac_space_src, return_all_matches=False)
+        as_folder = CN.extract_column(data=reverb_data, column='folder', condition_key='name_src', condition_value=ac_space_src, return_all_matches=False)
+        if as_folder == 'user':
+            brir_rev_folder = pjoin(CN.DATA_DIR_AS_USER, ac_space_src)
+        else:
+            brir_rev_folder = pjoin(CN.DATA_DIR_INT, 'reverberation', as_folder)
+        npy_file_name = as_file_name + '.npy'
+        npy_file_path = pjoin(brir_rev_folder, npy_file_name)
+        # --- Try loading from local file ---
+        brir_reverberation = hf.load_convert_npy_to_float64(npy_file_path)
+        if brir_reverberation is None or len(brir_reverberation) == 0:
+            hf.log_with_timestamp('Reverberation dataset is empty. Unable to plot.')
+            return
+  
+        fir = brir_reverberation
+
+        plot_title = f"{ac_space_gui}"
+  
+        view = dpg.get_value("qc_plot_type") if plot_dest == CN.TAB_QC_CODE else dpg.get_value("fde_plot_type") 
+        # Plot using the new generic function
+        hf.plot_fir_generic(
+            fir_array=fir,
+            view=view,
+            title_name=plot_title,
+            samp_freq=CN.SAMP_FREQ,
+            n_fft=CN.N_FFT,
+            normalise=1,
+            level_ends=0,
+            x_lim_adjust=True,
+            x_lim_a=20,
+            x_lim_b=20000,
+            y_lim_adjust=True,
+            y_lim_a=-20,
+            y_lim_b=10,
+            plot_dest=plot_dest
+        )
+
+    except Exception as e:
+        hf.log_with_timestamp(f"Failed to plot acoustic space '{ac_space_gui}': {e}")
+    
+
+
+def fde_sort_ac_space(sender, app_data, user_data):
+    """ 
+    GUI function to make updates to acoustic spaces
+    """
+    if app_data == 'Name':
+        dpg.configure_item('fde_acoustic_space',items=CN.AC_SPACE_LIST_GUI)
+    elif app_data == 'Reverberation Time':
+        unsorted_list = CN.AC_SPACE_LIST_GUI
+        values_list = CN.AC_SPACE_MEAS_R60
+        sorted_list = hf.sort_names_by_values(names=unsorted_list, values=values_list, descending=False)
+        dpg.configure_item('fde_acoustic_space',items=sorted_list)
+  
+def qc_sort_ac_space(sender, app_data, user_data):
+    """ 
+    GUI function to make updates to acoustic spaces
+    """
+    if app_data == 'Name':
+        dpg.configure_item('qc_acoustic_space',items=CN.AC_SPACE_LIST_GUI)
+    elif app_data == 'Reverberation Time':
+        unsorted_list = CN.AC_SPACE_LIST_GUI
+        values_list = CN.AC_SPACE_MEAS_R60
+        sorted_list = hf.sort_names_by_values(names=unsorted_list, values=values_list, descending=False)
+        dpg.configure_item('qc_acoustic_space',items=sorted_list)
+  
+    
+def fde_select_room_target(sender, app_data):
+    """Callback for room target"""
+    plot_room_target(app_data, plot_dest=CN.TAB_FDE_CODE)
+    fde_update_brir_param()
 
 def qc_select_room_target(sender, app_data):
-    """Callback for room target tab 2 (quick config), uses plot_type=2."""
-    plot_room_target(app_data, plot_type=2)
+    """Callback for room target"""
+    plot_room_target(app_data, plot_dest=CN.TAB_QC_CODE)
     qc_update_brir_param()    
  
     
-def plot_room_target(target_sel: str, plot_type: int):
+def plot_room_target(target_sel: str, plot_dest: int):
     """
     Shared function to plot a room target frequency response.
 
     Parameters:
     - target_sel: str, key name of the room target in ROOM_TARGETS_DICT
-    - plot_type: int, different plot styles (1 or 2)
+    - plot_dest: int, different plot styles (1 or 2)
     """
     try:
         target_data = CN.ROOM_TARGETS_DICT.get(target_sel)
         if not target_data:
-            logging.warning(f"Room target '{target_sel}' not found in ROOM_TARGETS_DICT.")
+            hf.log_with_timestamp(f"Room target '{target_sel}' not found in ROOM_TARGETS_DICT.")
             return
 
         fir = target_data["impulse_response"]
@@ -1378,27 +1536,38 @@ def plot_room_target(target_sel: str, plot_type: int):
         room_target_fir = np.zeros(CN.N_FFT)
         room_target_fir[:len(fir)] = fir
 
-        data_fft = np.fft.fft(room_target_fir)
-        room_target_mag = np.abs(data_fft)
-
-        plot_title = f"{target_sel} frequency response"
-        hf.plot_data(
-            room_target_mag,
+        plot_title = f"{target_sel}"
+  
+        view = dpg.get_value("qc_plot_type") if plot_dest == CN.TAB_QC_CODE else dpg.get_value("fde_plot_type") 
+        # Plot using the new generic function
+        hf.plot_fir_generic(
+            fir_array=room_target_fir,
+            view=view,
             title_name=plot_title,
-            n_fft=CN.N_FFT,
             samp_freq=CN.SAMP_FREQ,
-            y_lim_adjust=1,
+            n_fft=CN.N_FFT,
+            normalise=2,
+            level_ends=0,
+            x_lim_adjust=True,
+            x_lim_a=20,
+            x_lim_b=20000,
+            y_lim_adjust=True,
             y_lim_a=-12,
             y_lim_b=12,
-            save_plot=0,
-            normalise=2,
-            plot_type=plot_type
+            plot_dest=plot_dest
         )
 
     except Exception as e:
-        logging.error(f"Failed to plot room target '{target_sel}': {e}")
+        hf.log_with_timestamp(f"Failed to plot room target '{target_sel}': {e}")
     
  
+# --- Wrapper callbacks ---
+def fde_select_hrtf(sender=None, app_data=None):
+    _select_hrtf_common('fde')
+
+def qc_select_hrtf(sender=None, app_data=None):
+    _select_hrtf_common('qc')
+    
     
  
 def _select_hrtf_common(mode):
@@ -1412,11 +1581,11 @@ def _select_hrtf_common(mode):
     # Map per-mode settings
     if mode == 'fde':
         prefix = 'fde'
-        plot_type = 1
-        update_func = update_brir_param
+        plot_dest = 2
+        update_func = fde_update_brir_param
     elif mode == 'qc':
         prefix = 'qc'
-        plot_type = 2
+        plot_dest = 1
         update_func = qc_update_brir_param
     else:
         raise ValueError(f"Invalid mode: {mode}")
@@ -1427,23 +1596,17 @@ def _select_hrtf_common(mode):
     brir_hrtf_short = brir_dict.get(f'{prefix}_brir_hrtf_short')
 
     try:
-
-            
-        brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short = brir_generation.brir_hrtf_param_cleaning(
-            brir_hrtf_type,
-            brir_hrtf_dataset,
-            brir_hrtf_gui,
-            brir_hrtf_short
-        )
+   
+        brir_hrtf_type, brir_hrtf_dataset, brir_hrtf_gui, brir_hrtf_short = hrir_processing.hrtf_param_cleaning(brir_hrtf_type,brir_hrtf_dataset,brir_hrtf_gui,brir_hrtf_short)
         
         spat_res_int = 0
 
         # --- Construct file path ---
-        npy_fname = brir_generation.get_hrir_file_path(
-            brir_hrtf_type=brir_hrtf_type,
-            brir_hrtf_gui=brir_hrtf_gui,
-            brir_hrtf_dataset=brir_hrtf_dataset,
-            brir_hrtf_short=brir_hrtf_short,
+        npy_fname = hrir_processing.get_hrir_file_path(
+            hrtf_type=brir_hrtf_type,
+            hrtf_gui=brir_hrtf_gui,
+            hrtf_dataset=brir_hrtf_dataset,
+            hrtf_short=brir_hrtf_short,
             spatial_res=spat_res_int
         )
 
@@ -1472,388 +1635,313 @@ def _select_hrtf_common(mode):
             )
 
             # --- Extract HRIR for 0° elevation, 330° azimuth, right ear ---
-            hrtf_mag = None
+            hrir = None  # start with None
             for elev in range(total_elev_hrir):
                 elev_deg = int(elev_min + elev * elev_nearest)
+                if elev_deg != 0:
+                    continue  # skip elevations that aren't 0°            
                 for azim in range(total_azim_hrir):
                     azim_deg = int(azim * azim_nearest)
-                    if elev_deg == 0 and azim_deg == 330:#330 = 30 deg right
-                        chan = 1
+                    if azim_deg == 30:  # 330 = 30° right
+                        chan = 0
                         hrir = np.zeros(CN.N_FFT)
                         hrir[:total_samples_hrir] = hrir_selected[elev][azim][chan][:total_samples_hrir]
-                        data_fft = np.fft.fft(hrir)
-                        hrtf_mag = np.abs(data_fft)
-                        break
-                if hrtf_mag is not None:
-                    break
-
-            if hrtf_mag is None:
-                raise ValueError("No HRIR found at elevation=0°, azimuth=330°.")
+                        break  # found azimuth, exit inner loop
+                if hrir is not None:
+                    break  # found elevation, exit outer loop
+            if hrir is None:
+                raise ValueError("No HRIR found at elevation=0°, azimuth=30°.")
 
             # --- Plot ---
-            plot_title = f"HRTF sample: {brir_hrtf_short} 0° elevation, 30° azimuth, right ear"
-            hf.plot_data(
-                hrtf_mag,
+            plot_title = f"HRTF sample: {brir_hrtf_short} 0° elevation, -30° azimuth, left ear"
+ 
+            view = dpg.get_value("qc_plot_type") if plot_dest == CN.TAB_QC_CODE else dpg.get_value("fde_plot_type") 
+            # Plot using the new generic function
+            hf.plot_fir_generic(
+                fir_array=hrir,
+                view=view,
                 title_name=plot_title,
-                n_fft=CN.N_FFT,
                 samp_freq=CN.SAMP_FREQ,
-                y_lim_adjust=1,
-                save_plot=0,
+                n_fft=CN.N_FFT,
                 normalise=2,
-                level_ends=1,
-                plot_type=plot_type
+                level_ends=True,
+                x_lim_adjust=True,
+                x_lim_a=20,
+                x_lim_b=20000,
+                y_lim_adjust=True,
+                y_lim_a=-10,
+                y_lim_b=15,
+                plot_dest=plot_dest,smooth_win_base=8
             )
 
     except Exception as e:
         hf.log_with_timestamp(f"{prefix}_select_hrtf failed: {e}")
-        hf.plot_data(
-            fr_flat_mag,
-            title_name='No Preview Available',
-            n_fft=CN.N_FFT,
-            samp_freq=CN.SAMP_FREQ,
-            y_lim_adjust=1,
-            save_plot=0,
-            normalise=2,
-            plot_type=plot_type
-        )
+   
 
     # --- Reset progress bar ---
     update_func()
 
 
-# --- Wrapper callbacks ---
-def select_hrtf(sender=None, app_data=None):
-    _select_hrtf_common('fde')
-
-def qc_select_hrtf(sender=None, app_data=None):
-    _select_hrtf_common('qc')
     
-    
-
-    
-    
-    
-    
-
-def qc_select_hp_comp(sender, app_data):
+def fde_select_sub_brir(sender, app_data):
     """ 
-    GUI function to update brir based on input
-    """
-    impulse=CN.IMPULSE
-    hp_type = dpg.get_value("qc_brir_hp_type")
-    pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
-    pinna_comp = pinna_comp_int
-    
-    #run plot
-    try:
-   
-        # load pinna comp filter (FIR)
-        npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
-        ear_comp_fir_dataset = hf.load_convert_npy_to_float64(npy_fname)
-        pinna_comp_fir_loaded = ear_comp_fir_dataset[pinna_comp,:]
-        
-        pinna_comp_fir=np.zeros(CN.N_FFT)
-        pinna_comp_fir[0:1024] = pinna_comp_fir_loaded[0:1024]
-        data_fft = np.fft.fft(pinna_comp_fir)
-        mag_response=np.abs(data_fft)
-        plot_tile = 'Headphone Compensation: ' + hp_type
-        hf.plot_data(mag_response, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, y_lim_a=-10, y_lim_b=10, save_plot=0, normalise=2, level_ends=1, plot_type=2)
-
-    except:
-        pass
-
-    #reset progress bar
-    qc_update_brir_param()
-    
-     
-def qc_update_crossover_f(sender=None, app_data=None, user_data=None):
-    """ 
-    GUI function to make updates to freq crossover parameters
-    """
-    if app_data == CN.SUB_FC_SETTING_LIST[0]:
-        ac_space = dpg.get_value("qc_acoustic_space")
-        ac_space_int = CN.AC_SPACE_LIST_GUI.index(ac_space)
-        ac_space_src = CN.AC_SPACE_LIST_SRC[ac_space_int]
-        f_crossover_var,order_var= brir_generation.get_ac_f_crossover(name_src=ac_space_src)
-        dpg.set_value("qc_crossover_f", f_crossover_var)
-        
-    if type(app_data) is int:
-        dpg.set_value("qc_crossover_f_mode", CN.SUB_FC_SETTING_LIST[1])#set mode to custom
-        
-    qc_update_brir_param()
-    
-def qc_lf_analyse_toggle(sender=None, app_data=None, user_data=None):
-    """ 
-    GUI function to make updates to LF analysis panel
-    """
-    #if toggled
-    if app_data == True:
-        lfa_type = dpg.get_value("qc_lf_analysis_type")
-        if lfa_type == 'Magnitude':
-            qc_lf_analyse_mag()
-        if lfa_type == 'Group Delay':
-            qc_lf_analyse_gd()
-    else:
-        #initial plot
-        impulse=np.zeros(CN.N_FFT)
-        impulse[0]=1
-        fr_flat_mag = np.abs(np.fft.fft(impulse))
-        hf.plot_data(fr_flat_mag, title_name='', n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=2, plot_type=3)
-            
-    qc_update_brir_param()
-        
-def qc_lf_analyse_change_type(sender=None, app_data=None, user_data=None):
-    """ 
-    GUI function to make updates to LF analysis panel
-    """
-    #if toggled
-    activated = dpg.get_value("qc_lf_analysis_toggle")
-    if activated == True:
-        if app_data == 'Magnitude':
-            qc_lf_analyse_mag()
-        if app_data == 'Group Delay':
-            qc_lf_analyse_gd()
-            
-    qc_update_brir_param()
-    
-def qc_lf_analyse_mag():
-    """ 
-    GUI function to plot magnitude response of exported BRIR in LFs
-    """
-    n_fft=CN.N_FFT
-    peak_gain=0#default value
-    impulse=np.zeros(n_fft)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat = hf.mag2db(fr_flat_mag)
-    brir_in_arr=np.zeros(n_fft)
-    
-    primary_path=dpg.get_value('qc_selected_folder_base')
-    brir_set=CN.FOLDER_BRIRS_LIVE
-    brir_set_formatted = brir_set.replace(" ", "_")
-    brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
-    elev=0
-    azim_fl=-30
-    azim_fr=30
-    total_irs=0
-    brir_name_wav_l = 'BRIR' + '_E' + str(elev) + '_A' + str(azim_fl) + '.wav'
-    brir_name_wav_r = 'BRIR' + '_E' + str(elev) + '_A' + str(azim_fr) + '.wav'
-    #brir_name = calc_brir_set_name(full_name=False)
-    brir_name = dpg.get_value('qc_e_apo_curr_brir_set')
-    
-    try:
-        #sum 4x channels
-        input_chan=0
-        total_irs=total_irs+1
-        wav_fname = pjoin(brirs_path, brir_name_wav_l)
-        samplerate, fir_array = hf.read_wav_file(wav_fname)
-        fir_length = min(len(fir_array),n_fft)
-        brir_in_arr[0:fir_length]=np.add(brir_in_arr[0:fir_length],fir_array[0:fir_length,input_chan])
-        input_chan=1
-        total_irs=total_irs+1
-        brir_in_arr[0:fir_length]=np.add(brir_in_arr[0:fir_length],fir_array[0:fir_length,input_chan])
-        
-        input_chan=0
-        total_irs=total_irs+1
-        wav_fname = pjoin(brirs_path, brir_name_wav_r)
-        samplerate, fir_array = hf.read_wav_file(wav_fname)
-        fir_length = min(len(fir_array),n_fft)
-        brir_in_arr[0:fir_length]=np.add(brir_in_arr[0:fir_length],fir_array[0:fir_length,input_chan])
-        input_chan=1
-        total_irs=total_irs+1
-        brir_in_arr[0:fir_length]=np.add(brir_in_arr[0:fir_length],fir_array[0:fir_length,input_chan])
-        
-        brir_in_arr=np.divide(brir_in_arr,total_irs)
-        
-        data_fft = np.fft.fft(brir_in_arr[0:CN.N_FFT])
-        mag_fft=np.abs(data_fft)
-    
-        plot_title = brir_name 
-        
-        hf.plot_data_generic(mag_fft, title_name=plot_title, data_type='magnitude', n_fft=n_fft, samp_freq=samplerate, y_lim_adjust = 1, y_lim_a=-10, y_lim_b=10, x_lim_adjust = 1,x_lim_a=10, x_lim_b=200, save_plot=0, normalise=1,  plot_type=3)
-        
-    except Exception as ex:
-        
-        logging.error("Error occurred", exc_info = ex) 
-        
-        hf.plot_data(fr_flat_mag, title_name='File not found. Apply parameters to generate dataset', n_fft=n_fft, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=1, plot_type=3)
-    
- 
-def qc_lf_analyse_gd():
-    """ 
-    GUI function to plot group delay response of exported BRIR in LFs
-    """
-    n_fft=CN.N_FFT
-    peak_gain=0#default value
-    impulse=np.zeros(n_fft)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat = hf.mag2db(fr_flat_mag)
-    brir_in_arr_l=np.zeros(n_fft)
-    
-    primary_path=dpg.get_value('qc_selected_folder_base')
-    brir_set=CN.FOLDER_BRIRS_LIVE
-    brir_set_formatted = brir_set.replace(" ", "_")
-    brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
-    elev_fl=0
-    azim_fl=-30
-    brir_name_wav = 'BRIR' + '_E' + str(elev_fl) + '_A' + str(azim_fl) + '.wav'
-    #brir_name = calc_brir_set_name(full_name=False)
-    brir_name = dpg.get_value('qc_e_apo_curr_brir_set')
-    
-    try:
-
-        wav_fname = pjoin(brirs_path, brir_name_wav)
-        samplerate, fir_array = hf.read_wav_file(wav_fname)
-        fir_length = min(len(fir_array),n_fft)
-        brir_in_arr_l[0:fir_length]=fir_array[0:fir_length,0]
-  
-        freqs, gd = hf.calc_group_delay_from_ir(y=brir_in_arr_l, sr=samplerate, n_fft=n_fft, hop_length=512, smoothing_window=18, smoothing_type = 'octave', system_delay_ms=None)
-   
-        plot_title = brir_name 
-
-        hf.plot_data_generic(gd, freqs=freqs, title_name=plot_title, data_type='group_delay',n_fft=n_fft, samp_freq=samplerate, y_lim_adjust = 1, y_lim_a=-150, y_lim_b=150, x_lim_adjust = 1,x_lim_a=10, x_lim_b=200,  plot_type=3)
-        
-    except Exception as ex:
-        
-        logging.error("Error occurred", exc_info = ex) 
-        
-        hf.plot_data(fr_flat_mag, title_name='File not found. Apply parameters to generate dataset', n_fft=n_fft, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, save_plot=0, normalise=1, plot_type=3)
-    
-     
- 
-    
-
-def qc_update_ac_space(sender, app_data, user_data):
-    """ 
-    GUI function to make updates to acoustic spaces
-    """
-    crossover_mode = dpg.get_value("qc_crossover_f_mode")
-    if crossover_mode == CN.SUB_FC_SETTING_LIST[0]:
-        qc_update_crossover_f(app_data=crossover_mode)
-        
-    qc_update_brir_param()
-
-
-def qc_sort_ac_space(sender, app_data, user_data):
-    """ 
-    GUI function to make updates to acoustic spaces
-    """
-    if app_data == 'Name':
-        dpg.configure_item('qc_acoustic_space',items=CN.AC_SPACE_LIST_GUI)
-    elif app_data == 'Reverberation Time':
-        unsorted_list = CN.AC_SPACE_LIST_GUI
-        values_list = CN.AC_SPACE_MEAS_R60
-        sorted_list = hf.sort_names_by_values(names=unsorted_list, values=values_list, descending=False)
-        dpg.configure_item('qc_acoustic_space',items=sorted_list)
-  
-def sort_ac_space(sender, app_data, user_data):
-    """ 
-    GUI function to make updates to acoustic spaces
-    """
-    if app_data == 'Name':
-        dpg.configure_item('fde_acoustic_space',items=CN.AC_SPACE_LIST_GUI)
-    elif app_data == 'Reverberation Time':
-        unsorted_list = CN.AC_SPACE_LIST_GUI
-        values_list = CN.AC_SPACE_MEAS_R60
-        sorted_list = hf.sort_names_by_values(names=unsorted_list, values=values_list, descending=False)
-        dpg.configure_item('fde_acoustic_space',items=sorted_list)
-  
-
-
-
-
-def qc_update_direct_gain(sender, app_data):
-    """ 
-    GUI function to update brir based on input
-    """
-    d_gain=app_data
-    dpg.set_value("qc_direct_gain_slider", d_gain)
-
-    #reset progress bar
-    qc_update_brir_param()
-    
-
-def qc_update_direct_gain_slider(sender, app_data):
-    """ 
-    GUI function to update brir based on input
-    """
-    
-    d_gain=app_data
-    dpg.set_value("qc_direct_gain", d_gain)
-
-    #reset progress bar
-    qc_update_brir_param()
-    
-def select_sub_brir(sender, app_data):
-    """ 
-    GUI function to update brir based on input
+    GUI handler for sub BRIR selection
     """
 
     logz=dpg.get_item_user_data("console_window")#contains logger
-    fde_sub_response=app_data
-    
+    sub_response=app_data
+    plot_type = dpg.get_value("fde_plot_type")
     #run plot
-    plot_sub_brir(fde_sub_response,1)
-
+    plot_sub_brir(sub_response,CN.TAB_FDE_CODE,plot_type)
     #reset progress bar
-    update_brir_param()
+    fde_update_brir_param()
     
 def qc_select_sub_brir(sender, app_data):
     """ 
-    GUI function to update brir based on input
+    GUI handler for sub BRIR selection
     """
 
     logz=dpg.get_item_user_data("console_window")#contains logger
-    fde_sub_response=app_data
-    
+    sub_response=app_data
+    plot_type = dpg.get_value("qc_plot_type")
     #run plot
-    plot_sub_brir(fde_sub_response,2)
-
+    plot_sub_brir(sub_response,CN.TAB_QC_CODE,plot_type)
     #reset progress bar
     qc_update_brir_param()
+ 
+
     
-def plot_sub_brir(name, plot_type):
-    
-    #run plot
+def plot_sub_brir(name, plot_dest,plot_type):
+    """
+    Callback to plot the magnitude response of a subwoofer BRIR.
+
+    Parameters
+    ----------
+    name : str
+        GUI name of the subwoofer BRIR to plot.
+    plot_dest : int
+        Specifies which DearPyGui plot instance to update.
+    """
     try:
-        
-        sub_data=CN.sub_data
-        sub_file_name = CN.extract_column(data=sub_data, column='file_name', condition_key='name_gui', condition_value=name, return_all_matches=False)
-        sub_folder = CN.extract_column(data=sub_data, column='folder', condition_key='name_gui', condition_value=name, return_all_matches=False)
-        #file_name = get_sub_f_name(fde_sub_response=fde_sub_response, gui_logger=gui_logger)
-        if sub_folder == 'sub' or sub_folder == 'lf_brir':#default sub responses
-            npy_fname = pjoin(CN.DATA_DIR_SUB, sub_file_name+'.npy')
-        else:#user sub response
-            file_folder = pjoin(CN.DATA_DIR_AS_USER,name)
-            npy_fname = pjoin(file_folder, sub_file_name+'.npy')
-        
+        # --- Load subwoofer data ---
+        sub_data = CN.sub_data
+        sub_file_name = CN.extract_column(
+            data=sub_data,
+            column='file_name',
+            condition_key='name_gui',
+            condition_value=name,
+            return_all_matches=False
+        )
+        sub_folder = CN.extract_column(
+            data=sub_data,
+            column='folder',
+            condition_key='name_gui',
+            condition_value=name,
+            return_all_matches=False
+        )
+
+        if sub_folder in ('sub', 'lf_brir'):  # default sub responses
+            npy_fname = pjoin(CN.DATA_DIR_SUB, sub_file_name + '.npy')
+        else:  # user-provided sub response
+            file_folder = pjoin(CN.DATA_DIR_AS_USER, name)
+            npy_fname = pjoin(file_folder, sub_file_name + '.npy')
+
         sub_brir_npy = hf.load_convert_npy_to_float64(npy_fname)
-        sub_brir_ir = np.zeros(CN.N_FFT)
-        available_samples = min(CN.N_FFT, sub_brir_npy.shape[-1])
-        sub_brir_ir[:available_samples] = sub_brir_npy[0, :available_samples]
-        #sub_brir_ir[0:CN.N_FFT] = sub_brir_npy[0][0:CN.N_FFT]
-        data_fft = np.fft.fft(sub_brir_ir)
-        sub_mag=np.abs(data_fft)
-    
-        plot_tile = name
-        hf.plot_data(sub_mag, title_name=plot_tile, n_fft=CN.N_FFT, samp_freq=CN.SAMP_FREQ, y_lim_adjust = 1, y_lim_a=-8, y_lim_b=8, x_lim_adjust = 1,x_lim_a=10, x_lim_b=150, save_plot=0, normalise=1, plot_type=plot_type)
+
+        # --- Plot using generic FIR function ---
+        hf.plot_fir_generic(
+            fir_array=sub_brir_npy,
+            view=plot_type,
+            title_name=name,
+            samp_freq=CN.SAMP_FREQ,
+            n_fft=CN.N_FFT,
+            normalise=1,
+            x_lim_adjust=True,
+            x_lim_a=10,
+            x_lim_b=150,
+            plot_dest=plot_dest
+        )
+
+    except Exception as e:
+        logging.error(f"Failed to plot sub BRIR '{name}': {e}", exc_info=True)
+
+     
 
 
-    except:
-        pass
+
     
+ 
+def load_ia_brir_fir():
+    """
+    Load first-channel FIR from exported BRIR WAV for integrated analysis.
+    Returns: fir_array, samplerate, title
+    Raises on failure.
+    """
+    n_fft = CN.N_FFT
+
+    primary_path = dpg.get_value("qc_selected_folder_base")
+    brir_set = CN.FOLDER_BRIRS_LIVE.replace(" ", "_")
+    brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set)
+
+    elev = 0
+    azim = -30  # LF reference
+    brir_name = dpg.get_value("qc_e_apo_curr_brir_set")
+
+    wav_fname = pjoin(brirs_path, f"BRIR_E{elev}_A{azim}.wav")
+
+    samplerate, fir_array = hf.read_wav_file(wav_fname)
+
+    fir = np.zeros(n_fft)
+    length = min(len(fir_array), n_fft)
+    fir[:length] = fir_array[:length, 0]  # FIRST CHANNEL ONLY
+
+    return fir, samplerate, brir_name
+
+def ia_plot_type_changed(sender, app_data, user_data):
+    """
+    Callback for integrated plot-type combo.
+
+    sender   : combo tag
+    app_data : selected plot type string
+    user_data: plot_state dict
+    """
+
+    plot_state = user_data
+    if not isinstance(plot_state, dict):
+        return
+
+    try:
+        fir, samplerate, title = load_ia_brir_fir()
+
+        # Update shared plot state
+        plot_state.update({
+            "fir": fir,
+            "samp_freq": samplerate,
+            "title": title,
+            "n_fft": CN.N_FFT,
+            "normalise": 1,
+            "level_ends": 0,
+            # decay defaults (safe even if unused)
+            "decay_start_ms": 0.0,
+            "decay_end_ms": 1000.0,
+            "decay_step_ms": 100.0,
+            "decay_win_ms": 100.0,
+            # LF-friendly defaults
+            "x_lim_adjust": True,
+            "x_lim_a": 20,
+            "x_lim_b": 20000,
+            "y_lim_adjust": False,
+            "y_lim_a": -150,
+            "y_lim_b": 150,
+        })
+
+        hf.plot_fir_generic(
+            fir_array=fir,
+            view=app_data,
+            title_name=title,
+            samp_freq=samplerate,
+            n_fft=CN.N_FFT,
+            normalise=plot_state["normalise"],
+            level_ends=plot_state["level_ends"],
+            decay_start_ms=plot_state["decay_start_ms"],
+            decay_end_ms=plot_state["decay_end_ms"],
+            decay_step_ms=plot_state["decay_step_ms"],
+            decay_win_ms=plot_state["decay_win_ms"],
+            plot_dest=CN.TAB_QC_IA_CODE,
+            x_lim_adjust=plot_state["x_lim_adjust"],
+            x_lim_a=plot_state["x_lim_a"],
+            x_lim_b=plot_state["x_lim_b"],
+            y_lim_adjust=plot_state["y_lim_adjust"],
+            y_lim_a=plot_state["y_lim_a"],
+            y_lim_b=plot_state["y_lim_b"],
+        )
+
+    except Exception as ex:
+        hf.log_with_timestamp(f"LFA plot failed: {ex}")
+
+        # fallback: flat impulse
+        impulse = np.zeros(CN.N_FFT)
+        impulse[0] = 1.0
+
+        hf.plot_fir_generic(
+            fir_array=impulse,
+            view=app_data,
+            title_name="File not found – generate BRIR first",
+            samp_freq=CN.SAMP_FREQ,
+            n_fft=CN.N_FFT,
+            plot_dest=CN.TAB_QC_IA_CODE,
+        )
+
+
+
+
+
+
+
+
+
+
+
     
+def plot_type_changed(sender, app_data, user_data):
+    """
+    Callback for plot type combo.
+
+    sender   : combo tag (e.g. 'qc_plot_type')
+    app_data : newly selected plot type string
+    user_data: plot_state dict stored on the combo
+    """
+
+    plot_state = user_data
+
+    if not isinstance(plot_state, dict):
+        return
+    if "fir" not in plot_state:
+        return
+
+    try:
+        hf.plot_fir_generic(
+            fir_array=plot_state["fir"],
+            view=app_data,
+            title_name=plot_state.get("title", "Output"),
+            samp_freq=plot_state.get("samp_freq", CN.SAMP_FREQ),
+            n_fft=plot_state.get("n_fft", CN.N_FFT),
+            normalise=plot_state.get("normalise", 1),
+            level_ends=plot_state.get("level_ends", 0),
+            decay_start_ms=plot_state.get("decay_start_ms", 0.0),
+            decay_end_ms=plot_state.get("decay_end_ms", 1000.0),
+            decay_step_ms=plot_state.get("decay_step_ms", 100.0),
+            decay_win_ms=plot_state.get("decay_win_ms", 100.0),
+            plot_dest=plot_state.get("plot_dest", CN.TAB_QC_CODE),
+            x_lim_adjust=plot_state.get("x_lim_adjust", False),
+            x_lim_a=plot_state.get("x_lim_a", 20),
+            x_lim_b=plot_state.get("x_lim_b", 20000),
+            y_lim_adjust=plot_state.get("y_lim_adjust", False),
+            y_lim_a=plot_state.get("y_lim_a", -25),
+            y_lim_b=plot_state.get("y_lim_b", 15),
+        )
+
+    except Exception as e:
+        hf.log_with_timestamp(f"plot type update failed: {e}")
+
+
+
+
+
+
+
+
+
     
 
 
-def update_brir_param(sender=None, app_data=None):
+def fde_update_brir_param(sender=None, app_data=None):
     """ 
     GUI function to update brir based on input
     """
 
     #reset progress bar
-    reset_brir_progress()
+    fde_reset_brir_progress()
     save_settings()
     
 
@@ -1866,14 +1954,7 @@ def qc_update_brir_param(sender=None, app_data=None):
     qc_reset_progress()
     save_settings()
     
-def export_brir_toggle(sender, app_data):
-    """ 
-    GUI function to update settings based on toggle
-    """
-    
-    #reset progress bar
-    reset_brir_progress()
-    save_settings()
+
 
 def sync_wav_sample_rate(sender, app_data):
     """ 
@@ -1884,8 +1965,8 @@ def sync_wav_sample_rate(sender, app_data):
     
     #reset progress bar
     qc_reset_progress()
-    reset_brir_progress()
-    reset_hpcf_progress()
+    fde_reset_brir_progress()
+    fde_reset_hpcf_progress()
     
     save_settings()
 
@@ -1898,183 +1979,162 @@ def sync_wav_bit_depth(sender, app_data):
     
     #reset progress bar
     qc_reset_progress()
-    reset_brir_progress()
-    reset_hpcf_progress()
+    fde_reset_brir_progress()
+    fde_reset_hpcf_progress()
     
     save_settings()
 
  
  
-def update_hrtf_dataset_list(sender, app_data):
-    """ 
-    GUI function to update list of hrtf datasets based on selected hrtf type
-    """
-    
-    try:
-        if app_data != None:
-            brir_hrtf_type_new= app_data
-            
-            if brir_hrtf_type_new == 'Favourites':
-                dpg.configure_item('hrtf_add_favourite',show=False)
-                dpg.configure_item('hrtf_remove_favourite',show=True)
-                dpg.configure_item('hrtf_average_favourite',show=True)
-                dpg.configure_item('open_user_sofa_folder',show=False)
-            elif brir_hrtf_type_new == 'User SOFA Input':
-                dpg.configure_item('hrtf_add_favourite',show=True)
-                dpg.configure_item('hrtf_remove_favourite',show=False)
-                dpg.configure_item('hrtf_average_favourite',show=False)
-                dpg.configure_item('open_user_sofa_folder',show=True)
-            else:
-                dpg.configure_item('hrtf_add_favourite',show=True)
-                dpg.configure_item('hrtf_remove_favourite',show=False)
-                dpg.configure_item('hrtf_average_favourite',show=False)
-                dpg.configure_item('open_user_sofa_folder',show=False)
-                
-            #update spatial res to valid list
-            dpg.configure_item('fde_brir_spat_res',items=CN.SPATIAL_RES_LIST)
-        
-            brir_hrtf_dataset_list_new = CN.HRTF_TYPE_DATASET_DICT.get(brir_hrtf_type_new)
-            #update dataset list with filtered type
-            dpg.configure_item('fde_brir_hrtf_dataset',items=brir_hrtf_dataset_list_new)
-            brir_hrtf_dataset_new=brir_hrtf_dataset_list_new[0]
-            #reset dataset value to first dataset
-            dpg.configure_item('fde_brir_hrtf_dataset',show=False)
-            dpg.configure_item('fde_brir_hrtf_dataset',default_value=brir_hrtf_dataset_new)
-            dpg.configure_item('fde_brir_hrtf_dataset',show=True)
-            
-            #hrtf list based on dataset and hrtf type
-            hrtf_list_new = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_new, dataset_name=brir_hrtf_dataset_new)
-            dpg.configure_item('fde_brir_hrtf',items=hrtf_list_new)
-            brir_hrtf_new=hrtf_list_new[0]
-            #reset listener value to first listener
-            dpg.configure_item('fde_brir_hrtf',show=False)
-            dpg.configure_item('fde_brir_hrtf',default_value=brir_hrtf_new)
-            dpg.configure_item('fde_brir_hrtf',show=True)
-            select_hrtf()
-            #reset progress bar
-            reset_brir_progress()
-            save_settings()
-    except Exception as e:
-        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
-            
-    
-def update_hrtf_list(sender, app_data):
-    """ 
-    GUI function to update list of hrtfs based on selected dataset
-    """
-    try:
-        if app_data != None:
-            brir_hrtf_type_new = (dpg.get_value("fde_brir_hrtf_type"))
-            brir_hrtf_dataset_new= app_data
-    
-            #hrtf list based on dataset and hrtf type
-            hrtf_list_new = hrir_processing.get_listener_list(listener_type=brir_hrtf_type_new, dataset_name=brir_hrtf_dataset_new)
-            dpg.configure_item('fde_brir_hrtf',items=hrtf_list_new)
-            if hrtf_list_new:
-                brir_hrtf_new = hrtf_list_new[0]
-            else:
-                brir_hrtf_new = 'No HRTFs Found'
-            #reset listener value to first listener
-            dpg.configure_item('fde_brir_hrtf',show=False)
-            dpg.configure_item('fde_brir_hrtf',default_value=brir_hrtf_new)
-            dpg.configure_item('fde_brir_hrtf',show=True)
-            select_hrtf()
-            #reset progress bar
-            reset_brir_progress()
-            save_settings()
-    except Exception as e:
-        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e) 
-        
+
+def fde_update_hrtf_dataset_list(sender, app_data):
+    _handle_hrtf_dataset_update(app_data, tab_code=CN.TAB_FDE_CODE)
+
 def qc_update_hrtf_dataset_list(sender, app_data):
-    """ 
-    GUI function to update list of hrtf datasets based on selected hrtf type
-    """
-    try:
-        if app_data != None:
-            qc_brir_hrtf_type_new= app_data
-            
-            if qc_brir_hrtf_type_new == 'Favourites':
-                dpg.configure_item('qc_hrtf_add_favourite',show=False)
-                dpg.configure_item('qc_hrtf_remove_favourite',show=True)
-                dpg.configure_item('qc_hrtf_average_favourite',show=True)
-                dpg.configure_item('qc_open_user_sofa_folder',show=False)
-            elif qc_brir_hrtf_type_new == 'User SOFA Input':
-                dpg.configure_item('qc_hrtf_add_favourite',show=True)
-                dpg.configure_item('qc_hrtf_remove_favourite',show=False)
-                dpg.configure_item('qc_hrtf_average_favourite',show=False)
-                dpg.configure_item('qc_open_user_sofa_folder',show=True)
-            else:
-                dpg.configure_item('qc_hrtf_add_favourite',show=True)
-                dpg.configure_item('qc_hrtf_remove_favourite',show=False)
-                dpg.configure_item('qc_hrtf_average_favourite',show=False)
-                dpg.configure_item('qc_open_user_sofa_folder',show=False)
-            
-            qc_brir_hrtf_dataset_list_new = CN.HRTF_TYPE_DATASET_DICT.get(qc_brir_hrtf_type_new)
-            #update dataset list with filtered type
-            dpg.configure_item('qc_brir_hrtf_dataset',items=qc_brir_hrtf_dataset_list_new)
-            qc_brir_hrtf_dataset_new=qc_brir_hrtf_dataset_list_new[0]
-            #reset dataset value to first dataset
-            dpg.configure_item('qc_brir_hrtf_dataset',show=False)
-            dpg.configure_item('qc_brir_hrtf_dataset',default_value=qc_brir_hrtf_dataset_new)
-            dpg.configure_item('qc_brir_hrtf_dataset',show=True)
-            
-            #qc hrtf list based on dataset and hrtf type
-            qc_hrtf_list_new = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_new, dataset_name=qc_brir_hrtf_dataset_new)
-            dpg.configure_item('qc_brir_hrtf',items=qc_hrtf_list_new)
-            qc_brir_hrtf_new=qc_hrtf_list_new[0]
-            #reset value to first hrtf
-            dpg.configure_item('qc_brir_hrtf',show=False)
-            dpg.configure_item('qc_brir_hrtf',default_value=qc_brir_hrtf_new)
-            dpg.configure_item('qc_brir_hrtf',show=True)
-            qc_select_hrtf()
-            #reset progress bar
-            qc_reset_progress()
-            save_settings()
-    except Exception as e:
-        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)        
+    _handle_hrtf_dataset_update(app_data, tab_code=CN.TAB_QC_CODE)     
+
+def fde_update_hrtf_list(sender, app_data):
+    _handle_hrtf_list_update(app_data, tab_code=CN.TAB_FDE_CODE)
 
 def qc_update_hrtf_list(sender, app_data):
-    """ 
-    GUI function to update list of hrtfs based on selected dataset
+    _handle_hrtf_list_update(app_data, tab_code=CN.TAB_QC_CODE)    
+
+def _handle_hrtf_dataset_update(selected_type, tab_code):
+    """
+    Unified handler for updating HRTF dataset list based on HRTF type.
+    tab_code: CN.TAB_FDE_CODE or CN.TAB_QC_CODE
     """
     try:
-        if app_data != None:
-            qc_brir_hrtf_type_new = (dpg.get_value("qc_brir_hrtf_type"))
-            qc_brir_hrtf_dataset_new= app_data
-    
-            #qc hrtf list based on dataset and hrtf type
-            qc_hrtf_list_new = hrir_processing.get_listener_list(listener_type=qc_brir_hrtf_type_new, dataset_name=qc_brir_hrtf_dataset_new)
-            dpg.configure_item('qc_brir_hrtf',items=qc_hrtf_list_new)
-            if qc_hrtf_list_new:
-                qc_brir_hrtf_new = qc_hrtf_list_new[0]
-            else:
-                qc_brir_hrtf_new = 'No HRTFs Found'
-            #reset listener value to first listener
-            dpg.configure_item('qc_brir_hrtf',show=False)
-            dpg.configure_item('qc_brir_hrtf',default_value=qc_brir_hrtf_new)
-            dpg.configure_item('qc_brir_hrtf',show=True)
+        if selected_type is None:
+            return
+
+        prefix = "fde" if tab_code == CN.TAB_FDE_CODE else "qc"
+
+        # Configure favourite/user buttons based on type
+        if selected_type == "Favourites":
+            dpg.configure_item(f"{prefix}_hrtf_add_favourite", show=False)
+            dpg.configure_item(f"{prefix}_hrtf_remove_favourite", show=True)
+            dpg.configure_item(f"{prefix}_hrtf_average_favourite", show=True)
+            dpg.configure_item(f"{prefix}_open_user_sofa_folder", show=False)
+        elif selected_type == "User SOFA Input":
+            dpg.configure_item(f"{prefix}_hrtf_add_favourite", show=True)
+            dpg.configure_item(f"{prefix}_hrtf_remove_favourite", show=False)
+            dpg.configure_item(f"{prefix}_hrtf_average_favourite", show=False)
+            dpg.configure_item(f"{prefix}_open_user_sofa_folder", show=True)
+        else:
+            dpg.configure_item(f"{prefix}_hrtf_add_favourite", show=True)
+            dpg.configure_item(f"{prefix}_hrtf_remove_favourite", show=False)
+            dpg.configure_item(f"{prefix}_hrtf_average_favourite", show=False)
+            dpg.configure_item(f"{prefix}_open_user_sofa_folder", show=False)
+
+        # Update dataset list
+        dataset_list = CN.HRTF_TYPE_DATASET_DICT.get(selected_type, [])
+        dpg.configure_item(f"{prefix}_brir_hrtf_dataset", items=dataset_list)
+        if dataset_list:
+            dataset_new = dataset_list[0]
+            dpg.configure_item(f"{prefix}_brir_hrtf_dataset", show=False)
+            dpg.configure_item(f"{prefix}_brir_hrtf_dataset", default_value=dataset_new)
+            dpg.configure_item(f"{prefix}_brir_hrtf_dataset", show=True)
+        else:
+            dataset_new = None
+
+        # Update HRTF list for first dataset
+        if dataset_new:
+            hrtf_list = hrir_processing.get_listener_list(listener_type=selected_type, dataset_name=dataset_new)
             
+            #if favourites selected and averaged HRTF is in the listener list, check if npy file exists. If not exists, remove averaged HRTF from listener list
+            if selected_type == "Favourites" and hrtf_list and CN.HRTF_AVERAGED_NAME_GUI in hrtf_list:
+                hrtf_type = selected_type
+                hrtf_dataset = dataset_new
+                hrtf_gui = CN.HRTF_AVERAGED_NAME_GUI
+                hrtf_short = CN.HRTF_AVERAGED_NAME_GUI
+                #translate hrtf parameters
+                hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short = hrir_processing.hrtf_param_cleaning(hrtf_type,hrtf_dataset,hrtf_gui,hrtf_short)
+                # --- Construct file path ---
+                npy_fname = hrir_processing.get_hrir_file_path(hrtf_type=hrtf_type,hrtf_gui=hrtf_gui,hrtf_dataset=hrtf_dataset,hrtf_short=hrtf_short)
+                # Remove averaged entry if file missing
+                if not Path(npy_fname).exists():
+                    hrtf_list.remove(CN.HRTF_AVERAGED_NAME_GUI)
+            
+            #proceed to update listner list and default item
+            dpg.configure_item(f"{prefix}_brir_hrtf", items=hrtf_list)
+            hrtf_new = hrtf_list[0] if hrtf_list else "No HRTFs Found"
+            dpg.configure_item(f"{prefix}_brir_hrtf", show=False)
+            dpg.configure_item(f"{prefix}_brir_hrtf", default_value=hrtf_new)
+            dpg.configure_item(f"{prefix}_brir_hrtf", show=True)
+            
+            
+                
+
+        # Tab-specific selection callback and reset
+        if tab_code == CN.TAB_FDE_CODE:
+            fde_select_hrtf()
+            fde_reset_brir_progress()
+        else:
             qc_select_hrtf()
-            #reset progress bar
             qc_reset_progress()
-            save_settings()
+
+        save_settings()
+
     except Exception as e:
-        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)        
-        
-def start_process_brirs(sender, app_data, user_data):
+        hf.log_with_timestamp(f"Error updating HRTF dataset list: {e}", log_type=2, exception=e)
+
+def _handle_hrtf_list_update(selected_dataset, tab_code):
+    """
+    Unified handler for updating HRTF list based on selected dataset.
+    """
+    try:
+        if selected_dataset is None:
+            return
+
+        prefix = "fde" if tab_code == CN.TAB_FDE_CODE else "qc"
+        listener_type = dpg.get_value(f"{prefix}_brir_hrtf_type")
+
+        # Update HRTF list
+        hrtf_list = hrir_processing.get_listener_list(listener_type=listener_type, dataset_name=selected_dataset)
+        dpg.configure_item(f"{prefix}_brir_hrtf", items=hrtf_list)
+        hrtf_new = hrtf_list[0] if hrtf_list else "No HRTFs Found"
+
+        # Reset selection to first HRTF
+        dpg.configure_item(f"{prefix}_brir_hrtf", show=False)
+        dpg.configure_item(f"{prefix}_brir_hrtf", default_value=hrtf_new)
+        dpg.configure_item(f"{prefix}_brir_hrtf", show=True)
+
+        # Tab-specific selection callback and reset
+        if tab_code == CN.TAB_FDE_CODE:
+            fde_select_hrtf()
+            fde_reset_brir_progress()
+        else:
+            qc_select_hrtf()
+            qc_reset_progress()
+
+        save_settings()
+
+    except Exception as e:
+        hf.log_with_timestamp(f"Error updating HRTF list: {e}", log_type=2, exception=e)
+
+
+
+#  
+#
+################# BRIR Processing related callbacks
+#    
+#  
+    
+def fde_start_process_brirs(sender, app_data, user_data):
     """ 
     GUI function to start or stop head tracking thread
     """
     #thread bool
-    process_brirs_running=dpg.get_item_user_data("brir_tag")
+    process_brirs_running=dpg.get_item_user_data("fde_brir_tag")
     
     if process_brirs_running == False:
 
         #set thread running flag
         process_brirs_running = True
         #update user data
-        dpg.configure_item('brir_tag',user_data=process_brirs_running)
-        dpg.configure_item('brir_tag',label="Cancel")
+        dpg.configure_item('fde_brir_tag',user_data=process_brirs_running)
+        dpg.configure_item('fde_brir_tag',label="Cancel")
         
         #set stop thread flag flag
         stop_thread_flag = False
@@ -2082,7 +2142,7 @@ def start_process_brirs(sender, app_data, user_data):
         dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
         
         #start thread
-        thread = threading.Thread(target=process_brirs, args=(), daemon=True)
+        thread = threading.Thread(target=fde_process_brirs, args=(), daemon=True)
         thread.start()
    
     else:
@@ -2092,18 +2152,17 @@ def start_process_brirs(sender, app_data, user_data):
         #update user data
         dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
 
-def process_brirs(sender=None, app_data=None, user_data=None):
+def fde_process_brirs(sender=None, app_data=None, user_data=None):
     """ 
     GUI function to process BRIRs
     """
     logz=dpg.get_item_user_data("console_window")#contains logger
     #grab parameters
-    brir_directional_export = (dpg.get_value("dir_brir_toggle"))
-    brir_ts_export = (dpg.get_value("ts_brir_toggle"))
-    hesuvi_export = (dpg.get_value("hesuvi_brir_toggle"))
-    multichan_export = (dpg.get_value("multi_chan_brir_toggle"))
-    multichan_mapping = (dpg.get_value("mapping_16ch_wav"))
-    sofa_export = (dpg.get_value("sofa_brir_toggle"))
+    brir_directional_export = (dpg.get_value("fde_dir_brir_toggle"))
+    brir_ts_export = (dpg.get_value("fde_ts_brir_toggle"))
+    hesuvi_export = (dpg.get_value("fde_hesuvi_brir_toggle"))
+    multichan_export = (dpg.get_value("fde_multi_chan_brir_toggle"))
+    sofa_export = (dpg.get_value("fde_sofa_brir_toggle"))
     spat_res = dpg.get_value("fde_brir_spat_res")
     spat_res_int = CN.SPATIAL_RES_LIST.index(spat_res)
     output_path = dpg.get_value('selected_folder_base')
@@ -2133,7 +2192,7 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     
         brir_export.export_brir(brir_arr=brir_gen, brir_name=brir_name, primary_path=output_path, gui_logger=logz, spatial_res=spat_res_int,
                              brir_dir_export=brir_directional_export, brir_ts_export=brir_ts_export, hesuvi_export=hesuvi_export, resample_mode=resample_mode,
-                               sofa_export=sofa_export, multichan_export=multichan_export, multichan_mapping=multichan_mapping, brir_dict=brir_dict_params, sofa_conv=sofa_conv)
+                               sofa_export=sofa_export, multichan_export=multichan_export, brir_dict=brir_dict_params, sofa_conv=sofa_conv)
         
         #set progress to 100 as export is complete (assume E-APO export time is negligible)
         progress = 100/100
@@ -2151,13 +2210,14 @@ def process_brirs(sender=None, app_data=None, user_data=None):
     #also reset thread running flag
     process_brirs_running = False
     #update user data
-    dpg.configure_item('brir_tag',user_data=process_brirs_running)
-    dpg.configure_item('brir_tag',label="Process")
+    dpg.configure_item('fde_brir_tag',user_data=process_brirs_running)
+    dpg.configure_item('fde_brir_tag',label="Process")
     #set stop thread flag flag
     stop_thread_flag = False
     #update user data
     dpg.configure_item('progress_bar_brir',user_data=stop_thread_flag)
-
+    #reset direction fix trigger
+    dpg.set_value("hrtf_direction_misalign_trigger", False)
 
 
 def qc_apply_brir_params(sender=None, app_data=None):
@@ -2262,7 +2322,8 @@ def qc_process_brirs(use_stored_brirs=False):
         #mute and disable conv before exporting files -> avoids conflicts
         gain_oa_selected=dpg.get_value('e_apo_gain_oa')
         dpg.set_value("e_apo_gain_oa", CN.EAPO_MUTE_GAIN)
-        dpg.set_value("e_apo_brir_conv", False)
+        #dpg.set_value("e_apo_brir_conv", False)
+        hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_brir_conv",button_tag="e_apo_brir_conv_btn",value=False)
         e_apo_config_acquire(estimate_gain=False)
         #run export function
         brir_dict_list_new = brir_export.export_brir(brir_arr=brir_gen, brir_name=out_dataset_name, primary_path=output_path, 
@@ -2274,7 +2335,8 @@ def qc_process_brirs(use_stored_brirs=False):
         progress = 100/100
         hf.update_gui_progress(report_progress=1, progress=progress, message='Processed')
         #rewrite config file
-        dpg.set_value("e_apo_brir_conv", True)
+        #dpg.set_value("e_apo_brir_conv", True)
+        hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_brir_conv",button_tag="e_apo_brir_conv_btn",value=True)
         #save dict list within gui element
         if brir_dict_list_new:#only update if not empty list
             # Prevent memory leak by clearing old references
@@ -2297,7 +2359,9 @@ def qc_process_brirs(use_stored_brirs=False):
             
         #unmute before writing configs once more
         dpg.set_value("e_apo_gain_oa", gain_oa_selected)
-        dpg.set_value("e_apo_brir_conv", True)
+        #dpg.set_value("e_apo_brir_conv", True)
+        hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_brir_conv",button_tag="e_apo_brir_conv_btn",value=True)
+
         #wait before updating config
         sleep(0.1)
         #update directions to previously stored desired values if flagged
@@ -2335,16 +2399,93 @@ def qc_process_brirs(use_stored_brirs=False):
     if status == 0:
         #reset progress in case of changed settings
         qc_reset_progress()
-    #plot LF analysis if toggled
-    activated = dpg.get_value("qc_lf_analysis_toggle")
-    if activated:
-        qc_lf_analyse_toggle(app_data=activated)
+    #plot to integrated analysis
+    ia_plot_type_changed(sender=None, app_data=CN.PLOT_TYPE_LIST[0], user_data={})
+    #reset direction fix trigger
+    dpg.set_value("hrtf_direction_misalign_trigger", False)
+
+
+def fde_reset_brir_progress():
+    """ 
+    GUI function to reset progress bar
+    """
+    #if not already running
+    #thread bool
+    process_brirs_running=dpg.get_item_user_data("fde_brir_tag")
+    if process_brirs_running == False:
+        #reset progress bar
+        dpg.set_value("progress_bar_brir", 0)
+        dpg.configure_item("progress_bar_brir", overlay = CN.PROGRESS_START_ALT)
+
+def fde_reset_hpcf_progress():
+    """ 
+    GUI function to reset progress bar
+    """
+    dpg.set_value("progress_bar_hpcf", 0)
+    dpg.configure_item("progress_bar_hpcf", overlay = CN.PROGRESS_START_ALT)
+
+def qc_reset_progress():
+    """ 
+    GUI function to reset progress bar
+    """
+    
+    try:
+        #reset brir progress if applicable
+        process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
+        brir_conv_enabled=dpg.get_value('e_apo_brir_conv')
+        #if not already running
+        #thread bool
+        if process_brirs_running == False:
+            #check if saved brir set name is matching with currently selected params
+            brir_name = calc_brir_set_name(full_name=True)
+            sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
+            if brir_name != sel_brir_set:
+                #reset progress bar
+                dpg.set_value("qc_progress_bar_brir", 0)
+                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
+            elif brir_name == sel_brir_set and sel_brir_set !='' and brir_conv_enabled==True:
+                dpg.set_value("qc_progress_bar_brir", 1)
+                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
+            else:
+                #reset progress bar
+                dpg.set_value("qc_progress_bar_brir", 0)
+                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
+    
+        #reset hpcf progress if applicable
+        filter_name = qc_calc_hpcf_name()
+        sel_hpcf = dpg.get_value('qc_e_apo_sel_hpcf')
+        hpcf_conv_enabled=dpg.get_value('e_apo_hpcf_conv')
+        if filter_name != sel_hpcf:
+            #reset progress bar
+            dpg.set_value("qc_progress_bar_hpcf", 0)
+            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_START)
+        elif filter_name == sel_hpcf and sel_hpcf !='' and hpcf_conv_enabled==True:
+            dpg.set_value("qc_progress_bar_hpcf", 1)
+            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_FIN)
+        else:
+            #reset progress bar
+            dpg.set_value("qc_progress_bar_hpcf", 0)
+            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_START)
+    except Exception as e:
+        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
+
+
+
+################################### Naming and parameter retrieval related
+#
 
 def calc_brir_set_name(full_name=True,tab=0):
     """ 
     GUI function to calculate brir set name from currently selected parameters
     """
     brir_dict=get_brir_dict()
+    
+    #common items
+    hrtf_symmetry = brir_dict.get("hrtf_symmetry")
+    er_delay_time = brir_dict.get("er_delay_time")
+    hrtf_polarity = brir_dict.get("hrtf_polarity")
+    hrtf_df_cal_mode = brir_dict.get("hrtf_df_cal_mode")
+    
     if tab == 0:#quick config tab
         
         
@@ -2363,18 +2504,14 @@ def calc_brir_set_name(full_name=True,tab=0):
         qc_sub_response_short=brir_dict.get('qc_sub_response_short')
         qc_hp_rolloff_comp=brir_dict.get('qc_hp_rolloff_comp')
         qc_fb_filtering=brir_dict.get('qc_fb_filtering')
-        
-        hrtf_symmetry = brir_dict.get("hrtf_symmetry")
-        er_delay_time = brir_dict.get("er_delay_time")
-        hrtf_polarity = brir_dict.get("hrtf_polarity")
-        
+    
         averaged_last_saved = get_avg_hrtf_timestamp()
         
      
         if full_name==True:
             brir_name = (qc_brir_hrtf_short + ' '+qc_ac_space_short + ' ' + str(qc_direct_gain_db) + 'dB ' + qc_target_name_short + ' ' + CN.HP_COMP_LIST_SHORT[qc_pinna_comp] 
                          + ' ' + qc_sample_rate + ' ' + qc_bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(qc_crossover_f) + ' ' + str(qc_sub_response) 
-                         + ' ' + str(qc_hp_rolloff_comp) + ' ' + str(qc_fb_filtering) + ' ' + hrtf_polarity + ' ' + averaged_last_saved )
+                         + ' ' + str(qc_hp_rolloff_comp) + ' ' + str(qc_fb_filtering) + ' ' + hrtf_polarity + ' ' + averaged_last_saved + ' ' + hrtf_df_cal_mode )
         else:
             brir_name = (qc_brir_hrtf_short + ', '+qc_ac_space_short + ', ' + str(qc_direct_gain_db) + 'dB, ' + qc_target_name_short + ', ' + qc_sub_response_short
                          + '-' +str(qc_crossover_f) + ', ' + CN.HP_COMP_LIST_SHORT[qc_pinna_comp] )
@@ -2403,11 +2540,9 @@ def calc_brir_set_name(full_name=True,tab=0):
         brir_name = (fde_brir_hrtf_short + ', '+fde_ac_space_short + ', ' + str(fde_direct_gain_db) + 'dB, ' + fde_target_name_short + ', ' + fde_sub_response_short
                      + '-' +str(fde_crossover_f) + ', ' + CN.HP_COMP_LIST_SHORT[fde_pinna_comp] )
 
-        
-
     return brir_name
 
-def calc_hpcf_name(full_name=True):
+def qc_calc_hpcf_name(full_name=True):
     """ 
     GUI function to calculate hpcf from currently selected parameters
     """
@@ -2478,6 +2613,7 @@ def get_brir_dict():
     h_azim_sr_selected=dpg.get_value('hesuvi_az_angle_sr')
     h_azim_rl_selected=dpg.get_value('hesuvi_az_angle_rl')
     h_azim_rr_selected=dpg.get_value('hesuvi_az_angle_rr')
+    multichan_mapping = dpg.get_value("mapping_16ch_wav")
     
     #hrtf type, dataset, hrtf name
     fde_brir_hrtf_type_selected=dpg.get_value('fde_brir_hrtf_type')
@@ -2511,9 +2647,6 @@ def get_brir_dict():
      ]
     
     #QC params
-    # qc_target = dpg.get_value("qc_room_target")
-    # qc_room_target_int = CN.ROOM_TARGET_LIST.index(qc_target)
-    # qc_room_target = qc_room_target_int
     qc_target = dpg.get_value("qc_room_target")
     qc_room_target_int = CN.ROOM_TARGET_INDEX_MAP.get(qc_target, -1)  # -1 or suitable default/error handling
     qc_room_target = qc_target  # for BRIR params
@@ -2533,9 +2666,6 @@ def get_brir_dict():
     qc_bit_depth = CN.BIT_DEPTH_DICT.get(qc_bit_depth_str)
     
     #brir params
-    # target = dpg.get_value("fde_room_target")
-    # room_target_int = CN.ROOM_TARGET_LIST.index(target)
-    # fde_room_target = room_target_int
     fde_target = dpg.get_value("fde_room_target")
     fde_room_target_int = CN.ROOM_TARGET_INDEX_MAP.get(fde_target, -1)
     fde_room_target = fde_target
@@ -2561,6 +2691,10 @@ def get_brir_dict():
     er_delay_time = dpg.get_value('er_delay_time')
     er_delay_time = round(er_delay_time,1)#round to nearest .1 dB
     hrtf_polarity = dpg.get_value('hrtf_polarity_rev')
+    hrtf_polarity = dpg.get_value('hrtf_polarity_rev')
+    hrtf_direction_misalign_comp = dpg.get_value('hrtf_direction_misalign_comp')
+    hrtf_direction_misalign_trigger = dpg.get_value('hrtf_direction_misalign_trigger')
+    hrtf_df_cal_mode = dpg.get_value('hrtf_df_cal_mode')
     
     #low freq
     qc_crossover_f_mode = dpg.get_value('qc_crossover_f_mode')
@@ -2638,16 +2772,16 @@ def get_brir_dict():
         # Additional variables
         'qc_crossover_f_mode': qc_crossover_f_mode, 'qc_crossover_f': qc_crossover_f, 'qc_sub_response': qc_sub_response, 'qc_sub_response_short': qc_sub_response_short, 'qc_hp_rolloff_comp': qc_hp_rolloff_comp,
         'qc_fb_filtering': qc_fb_filtering, 'fde_crossover_f_mode': fde_crossover_f_mode, 'fde_crossover_f': fde_crossover_f, 'fde_sub_response': fde_sub_response, 'fde_sub_response_short': fde_sub_response_short, 
-        'fde_hp_rolloff_comp': fde_hp_rolloff_comp, 'fde_fb_filtering': fde_fb_filtering, 'hrtf_polarity': hrtf_polarity
+        'fde_hp_rolloff_comp': fde_hp_rolloff_comp, 'fde_fb_filtering': fde_fb_filtering, 'hrtf_polarity': hrtf_polarity, 'multichan_mapping': multichan_mapping, 
+        'hrtf_direction_misalign_comp': hrtf_direction_misalign_comp, 'hrtf_direction_misalign_trigger': hrtf_direction_misalign_trigger, 'hrtf_df_cal_mode': hrtf_df_cal_mode
     }
 
 
 
     return brir_dict
 
-#
-#
-## misc tools and settings
+
+############### misc tools and settings
 #
 #
 
@@ -2686,7 +2820,9 @@ def remove_brirs(sender, app_data, user_data):
     brir_export.remove_brirs(base_folder_selected, gui_logger=logz)  
     #disable brir convolution
     dpg.set_value("qc_e_apo_sel_brir_set", 'Deleted')
-    dpg.set_value("e_apo_brir_conv", False)
+    #dpg.set_value("e_apo_brir_conv", False)
+    hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_brir_conv",button_tag="e_apo_brir_conv_btn",value=False)
+
     e_apo_toggle_brir_gui(app_data=False)
     
     dpg.configure_item("del_brirs_popup", show=False)
@@ -2701,7 +2837,8 @@ def remove_hpcfs(sender, app_data, user_data):
     base_folder_selected=dpg.get_value('qc_selected_folder_base')
     hpcf_functions.remove_hpcfs(base_folder_selected, gui_logger=logz) 
     #disable hpcf convolution
-    dpg.set_value("e_apo_hpcf_conv", False)
+    #dpg.set_value("e_apo_hpcf_conv", False)
+    hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_hpcf_conv",button_tag="e_apo_hpcf_conv_btn",value=False)
     dpg.set_value("qc_e_apo_sel_hpcf", 'Deleted')
     e_apo_toggle_hpcf_gui(app_data=False)
     
@@ -2711,11 +2848,11 @@ def remove_hpcfs(sender, app_data, user_data):
     
     dpg.configure_item("del_hpcfs_popup", show=False)
 
-#
-# Equalizer APO configuration functions
-#
 
-def e_apo_toggle_brir_gui(sender=None, app_data=None):
+################################### Equalizer APO configuration functions
+##
+
+def e_apo_toggle_brir_gui(sender=None, app_data=None, user_data=None):
     """ 
     GUI function to toggle brir convolution
     app_data is the toggle
@@ -2757,7 +2894,9 @@ def e_apo_toggle_brir_custom(activate=False, aquire_config=True, use_stored_brir
         sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
         #if matching and not forced to run, enable brir conv in config
         if brir_name_full == sel_brir_set and force_run_process==False:#custom parameter will be none if called by gui
-            dpg.set_value("e_apo_brir_conv", True)
+            #dpg.set_value("e_apo_brir_conv", True)
+            hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_brir_conv",button_tag="e_apo_brir_conv_btn",value=True)
+
             dpg.set_value("qc_e_apo_curr_brir_set", brir_name)
             dpg.set_value("qc_progress_bar_brir", 1)
             dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
@@ -2779,7 +2918,7 @@ def e_apo_auto_apply_hpcf(sender, app_data, user_data):
         e_apo_toggle_hpcf_gui(app_data=True)
     
 
-def e_apo_toggle_hpcf_gui(sender=None, app_data=True):
+def e_apo_toggle_hpcf_gui(sender=None, app_data=True, user_data=None):
     """ 
     GUI function to toggle hpcf convolution
     """
@@ -2811,8 +2950,8 @@ def e_apo_toggle_hpcf_custom(activate=False, aquire_config=True):
     # ---------------------------
     else:
         # current expected names
-        hpcf_name_full = calc_hpcf_name(full_name=True)
-        hpcf_name = calc_hpcf_name(full_name=False)
+        hpcf_name_full = qc_calc_hpcf_name(full_name=True)
+        hpcf_name = qc_calc_hpcf_name(full_name=False)
 
         # last used (saved) set
         sel_hpcf_set = dpg.get_value('qc_e_apo_sel_hpcf')
@@ -2874,7 +3013,8 @@ def e_apo_toggle_hpcf_custom(activate=False, aquire_config=True):
         # FAST PATH: reuse existing HPCF
         # ---------------------------
         if hpcf_name_full == sel_hpcf_set and config_outdated == False:
-            dpg.set_value("e_apo_hpcf_conv", True)
+            #dpg.set_value("e_apo_hpcf_conv", True)
+            hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_hpcf_conv",button_tag="e_apo_hpcf_conv_btn",value=True)
             dpg.set_value("qc_e_apo_curr_hpcf", hpcf_name)
 
             dpg.set_value("qc_progress_bar_hpcf", 1)
@@ -2962,13 +3102,7 @@ def e_apo_config_write(estimate_gain=True):
       
         #also update estimated peak gain
         if estimate_gain == True:
-            #average gain
-            est_pk_gain_2 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder, calc_mode=1))
-            dpg.set_value("e_apo_gain_avg_2_0", str(est_pk_gain_2))
-            est_pk_gain_5 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '5.1 Surround', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder, calc_mode=1))
-            dpg.set_value("e_apo_gain_avg_5_1", str(est_pk_gain_5))
-            est_pk_gain_7 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '7.1 Surround', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder, calc_mode=1))
-            dpg.set_value("e_apo_gain_avg_7_1", str(est_pk_gain_7))
+
             #peak gain
             est_pk_gain_2 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder))
             dpg.set_value("e_apo_gain_peak_2_0", str(est_pk_gain_2))
@@ -3001,13 +3135,7 @@ def e_apo_config_write(estimate_gain=True):
                 #run function to load the custom config file in config.txt
                 #if true, edit config.txt to include the custom config
                 e_apo_config_creation.include_ash_e_apo_config(primary_path=base_folder_selected, enabled=load_config)
-                #average gain
-                est_pk_gain_2 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder, calc_mode=1))
-                dpg.set_value("e_apo_gain_avg_2_0", str(est_pk_gain_2))
-                est_pk_gain_5 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '5.1 Surround', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder, calc_mode=1))
-                dpg.set_value("e_apo_gain_avg_5_1", str(est_pk_gain_5))
-                est_pk_gain_7 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '7.1 Surround', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder, calc_mode=1))
-                dpg.set_value("e_apo_gain_avg_7_1", str(est_pk_gain_7))
+         
                 #peak gain
                 est_pk_gain_2 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_dict=brir_dict, brir_set=brir_set_folder))
                 dpg.set_value("e_apo_gain_peak_2_0", str(est_pk_gain_2))
@@ -3161,20 +3289,20 @@ def e_apo_activate_direction(aquire_config=False, force_reset=False):
                 config = configparser.ConfigParser()
                 config.read(CN.SETTINGS_FILE)
                 version_loaded = config['DEFAULT']['version']
-                e_apo_elev_angle_fl_loaded=int(config['DEFAULT']['elev_fl'])
-                e_apo_elev_angle_fr_loaded=int(config['DEFAULT']['elev_fr'])
-                e_apo_elev_angle_c_loaded=int(config['DEFAULT']['elev_c'])
-                e_apo_elev_angle_sl_loaded=int(config['DEFAULT']['elev_sl'])
-                e_apo_elev_angle_sr_loaded=int(config['DEFAULT']['elev_sr'])
-                e_apo_elev_angle_rl_loaded=int(config['DEFAULT']['elev_rl'])
-                e_apo_elev_angle_rr_loaded=int(config['DEFAULT']['elev_rr'])
-                e_apo_az_angle_fl_loaded=int(config['DEFAULT']['azim_fl'])
-                e_apo_az_angle_fr_loaded=int(config['DEFAULT']['azim_fr'])  
-                e_apo_az_angle_c_loaded=int(config['DEFAULT']['azim_c'] )
-                e_apo_az_angle_sl_loaded=int(config['DEFAULT']['azim_sl'])
-                e_apo_az_angle_sr_loaded=int(config['DEFAULT']['azim_sr'] )
-                e_apo_az_angle_rl_loaded=int(config['DEFAULT']['azim_rl'])
-                e_apo_az_angle_rr_loaded=int(config['DEFAULT']['azim_rr'])
+                e_apo_elev_angle_fl_loaded=int(config['DEFAULT']['e_apo_elev_angle_fl'])
+                e_apo_elev_angle_fr_loaded=int(config['DEFAULT']['e_apo_elev_angle_fr'])
+                e_apo_elev_angle_c_loaded=int(config['DEFAULT']['e_apo_elev_angle_c'])
+                e_apo_elev_angle_sl_loaded=int(config['DEFAULT']['e_apo_elev_angle_sl'])
+                e_apo_elev_angle_sr_loaded=int(config['DEFAULT']['e_apo_elev_angle_sr'])
+                e_apo_elev_angle_rl_loaded=int(config['DEFAULT']['e_apo_elev_angle_rl'])
+                e_apo_elev_angle_rr_loaded=int(config['DEFAULT']['e_apo_elev_angle_rr'])
+                e_apo_az_angle_fl_loaded=int(config['DEFAULT']['e_apo_az_angle_fl'])
+                e_apo_az_angle_fr_loaded=int(config['DEFAULT']['e_apo_az_angle_fr'])  
+                e_apo_az_angle_c_loaded=int(config['DEFAULT']['e_apo_az_angle_c'] )
+                e_apo_az_angle_sl_loaded=int(config['DEFAULT']['e_apo_az_angle_sl'])
+                e_apo_az_angle_sr_loaded=int(config['DEFAULT']['e_apo_az_angle_sr'] )
+                e_apo_az_angle_rl_loaded=int(config['DEFAULT']['e_apo_az_angle_rl'])
+                e_apo_az_angle_rr_loaded=int(config['DEFAULT']['e_apo_az_angle_rr'])
                     
                 #update directions to previously saved values
                 dpg.set_value("e_apo_elev_angle_fl", e_apo_elev_angle_fl_loaded)
@@ -3206,7 +3334,9 @@ def e_apo_activate_direction(aquire_config=False, force_reset=False):
                 dpg.set_value("qc_e_apo_curr_brir_set", '')
                 dpg.set_value("qc_progress_bar_brir", 0)
                 dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
-                dpg.set_value("e_apo_brir_conv", False)
+                #dpg.set_value("e_apo_brir_conv", False)
+                hf.set_checkbox_and_sync_button(checkbox_tag="e_apo_brir_conv",button_tag="e_apo_brir_conv_btn",value=False)
+
             
             #If wav files not found, check if dict list is not empty, 
             if brir_dict_list:#list is not empty
@@ -3221,7 +3351,7 @@ def e_apo_activate_direction(aquire_config=False, force_reset=False):
                 dpg.configure_item('qc_e_apo_curr_brir_set',user_data=True)
                 log_string = 'Processing and exporting missing direction(s)'
                 hf.log_with_timestamp(log_string, logz)
-                #If list not populated, trigger new brir processing (likely restarted app)
+                #If list not populated, trigger new brir processing from scratch (likely restarted app)
                 e_apo_toggle_brir_custom(activate=True, use_stored_brirs=False, force_run_process=True)#do not use button due to cancellation logic
                 
       
@@ -3236,7 +3366,6 @@ def e_apo_activate_direction(aquire_config=False, force_reset=False):
         azim_rr_selected=brir_dict_new.get('azim_rr')
         
         #update gui elements and write new config 
-      
         #update each azimuth based drawing
         azimuth=int(azim_fl_selected)
         dpg.apply_transform("fl_drawing", dpg.create_rotation_matrix(math.pi*(90.0+(azimuth*-1))/180.0 , [0, 0, -1])*dpg.create_translation_matrix([CN.RADIUS, 0]))
@@ -3333,8 +3462,6 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
             dpg.configure_item("rr_drawing_inner", show=False)
             dpg.configure_item("e_apo_gain_peak_5_1", show=False)
             dpg.configure_item("e_apo_gain_peak_7_1", show=False)
-            dpg.configure_item("e_apo_gain_avg_5_1", show=False)
-            dpg.configure_item("e_apo_gain_avg_7_1", show=False)
 
         elif app_data == '5.1 Surround':  
             dpg.configure_item("e_apo_mute_c", show=True)
@@ -3369,8 +3496,6 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
             dpg.configure_item("rr_drawing_inner", show=True)
             dpg.configure_item("e_apo_gain_peak_5_1", show=True)
             dpg.configure_item("e_apo_gain_peak_7_1", show=False)
-            dpg.configure_item("e_apo_gain_avg_5_1", show=True)
-            dpg.configure_item("e_apo_gain_avg_7_1", show=False)
         
         elif app_data == '7.1 Surround' or app_data == '2.0 Stereo Upmix to 7.1':
             dpg.configure_item("e_apo_mute_c", show=True)
@@ -3405,8 +3530,6 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
             dpg.configure_item("rr_drawing_inner", show=True)
             dpg.configure_item("e_apo_gain_peak_5_1", show=True)
             dpg.configure_item("e_apo_gain_peak_7_1", show=True)
-            dpg.configure_item("e_apo_gain_avg_5_1", show=True)
-            dpg.configure_item("e_apo_gain_avg_7_1", show=True)
             
         elif app_data == '7.1 Downmix to Stereo':
             dpg.configure_item("e_apo_mute_c", show=True)
@@ -3441,8 +3564,6 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
             dpg.configure_item("rr_drawing_inner", show=False)
             dpg.configure_item("e_apo_gain_peak_5_1", show=True)
             dpg.configure_item("e_apo_gain_peak_7_1", show=True)
-            dpg.configure_item("e_apo_gain_avg_5_1", show=True)
-            dpg.configure_item("e_apo_gain_avg_7_1", show=True)
 
     except Exception as e:
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
@@ -3457,72 +3578,9 @@ def e_apo_select_channels(app_data=None, aquire_config=True):
         
 
  
-def reset_brir_progress():
-    """ 
-    GUI function to reset progress bar
-    """
-    #if not already running
-    #thread bool
-    process_brirs_running=dpg.get_item_user_data("brir_tag")
-    if process_brirs_running == False:
-        #reset progress bar
-        dpg.set_value("progress_bar_brir", 0)
-        dpg.configure_item("progress_bar_brir", overlay = CN.PROGRESS_START_ALT)
 
-def reset_hpcf_progress():
-    """ 
-    GUI function to reset progress bar
-    """
-    dpg.set_value("progress_bar_hpcf", 0)
-    dpg.configure_item("progress_bar_hpcf", overlay = CN.PROGRESS_START_ALT)
 
-def qc_reset_progress():
-    """ 
-    GUI function to reset progress bar
-    """
-    
-    try:
-        #reset brir progress if applicable
-        process_brirs_running=dpg.get_item_user_data("qc_brir_tag")
-        brir_conv_enabled=dpg.get_value('e_apo_brir_conv')
-        #if not already running
-        #thread bool
-        if process_brirs_running == False:
-            #check if saved brir set name is matching with currently selected params
-            brir_name = calc_brir_set_name(full_name=True)
-            sel_brir_set=dpg.get_value('qc_e_apo_sel_brir_set')
-            if brir_name != sel_brir_set:
-                #reset progress bar
-                dpg.set_value("qc_progress_bar_brir", 0)
-                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
-            elif brir_name == sel_brir_set and sel_brir_set !='' and brir_conv_enabled==True:
-                dpg.set_value("qc_progress_bar_brir", 1)
-                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_FIN)
-            else:
-                #reset progress bar
-                dpg.set_value("qc_progress_bar_brir", 0)
-                dpg.configure_item("qc_progress_bar_brir", overlay = CN.PROGRESS_START)
-    
-        #reset hpcf progress if applicable
-        filter_name = calc_hpcf_name()
-        sel_hpcf = dpg.get_value('qc_e_apo_sel_hpcf')
-        hpcf_conv_enabled=dpg.get_value('e_apo_hpcf_conv')
-        if filter_name != sel_hpcf:
-            #reset progress bar
-            dpg.set_value("qc_progress_bar_hpcf", 0)
-            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_START)
-        elif filter_name == sel_hpcf and sel_hpcf !='' and hpcf_conv_enabled==True:
-            dpg.set_value("qc_progress_bar_hpcf", 1)
-            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_FIN)
-        else:
-            #reset progress bar
-            dpg.set_value("qc_progress_bar_hpcf", 0)
-            dpg.configure_item("qc_progress_bar_hpcf", overlay = CN.PROGRESS_START)
-    except Exception as e:
-        hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
-
-#
-## GUI Functions - Additional tools
+###################################### GUI Functions - Additional tools
 #    
 
 def check_for_app_update(gui_logger=None):
@@ -3549,7 +3607,7 @@ def check_for_app_update(gui_logger=None):
         hf.log_with_timestamp(log_string, gui_logger)
             
         #get version of online database
-        url = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
+        url = CN.MAIN_APP_META_URL
         output = pjoin(CN.DATA_DIR_EXT, 'metadata_latest.json')
         urllib.request.urlretrieve(url, output)
    
@@ -3587,23 +3645,37 @@ def check_app_version(sender, app_data, user_data):
     logz=dpg.get_item_user_data("console_window")#contains logger
     check_for_app_update(gui_logger=logz)
 
+
+    
 def check_db_version(sender, app_data, user_data):
     """ 
     GUI function to check db version
     """
-    hpcf_db_dict=dpg.get_item_user_data("qc_e_apo_sel_hpcf")#dict contains db connection object
-    conn = hpcf_db_dict['conn']
-    logz=dpg.get_item_user_data("console_window")#contains logger
-    hpcf_functions.check_for_database_update(conn=conn, gui_logger=logz)
+    hpcf_db_dict = dpg.get_item_user_data("qc_e_apo_sel_hpcf")
+    conn = hpcf_db_dict["conn"]
+    logz = dpg.get_item_user_data("console_window")
 
+    # check only (no download)
+    hpcf_functions.check_for_database_update(
+        conn=conn,
+        gui_logger=logz,
+        download_if_update=False
+    )
+    
 def download_latest_db(sender, app_data, user_data):
     """ 
     GUI function to download latest db
     """
-    hpcf_db_dict=dpg.get_item_user_data("qc_e_apo_sel_hpcf")#dict contains db connection object
-    conn = hpcf_db_dict['conn']
-    logz=dpg.get_item_user_data("console_window")#contains logger
-    hpcf_functions.download_latest_database(conn=conn, gui_logger=logz)
+    hpcf_db_dict = dpg.get_item_user_data("qc_e_apo_sel_hpcf")
+    conn = hpcf_db_dict["conn"]
+    logz = dpg.get_item_user_data("console_window")
+
+    # check + download if required
+    hpcf_functions.check_for_database_update(
+        conn=conn,
+        gui_logger=logz,
+        download_if_update=True
+    )
     
 def check_as_versions(sender, app_data, user_data):
     """ 
@@ -3645,12 +3717,68 @@ def check_all_updates():
     air_processing.acoustic_space_updates(download_updates=False, gui_logger=logz)
     hrir_processing.hrir_metadata_updates(download_updates=False, gui_logger=logz)
 
-
-
-
 #
-#
-#### Acoustic space processing functions
+#### Misc
+#    
+    
+def open_user_settings_folder(sender, app_data, user_data):
+    """
+    Opens the specified folder in the OS file explorer and logs the result.
+
+    """
+    selected_folder = CN.SETTINGS_DIR
+    open_folder_in_explorer(selected_folder)
+ 
+def open_user_sofa_folder(sender, app_data, user_data):
+    """
+    Opens the specified folder in the OS file explorer and logs the result.
+
+    """
+    selected_folder = CN.DATA_DIR_SOFA_USER
+    open_folder_in_explorer(selected_folder)
+     
+def get_app_dir():
+    """
+    Return the directory of the main script, or the EXE if frozen.
+    Works correctly in Spyder, console, and PyInstaller EXE.
+    """
+    if getattr(sys, 'frozen', False):
+        # Running as a bundled EXE
+        return os.path.dirname(sys.executable)
+
+    # Running as .py script
+    # sys.argv[0] is the main script path (even in Spyder)
+    script_path = os.path.abspath(sys.argv[0])
+    return os.path.dirname(script_path)
+
+
+def open_program_folder(sender=None, app_data=None, user_data=None):
+    """
+    Open the ASH Toolset folder or the log file inside it.
+    """
+    app_dir = get_app_dir()
+    log_path = os.path.join(app_dir, "log.log")  # or ASH-Toolset.log
+
+    # If log exists → open it
+    if os.path.isfile(log_path):
+        try:
+            if sys.platform == "win32":
+                os.startfile(log_path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", log_path])
+            else:
+                subprocess.run(["xdg-open", log_path])
+            return
+        except Exception as e:
+            print(f"Failed to open log: {e}")
+
+    # Otherwise → open folder
+    open_folder_in_explorer(app_dir)
+
+
+
+
+################################### Acoustic space processing functions
 #
 #
  
@@ -3675,7 +3803,7 @@ def folder_selected_callback(sender, app_data, user_data):
     dpg.set_value("selected_folder_display", app_data)
 
 
-def launch_processing_thread():
+def as_launch_processing_thread():
     user_data = dpg.get_item_user_data("start_processing_btn")
     if user_data.get("ir_processing_running", False):
         hf.log_with_timestamp("Processing already in progress. Please wait.")
@@ -3686,7 +3814,7 @@ def launch_processing_thread():
 
     def wrapper():
         try:
-            start_processing_callback()
+            as_start_processing_callback()
         finally:
             user_data["ir_processing_running"] = False  # Reset when done
             dpg.set_item_user_data("start_processing_btn", user_data)
@@ -3694,7 +3822,7 @@ def launch_processing_thread():
     thread = threading.Thread(target=wrapper, daemon=True)
     thread.start()
 
-def start_processing_callback():
+def as_start_processing_callback():
     """ 
     GUI function to handle AIR processing and AIR to BRIR conversion.
     """
@@ -3716,6 +3844,8 @@ def start_processing_callback():
         alignment_freq = dpg.get_value("alignment_freq")
         rise_time = dpg.get_value("as_rise_time")
         as_subwoofer_mode = dpg.get_value("as_subwoofer_mode")
+        binaural_meas_inputs = dpg.get_value("binaural_meas_inputs")
+        correction_factor=dpg.get_value("asi_rm_cor_factor")
         __version__ = dpg.get_item_user_data("log_text")  # contains version
 
         # Input validation
@@ -3739,21 +3869,23 @@ def start_processing_callback():
 
         # Step 1: Check or download HRIR dataset
         hf.log_with_timestamp("Step 1: Checking HRIR dataset...")
-        try:
-            npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_TU-FABIAN.npy')#pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.npy')
-            max_data_set_dl_link = "https://drive.google.com/file/d/1Q14yEBTv2JDu92pPloUQXf_SthSApQ8L/view?usp=drive_link"
-            status_code = hf.check_and_download_file(npy_fname, max_data_set_dl_link, download=True, gui_logger=logger_obj)
-        except:
-            npy_fname = pjoin(CN.DATA_DIR_INT, 'hrir_dataset_comp_max_THK-KU-100.npy')#pjoin(CN.DATA_DIR_INT, 'hrir_dataset_compensated_max.npy')
-            max_data_set_dl_link = "https://drive.google.com/file/d/1vmpLYlH-BjBoFvziTD29WqxZGaoYsFuF/view?usp=drive_link"
-            status_code = hf.check_and_download_file(npy_fname, max_data_set_dl_link, download=True, gui_logger=logger_obj)
+        datasets = [
+            ("hrir_dataset_comp_max_THK-KU-100.npy", CN.TU_KU_MAX_HRIR_URLS),
+            ("hrir_dataset_comp_max_TU-FABIAN.npy", CN.TU_FAB_MAX_HRIR_URLS),
+        ]
+        status_code = 1  # assume failure until proven otherwise
+        for fname, url_list in datasets:
+            npy_fname = pjoin(CN.DATA_DIR_INT, fname)
+            for url in url_list:
+                status_code = hf.check_and_download_file(npy_fname,url,download=True,gui_logger=logger_obj)
+                if status_code == 0:
+                    break  # success
+            if status_code == 0:
+                break  # stop dataset loop
         if status_code != 0:
             hf.update_gui_progress(report_progress=3, progress=0.0) # Reset on failure
         if status_code == 1:
             hf.log_with_timestamp("Error: Failed to download or check HRIR datasets.", log_type=2, gui_logger=logger_obj)
-            return
-        elif status_code == 2:
-            hf.log_with_timestamp("Process cancelled by user.", log_type=1, gui_logger=logger_obj)
             return
         # Insert checks at key points:
         if cancel_event.is_set():
@@ -3766,8 +3898,7 @@ def start_processing_callback():
         desired_measurements = directions
         pitch_range = (pitch_low, pitch_high)
         air_dataset, status_code = air_processing.prepare_air_dataset(
-            ir_set=name_src, input_folder=selected_folder, gui_logger=logger_obj,
-            wav_export=False, use_user_folder=True, save_npy=False,
+            ir_set=name_src, input_folder=selected_folder, gui_logger=logger_obj, use_user_folder=True, save_npy=False,
             desired_measurements=desired_measurements,
             pitch_range=pitch_range, long_mode=long_reverb_mode,
             cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, 
@@ -3796,8 +3927,8 @@ def start_processing_callback():
         brir_reverberation, status_code = air_processing.convert_airs_to_brirs(
             ir_set=name_src, ir_group='user',
             air_dataset=air_dataset, gui_logger=logger_obj,
-             long_mode=long_reverb_mode, use_user_folder=True,
-            cancel_event=cancel_event, report_progress=3, rise_time=rise_time,subwoofer_mode=as_subwoofer_mode
+             long_mode=long_reverb_mode, use_user_folder=True, correction_factor=correction_factor,
+            cancel_event=cancel_event, report_progress=3, rise_time=rise_time,subwoofer_mode=as_subwoofer_mode,binaural_input=binaural_meas_inputs
         )
         if status_code != 0:
             hf.update_gui_progress(report_progress=3, progress=0.0) # Reset on failure
@@ -3828,6 +3959,8 @@ def start_processing_callback():
             f"pitch_shift_comp={pitch_shift_comp}, "
             f"alignment_freq={alignment_freq}Hz, "
             f"directions={directions}, "
+            f"correction_factor={correction_factor}, "
+            f"binaural_meas_inputs={binaural_meas_inputs}, "
             f"long_reverb_mode={long_reverb_mode}"
         )
         description_full = notes if not description.strip() else f"{description}, {notes}"
@@ -3956,11 +4089,6 @@ def open_folder_in_explorer(folder_path, gui_logger=None):
     :param folder_path: str - Absolute or relative path to the folder to open.
     """
 
-    # # Get the logger object associated with the import console window
-    # logger_obj = dpg.get_item_user_data("import_console_window")
-    # if use_main_log == True:
-    #     logz=dpg.get_item_user_data("console_window")#contains logger
-    
 
     # Check if the provided path is a valid directory
     if not os.path.isdir(folder_path):
@@ -4119,7 +4247,7 @@ def update_as_table_from_csvs():
                     user_data=name_src
                 )
                 dpg.add_text(str(rt60))
-                dpg.add_text(description)
+                dpg.add_text(description,wrap=900)
     
         # Reset multi-selection tracking
         dpg.set_item_user_data("selected_ir_rows", [])
@@ -4139,9 +4267,8 @@ def update_as_table_from_csvs():
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)
 
 
-#
-#
-#### Room target processing functions
+
+######################################### Room target processing functions
 #
 #
 
@@ -4447,9 +4574,7 @@ def open_sound_control_panel():
        
 
 
-
-#
-#### HRTF favourites
+############################################ HRTF favourites
 #
        
 
@@ -4492,7 +4617,7 @@ def update_hrtf_favourite(tab, action):
     """
     try:
         # Get current list of favourites (string list)
-        current_fav_list = dpg.get_item_user_data("hrtf_add_favourite") or []
+        current_fav_list = dpg.get_item_user_data("fde_hrtf_add_favourite") or []
     
         # Get current selected hrtf (string) from GUI element
         brir_dict = get_brir_dict()
@@ -4506,13 +4631,9 @@ def update_hrtf_favourite(tab, action):
             brir_hrtf_dataset = brir_dict.get('fde_brir_hrtf_dataset')
             brir_hrtf = brir_dict.get('fde_brir_hrtf')
             brir_hrtf_short = brir_dict.get('fde_brir_hrtf_short')
-            
-        # print(brir_hrtf_type)
-        # print(brir_hrtf_dataset)
-        # print(brir_hrtf)
-        # print(brir_hrtf_short)
+
         
-        if brir_hrtf_type in ('Dummy Head / Head & Torso Simulator', 'Human Listener', 'Favourites', 'User SOFA Input') and brir_hrtf_short != CN.HRTF_USER_SOFA_DEFAULT:
+        if brir_hrtf_type in CN.HRTF_TYPE_LIST and brir_hrtf_short != CN.HRTF_USER_SOFA_DEFAULT:
             # Modify list based on action
             if action == "add":
                 # Remove 'No favourites found' if it's present before adding new favourites
@@ -4536,11 +4657,11 @@ def update_hrtf_favourite(tab, action):
                 updated_fav_list = CN.HRTF_BASE_LIST_FAV
     
             # Replace user data
-            dpg.configure_item('hrtf_add_favourite', user_data=updated_fav_list)
+            dpg.configure_item('fde_hrtf_add_favourite', user_data=updated_fav_list)
             
             # Also refresh list
             if brir_dict.get('fde_brir_hrtf_type') == 'Favourites':
-                update_hrtf_list(sender=None, app_data=brir_dict.get('fde_brir_hrtf_dataset'))
+                fde_update_hrtf_list(sender=None, app_data=brir_dict.get('fde_brir_hrtf_dataset'))
             if brir_dict.get('qc_brir_hrtf_type') == 'Favourites':
                 qc_update_hrtf_list(sender=None, app_data=brir_dict.get('qc_brir_hrtf_dataset'))
         
@@ -4550,10 +4671,7 @@ def update_hrtf_favourite(tab, action):
     except Exception as e:
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)   
     
-   
 
-       
-    
 
         
  # --- Global flag to prevent re-entry ---
@@ -4581,7 +4699,7 @@ def create_hrtf_favourite_avg(sender, app_data):
             dpg.configure_item("qc_hrtf_average_fav_load_ind", show=True)
 
             # --- 1. Get and validate favourites list ---
-            current_fav_list = dpg.get_item_user_data("hrtf_add_favourite") or []
+            current_fav_list = dpg.get_item_user_data("fde_hrtf_add_favourite") or []
             filtered_fav_list = [
                 f for f in current_fav_list
                 if f not in ('No favourites found', CN.HRTF_AVERAGED_NAME_GUI)
@@ -4592,7 +4710,7 @@ def create_hrtf_favourite_avg(sender, app_data):
                     f"Insufficient favourites ({len(filtered_fav_list)} found). "
                     f"Need at least 2 to build average.", logz
                 )
-                dpg.configure_item('hrtf_add_favourite', user_data=current_fav_list)
+                dpg.configure_item('fde_hrtf_add_favourite', user_data=current_fav_list)
                 return
 
             hf.log_with_timestamp(
@@ -4600,8 +4718,20 @@ def create_hrtf_favourite_avg(sender, app_data):
             )
 
             # --- 2. Load selected HRIR datasets ---
-            hrir_list_favs_loaded, status = hrir_processing.load_hrirs_list(
-                hrtf_list=filtered_fav_list, gui_logger=logz
+            # Build list of metadata dictionaries for load_hrirs_list
+            hrtf_dict_list = [
+                {
+                    "hrtf_type": "Favourites",
+                    "hrtf_dataset": CN.HRTF_DATASET_FAVOURITES_DEFAULT,
+                    "hrtf_gui": fav_name,
+                    "hrtf_short": fav_name
+                }
+                for fav_name in filtered_fav_list
+            ]
+            
+            hrir_list_favs_loaded, status, hrir_metadata_list = hrir_processing.load_hrirs_list(
+                hrtf_dict_list=hrtf_dict_list,
+                gui_logger=logz
             )
 
             if status != 0 or not hrir_list_favs_loaded:
@@ -4663,15 +4793,15 @@ def create_hrtf_favourite_avg(sender, app_data):
             hf.log_with_timestamp("Averaged HRTF successfully created.", logz)
 
             # --- 7. Update GUI lists ---
-            dpg.configure_item('hrtf_add_favourite', user_data=updated_fav_list)
+            dpg.configure_item('fde_hrtf_add_favourite', user_data=updated_fav_list)
             dpg.set_value("fde_brir_hrtf_type", 'Favourites')
             dpg.set_value("qc_brir_hrtf_type", 'Favourites')
-            update_hrtf_dataset_list(sender=None, app_data='Favourites')
+            fde_update_hrtf_dataset_list(sender=None, app_data='Favourites')
             qc_update_hrtf_dataset_list(sender=None, app_data='Favourites')
-            dpg.set_value("fde_brir_hrtf_dataset", CN.HRTF_DATASET_CUSTOM_DEFAULT)
-            dpg.set_value("qc_brir_hrtf_dataset", CN.HRTF_DATASET_CUSTOM_DEFAULT)
-            update_hrtf_list(sender=None, app_data=CN.HRTF_DATASET_CUSTOM_DEFAULT)
-            qc_update_hrtf_list(sender=None, app_data=CN.HRTF_DATASET_CUSTOM_DEFAULT)
+            dpg.set_value("fde_brir_hrtf_dataset", CN.HRTF_DATASET_FAVOURITES_DEFAULT)
+            dpg.set_value("qc_brir_hrtf_dataset", CN.HRTF_DATASET_FAVOURITES_DEFAULT)
+            fde_update_hrtf_list(sender=None, app_data=CN.HRTF_DATASET_FAVOURITES_DEFAULT)
+            qc_update_hrtf_list(sender=None, app_data=CN.HRTF_DATASET_FAVOURITES_DEFAULT)
             hf.log_with_timestamp("HRTF favourites list updated.", logz)
             qc_reset_progress()
 
@@ -4703,31 +4833,10 @@ def get_avg_hrtf_timestamp(metadata_dir=CN.DATA_DIR_HRIR_NPY_INTRP):
         hf.log_with_timestamp(f"Error reading metadata file: {e}")
         return fallback      
   
-#
-#### Misc
-#    
-    
-def open_user_settings_folder(sender, app_data, user_data):
-    """
-    Opens the specified folder in the OS file explorer and logs the result.
 
-    """
-    selected_folder = CN.SETTINGS_DIR
-    open_folder_in_explorer(selected_folder)
- 
-def open_user_sofa_folder(sender, app_data, user_data):
-    """
-    Opens the specified folder in the OS file explorer and logs the result.
-
-    """
-    selected_folder = CN.DATA_DIR_SOFA_USER
-    open_folder_in_explorer(selected_folder)
-     
- 
     
- 
-#
-#### QC Presets
+
+################################################### QC Presets
 # 
     
 
@@ -4793,7 +4902,9 @@ def qc_load_selected_preset_callback(sender, app_data):
                 dpg.set_value("qc_e_apo_curr_brir_set", qc_e_apo_curr_brir_set_prev)
                 dpg.set_value("qc_e_apo_sel_brir_set", qc_e_apo_sel_brir_set_prev)
                 qc_start_process_brirs()
-            #will also save settings (main config) to ensure they are applied and saved
+            #above will also save settings (main config) to ensure they are applied and saved
+            # if enable_hpcf_selected == False and enable_brir_selected == False:
+            #     #directly save settings as normally called from processing functions
             #disable show history
             dpg.set_value("qc_toggle_hpcf_history", False)
             
@@ -4860,7 +4971,7 @@ def qc_save_preset_callback(sender, app_data):
     logz = dpg.get_item_user_data("console_window")
     enable_hpcf_selected=dpg.get_value('e_apo_hpcf_conv')
     enable_brir_selected=dpg.get_value('e_apo_brir_conv')
-    hpcf_name = calc_hpcf_name(full_name=False)
+    hpcf_name = qc_calc_hpcf_name(full_name=False)
     brir_name = calc_brir_set_name(full_name=False,tab=0)
     hpcf_name = hpcf_name.replace(",", "")
     hpcf_name = hpcf_name.replace("Sample ", "Samp.")
