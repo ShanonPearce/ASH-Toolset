@@ -1138,7 +1138,7 @@ def main():
                                             dpg.bind_item_font(dpg.last_item(), font_b_def)
                                             dpg.add_listbox(qc_brir_hrtf_dataset_list_loaded, default_value=qc_brir_hrtf_dataset_loaded, num_items=11, width=255, callback=cb.qc_update_hrtf_list, tag='qc_brir_hrtf_dataset')
                                         with dpg.group():
-                                            dpg.add_loading_indicator(style=1, pos = (486,355), radius =1.9, color =(120,120,120),show=False, tag='qc_hrtf_average_fav_load_ind')
+                                            dpg.add_loading_indicator(style=1, pos = (486,375), radius =1.9, color =(120,120,120),show=False, tag='qc_hrtf_average_fav_load_ind')
                                             dpg.add_text("Listener", tag='qc_brir_hrtf_title')
                                             dpg.bind_item_font(dpg.last_item(), font_b_def)
                                             dpg.add_listbox(qc_hrtf_list_loaded, default_value=qc_hrtf_loaded, num_items=17, width=240, callback=cb.qc_select_hrtf, tag='qc_brir_hrtf')
@@ -1773,7 +1773,7 @@ def main():
                                             dpg.bind_item_font(dpg.last_item(), font_b_def)
                                             dpg.add_listbox(fde_brir_hrtf_dataset_list_loaded, default_value=fde_brir_hrtf_dataset_loaded, num_items=7, width=255, callback=cb.fde_update_hrtf_list, tag='fde_brir_hrtf_dataset')
                                         with dpg.group():
-                                            dpg.add_loading_indicator(style=1, pos = (480,355), radius =1.8, color =(120,120,120),show=False, tag='hrtf_average_fav_load_ind')
+                                            dpg.add_loading_indicator(style=1, pos = (480,375), radius =1.8, color =(120,120,120),show=False, tag='hrtf_average_fav_load_ind')
                                             dpg.add_text("Listener", tag='brir_hrtf_title')
                                             dpg.bind_item_font(dpg.last_item(), font_b_def)
                                             dpg.add_listbox(hrtf_list_loaded, default_value=fde_hrtf_loaded, num_items=16, width=230, callback=cb.fde_select_hrtf, tag='fde_brir_hrtf')
