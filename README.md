@@ -183,7 +183,6 @@ Steps for selecting and applying/exporting a headphone correction filter:
 
 ---
 ### Binaural Room Simulation over Headphones
-#### Quick Configuration
 Binaural room simulation applies a customised acoustic environment to headphones. 
 Filters can be applied directly in Equalizer APO via the Quick Configuration tab or exported as WAV/SOFA datasets via the Simulation Export tab so they can be used in other audio software.
 
