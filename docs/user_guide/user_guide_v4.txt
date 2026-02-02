@@ -1,4 +1,4 @@
-#VERSION: 4.0.0
+#VERSION: 4.0.1
 
 [Audio Processing Overview]
 Head-Related Transfer Functions (HRTFs):
@@ -124,20 +124,20 @@ Steps for customising and applying/exporting a new simulation:
 	- Must match playback device.
 13. Select Bit Depth
 	- Options: 24 bit, 32 bit.
-14. Apply Parameters
+14. (Quick Config Tab Only) Apply Parameters
 	- Click the apply button in the "Quick Config - Equalizer APO" tab to apply the simulation in Equalizer APO.
 Simulation Export tab:
-15. Select Spatial Resolution
+15. (Export Tab Only) Select Spatial Resolution
 	- Low: Elevation -30 to 30° in 15° steps, Azimuth 0 to 360° in varying steps.
 	- Medium: Elevation -45 to 45° in 15° steps, Azimuth 0 to 360°.
 	- High: Elevation -50° (WAV) or -60° (SOFA) in 5° steps, Azimuth 0 to 360° in 5° steps.
-16. Select which files to export
+16. (Export Tab Only) Select which files to export
 	- Direction-specific WAV BRIRs: one file per source direction, 2 channels.
 	- True Stereo WAV BRIRs: one file, 4 channels (LL, LR, RL, RR). Compatible with EasyEffects.
 	- HeSuVi WAV BRIRs: 14 channels, 24/32 bit, 44.1/48 kHz. Directions configurable in HeSuVi tab.
 	- 16 Channel WAV BRIRs: FFMPEG-compatible, 16 channels, configurable in HeSuVi tab.
 	- SOFA File: BRIR dataset in SOFA format. Convention selectable in Additional Settings.
-17. Click the export button to export the binaural dataset to the output folder.
+17. (Export Tab Only) Click the export button to export the binaural dataset to the output folder.
 
 Room Target Explanation:
 The room target setting controls the overall low and high frequency balance of the final binaural room response. It shapes how "room-like" or "neutral" the simulated environment will sound.
@@ -232,7 +232,7 @@ Workflow with a Virtual Audio Device:
 
 [Acoustic Space Import]
 This tab allows generating new acoustic spaces from reverberant impulse response (IR) files such as room impulse responses (RIRs).  
-Imported spaces can be used in Quick Configuration and Filter & Dataset Export tabs.
+Imported spaces can be used in the binaural simulations.
 
 Steps for importing and processing acoustic spaces:
 1. Set IR Folder
@@ -266,7 +266,7 @@ Steps for importing and processing acoustic spaces:
 	- Processing time depends on dataset size and settings.
 
 [Room Target Generator]
-This tab can be used to create custom room target curves using low-shelf and high-shelf filters. These targets can be used later in quick configuration and dataset export.
+This tab can be used to create custom room target curves using low-shelf and high-shelf filters. These targets can be used later in the binaural simulations.
 
 Steps for creating a custom room target:
 1. Enter Target Name (Optional)
