@@ -42,41 +42,37 @@ ASH Toolset can be used to generate and apply Headphone Correction Filters (HpCF
 
 
 ---
-## Getting Started <a name="Getting-Started"></a> 
+## Getting Started (Python Distribution) <a name="Getting-Started"></a> 
 
 ASH Toolset is a python app built with Python, Numpy, Scipy, & DearPyGui.\
 Developed on Python 3.11.7.\
-Tested on Windows 10 and Windows 11 with Equalizer APO 1.4 and Voicemeeter 1.1.1.8
+Tested on Windows 10 and Windows 11 with Equalizer APO 1.4 and Voicemeeter 1.1.1.8. Also tested on Ubuntu 24.04.3 LTS.
 
 ### Prerequisites
 
-Python libraries:
-  ```sh
-pip install dearpygui==2.1.0
-pip install dearpygui-ext==2.0.0
-pip install dearpygui-extend==0.1.5
-pip install fuzzywuzzy==0.18.0
-pip install gdown==5.2.0
-pip install h5py==3.11.0
-pip install joblib==1.2.0
-pip install librosa==0.10.2.post1
-pip install mat73==0.63
-pip install matplotlib==3.7.0
-pip install noisereduce==3.0.2
-pip install numpy==2.3.4
-pip install pandas==2.2.3
-pip install platformdirs==4.5.0
-pip install protobuf==3.20.3
-pip install psutil==5.9.0
-pip install pyfar==0.6.5
-pip install Requests==2.32.5
-pip install scipy==1.11.4
-pip install sofar==1.1.3
-pip install SOFASonix==1.0.7
-pip install soundfile==0.12.1
-pip install thefuzz==0.22.1
-pip install sounddevice==0.5.3
-  ```
+All required dependencies are defined in `requirements.txt`.
+
+Required libraries:
+
+    dearpygui==2.1.0
+    dearpygui_ext==2.0.0
+    dearpygui_extend==0.1.5
+    h5py==3.11.0
+    librosa==0.10.2.post1
+    mat73==0.63
+    matplotlib==3.7.0
+    noisereduce==3.0.2
+    numpy==2.3.4
+    pandas==2.2.3
+    platformdirs==4.5.0
+    rapidfuzz==3.9.3
+    pyfar==0.6.5
+    Requests==2.32.5
+    scipy==1.11.4
+    sofar==1.1.3
+    SOFASonix==1.0.7
+    sounddevice==0.5.3
+    
 Data files:
 
 Various HRIR, BRIR and filter datasets are required in the data folder for the app to run. 
@@ -89,7 +85,7 @@ Optional:
 - [HeSuVi](https://sourceforge.net/projects/hesuvi/), a headphone surround virtualization tool for Equalizer APO.
 
   
-### Installation
+### Installation (Python Distribution) 
 
 
 1. **Get the ASH Toolset code and data**
@@ -131,117 +127,166 @@ python C:\sample-location\ASH-Toolset\ash_toolset.py
 ```
 
 ### GUI Overview
-The app contains the following tabs:
-- The 'Quick Configuration’ tab can be used to directly apply headphone correction and binaural room simulation in Equalizer APO
-- The ‘Filter & Dataset export’ tab can be used to export correction filters and binaural datasets to a local directory
-- The ‘Acoustic Space Import’ tab can be used to import acoustic impulse response files as new acoustic spaces in the binaural simulations
-- The ‘Room target Generator’ tab can be used to create customised room target responses
-- The ‘Additional Tools & Settings’ tab contains some miscellaneous options and log messages
-- The ‘Supporting Information’ tab contains reference tables for supplied datasets and conventions
+#### Headphone Correction & Spatial Audio tab:
+* Directly apply headphone correction and binaural room simulation in Equalizer APO.
+* Exports filters to the Equalizer APO config directory and auto-configures 'config.txt' for convolution.
+* Export headphone correction filters and binaural simulation datasets to a local directory.
+* Outputs can be used to create spatial surround sound by convolving audio with BRIRs and HpCFs.
+* Requires convolution software that supports stereo, true stereo, or multichannel processing.
+
+#### Acoustic Space Import Tool tab:
+* Import acoustic impulse response files as new binaural acoustic spaces.
+
+#### Room Target Tool tab:
+* Create customised room target responses.
+
+#### Advanced Settings & Maintenance tab:
+* Contains advanced options and log messages.
 
 ### Headphone Correction
-In the 'Quick Configuration’ tab, this tool is used to apply headphone correction in Equalizer APO. In the ‘Filter & Dataset export’ tab, this is used to export a set of correction filter files for a specific headphone which can then be loaded into audio processing software to apply headphone correction.
+The supplied headphone correction filters can be used to equalise individual headphones to the diffuse-field target response and remove undesired spectral colouration introduced by the headphones.
+Filters can be applied directly in Equalizer APO via the Quick Configuration tab or exported as files via the Filter Export tab so they can be used in other audio software.
 
-![hpcf steps](docs/images/hpcf_steps.png)
+![hpcf steps](docs/images/hpcf_steps_small.png)
 
-1. **Select a headphone database** containing correction filters. The ‘ASH Filters’ option is the main database which has a structured Brand/Headphone/Sample hierarchy and the ‘Compilation’ option contains additional filters derived from various measurement datasets and has a Type/Headphone/Dataset hierarchy.
-2. **Select a headphone brand or type** to filter down on the headphone list.
-3. **Select a specific headphone**.
-4. **Select a specific sample or dataset**. Note that in the ‘Filter & Dataset export’ tab, all samples/datasets will be exported for the selected headphone.
-5. (‘Filter & Dataset export’ tab only) Select which files to include in the export.
-   - FIR Filters: Minimum phase FIRs in WAV format for convolution. 1 channel at specified sample rate and bit depth. This is filter type is required for the app to auto-configure 'config.txt' in Equalizer APO.
-   - Stereo FIR Filters: Minimum phase FIRs in WAV format for convolution. 2 channels at specified sample rate and bit depth.
-   - Graphic EQ Filters (127 bands): Graphic EQ configurations with 127 bands. Compatible with Equalizer APO and Wavelet
-   - Graphic EQ Filters (31 bands): Graphic EQ configurations with 31 bands. Compatible with 31 band graphic equalizers including Equalizer APO
-   - HeSuVi Filters: Graphic EQ configurations with 127 bands. Compatible with HeSuVi. Saved in HeSuVi\eq folder
-6. **Select a sample rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated fitlers should match the sample rate of the sound device.
-7. **Select a bit depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-8. **Click the 'Apply Selection' button** to apply the selected filter in Equalizer APO or **click the 'Process' button** to export the selected filters to the output directory. By default this location will be `C:\Program Files\EqualizerAPO\config\ASH-Outputs` but can be changed using the change folder option.
+Steps for selecting and applying/exporting a headphone correction filter:
+1. Choose a headphone database.
+	- "ASH Filters" contains the main set of filters with a Brand / Headphone / Sample structure.
+	- "Compilation" contains additional filters gathered from various measurement datasets with a Type / Headphone / Dataset structure.
+2. Select a brand or type to narrow down the headphone list.
+3. Select the specific headphone you want to use.
+4. Select a sample or dataset.
+	- In the Filter and Dataset Export tab, all samples or datasets for that headphone will be exported.
+5. (Filter Export tab only) Choose which file types to include in the export:
+	- FIR Filters
+		* Minimum phase FIR filters in WAV format. Mono.
+	- Stereo FIR Filters
+		* Minimum phase FIR filters in WAV format. Stereo. Compatible with EasyEffects.
+	- Graphic EQ Filters (127 bands)
+		* For Equalizer APO and Wavelet.
+	- Graphic EQ Filters (31 bands)
+		* For 31-band graphic equalizers including Equalizer APO.
+	- HeSuVi Filters
+		* 127-band graphic EQ format for HeSuVi, saved into the HeSuVi\eq folder.
+6. Choose the sample rate for exported WAV files.
+	- Options: 44.1 kHz, 48 kHz, 96 kHz.
+	- Should match the sample rate of the playback device.
+7. Choose the bit depth for exported WAV files.
+	- Options: 24 bit, 32 bit.
+8. Apply or export the selected filters.
+	- "Quick Config - Equalizer APO" loads the filter into Equalizer APO.
+	- "Filter Export" exports filter files to the output folder.
+	- Default output location: C:\Program Files\EqualizerAPO\config\ASH-Outputs
+	- This folder can be changed using the change directory option.
+
 
 
 ---
 ### Binaural Room Simulation over Headphones
 #### Quick Configuration
-In the 'Quick Configuration’ tab, this tool is used to apply customised binaural room simulations over headphones in equalizer APO. 
+Binaural room simulation applies a customised acoustic environment to headphones. 
+Filters can be applied directly in Equalizer APO via the Quick Configuration tab or exported as WAV/SOFA datasets via the Simulation Export tab so they can be used in other audio software.
 
 ![brir steps](docs/images/brir_steps_qc.png)
 
-1. **Select Acoustic Space** from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
-2. **Select Gain for Direct Sound** in dB. Select a value between -10dB and 10dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-3. **Select Room Target** from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
-4. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength or None if sound localisation or timbre is compromised.
-   - In-Ear Headphones, high strength
-   - In-Ear Headphones, low strength
-   - Over-Ear/On-Ear Headphones, high strength
-   - Over-Ear/On-Ear Headphones, low strength
-   - None
-5. **Select Listener Type** from below options.
-   - Dummy Head / Head & Torso Simulator
-   - Human Listener
-   - User SOFA Input
-   - Favourites
-6. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
-7. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`. Additional SOFA files can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files).
-8. **(optional) Select Low-frequency Integration Crossover Frequency** between 20Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner Low-frequency response and original room response. Higher values may result in a smoother bass response. 
-9. **Select Low-frequency Response for Extension** from available options. A comparison of responses are available in the supporting information section below.
-10. **(optional) Enable Additional EQ**. Compensate Headphone Roll-off option will compensate the typical reduction in bass response below 100Hz in many headphones. This filter will result in a gain of approximately 4dB at 20Hz. Forward-Backward Filtering option will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases.
-11. **Select Sample Rate** for the WAV files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated WAV files should match the sample rate of the sound device.
-12. **Select Bit Depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-13. **Click the 'Apply Parameters' button** to apply the binaural simulation in Equalizer APO.
+Steps for customising and applying/exporting a new simulation:
+1. Select Acoustic Space
+	- Choose from various environments (audio labs, conference rooms, control rooms, seminar rooms, studios, etc.) 
+	- Results in recreations of real acoustic environments derived from real world measurements.
+	- Details can be found in the reference tables tab. 
+2. Select Gain for Direct Sound (dB)
+	- Range: -10 dB to 10 dB.
+	- Higher values decrease perceived distance; lower values increase it.
+3. Select Listener Type
+	- Options:
+		* Dummy Head / Head & Torso Simulator
+		* Human Listener
+		* User SOFA Input
+		* Favourites
+4. Select Dataset
+	- Lists public HRTF datasets if Listener Type is Dummy Head or Human Listener.
+5. Select Listener
+	- Some options require an internet connection for automatic download.
+	- User SOFA files must be placed in the user data folder (default: C:\Program Files\ASH Toolset\_internal\data\user\SOFA).
+	- Additional SOFA files can be found at the SOFA conventions repository.
+	- Preferred listeners can be added to favourites. An averaged listener can also be generated from the favourites.
+6. Optional: Direction Misalignment Correction
+	- Correct common orientation errors in SOFA datasets.
+	- Use this if azimuth or elevation directions appear reversed, rotated, or start from the wrong reference.
+	- Refer to the Reference Tables tab for more details.
+7. Select Room Target
+	- Options: flat, ASH target, Harman target, etc.
+	- Influences overall balance of low and high frequencies.
+	- Flat is recommended if using other headphone correction sources (e.g., AutoEq).
+8. Select Headphone Compensation
+	- Match the listener's headphone type. High strength is default. Reduce to low strength or None if localisation or timbre is compromised.
+		* In-Ear Headphones, high strength
+		* In-Ear Headphones, low strength
+		* Over-Ear/On-Ear Headphones, high strength
+		* Over-Ear/On-Ear Headphones, low strength
+		* None
+9. Optional: Low-frequency Integration Crossover Frequency
+	- Range: 0 Hz to 150 Hz.
+	- Auto Select chooses an optimal value for the selected acoustic space.
+	- Tunes integration of cleaner low-frequency response with original room response. Higher values may result in a smoother bass response. Set to 0Hz to disable this feature.
+10. Select Low-frequency Response for Extension
+	- Select from a set of generalised low frequency binaural responses sourced from a range of real world acoustic measurements.  
+	- Provides clean extension and/or replacement of low frequencies due to limited range and varying quality of original measurements. 
+	- Compare responses in the reference tables tab. 
+11. Optional: Enable Additional EQ
+	- Compensate Headphone Roll-off: adds ~4 dB at 20 Hz.
+12. Select Sample Rate
+	- Options: 44.1 kHz, 48 kHz, 96 kHz.
+	- Must match playback device.
+13. Select Bit Depth
+	- Options: 24 bit, 32 bit.
+14. (Quick Config Tab Only) Apply Parameters
+	- Click the apply button in the "Quick Config - Equalizer APO" tab to apply the simulation in Equalizer APO.
+Simulation Export tab:
+15. (Export Tab Only) Select Spatial Resolution
+	- Low: Elevation -30 to 30° in 15° steps, Azimuth 0 to 360° in varying steps.
+	- Medium: Elevation -45 to 45° in 15° steps, Azimuth 0 to 360°.
+	- High: Elevation -50° (WAV) or -60° (SOFA) in 5° steps, Azimuth 0 to 360° in 5° steps.
+16. (Export Tab Only) Select which files to export
+	- Direction-specific WAV BRIRs: one file per source direction, 2 channels.
+	- True Stereo WAV BRIRs: one file, 4 channels (LL, LR, RL, RR). Compatible with EasyEffects.
+	- HeSuVi WAV BRIRs: 14 channels, 24/32 bit, 44.1/48 kHz. Directions configurable in HeSuVi tab.
+	- 16 Channel WAV BRIRs: FFMPEG-compatible, 16 channels, configurable in HeSuVi tab.
+	- SOFA File: BRIR dataset in SOFA format. Convention selectable in Additional Settings.
+17. (Export Tab Only) Click the export button to export the binaural dataset to the output folder.
 
 
-#### Filter & Dataset export
-In the ‘Filter & Dataset export’ tab, this is used to export a customised binaural dataset containing binaural impulse responses in WAV or SOFA format which can then be loaded into audio processing software to apply room simulation.
 
-![brir steps](docs/images/brir_steps_de.png)
-
-1. **Select Acoustic Space** from a range of environments including audio labs, conference rooms, control rooms, seminar rooms, studios, and more. This will determine the listening environment of the simulation.
-2. **Select Gain for Direct Sound** in dB. Select a value between -10dB and 10dB. Higher values will result in lower perceived distance. Lower values result in higher perceived distance
-3. **Select Room Target** from a range of options including flat, ASH target, Harman target, and more. This will influence the overall balance of low and high frequencies. Flat is recommended if using headphone correction from other sources such as AutoEq. Variations of below targets with flat mid and high frequencies are also provided.
-4. **Select Headphone Compensation** from below options. The selected option should match the listener's headphone type. High strength is selected by default. Reduce to low strength or None if sound localisation or timbre is compromised.
-   - In-Ear Headphones, high strength
-   - In-Ear Headphones, low strength
-   - Over-Ear/On-Ear Headphones, high strength
-   - Over-Ear/On-Ear Headphones, low strength
-   - None
-5. **Select Spatial Resolution** from below options. Increasing resolution will increase number of source directions available but will also increase processing time and dataset size. Low' is recommended unless additional directions or SOFA export is required.
-   - Low: Elevation angles ranging from -30 to 30 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
-   - Medium: Elevation angles ranging from -45 to 45 degrees in 15 degree steps. Azimuth angles ranging from 0 to 360 degrees in varying steps.
-   - High: Elevation angles ranging from -50 to 50 degrees (WAV export) or -60 to 60 degrees (SOFA export) in 5 degree steps. Azimuth angles ranging from 0 to 360 degrees in 5 degree steps.
-6. **Select Listener Type** from below options.
-   - Dummy Head / Head & Torso Simulator
-   - Human Listener
-   - User SOFA Input
-   - Favourites
-7. **Select Dataset** from available options. A number of public HRTF datasets will be listed here if ‘Listener Type’ is set to 'Dummy Head / Head & Torso Simulator' or 'Human Listener'.
-8. **Select Listener** from available options. Some options will require an internet connection as the source dataset is not included and will be automatically downloaded from the web. If ‘Listener Type’ is set to ‘User SOFA Input’, user SOFA files will be automatically listed here. User SOFA files must be placed in the user data folder which is usually located at `C:\Program Files (x86)\ASH Toolset\_internal\data\user\SOFA`. Additional SOFA files can be found at the [SOFA conventions repository](https://www.sofaconventions.org/mediawiki/index.php/Files).
-9.  **(optional) Select Low-frequency Integration Crossover Frequency** between 20Hz and 150Hz. Auto Select mode will select an optimal frequency for the selected acoustic space. This can be used to tune the integration of the cleaner Low-frequency response and original room response. Higher values may result in a smoother bass response. 
-10. **Select Low-frequency Response for Extension** from available options. A comparison of responses are available in the supporting information section below.
-11. **(optional) Enable Additional EQ**. Compensate Headphone Roll-off option will compensate the typical reduction in bass response below 100Hz in many headphones. This filter will result in a gain of approximately 4dB at 20Hz. Forward-Backward Filtering option will eliminate delay introduced by the filters, however can introduce edge artefacts in some cases.
-12. **Select Sample Rate** for the WAV or SOFA files. Available options are 44.1kHz, 48kHz, and 96kHz. Note: The sample rate of the generated WAV files should match the sample rate of the sound device.
-13. **Select Bit Depth** for the WAV files. Available options are 24 bits per sample and 32 bits per sample.
-14. Select which files to include in the export.
-    - Direction specific WAV BRIRs: Binaural Room Impulse Responses (BRIRs) in WAV format for convolution. One file for each source direction and 2 channels per file at specified sample rate and bit depth. This is file type is required for the app to auto-configure 'config.txt' in Equalizer APO.
-    - True Stereo WAV BRIRs: True Stereo BRIR in WAV format for convolution. One file with 4 channels representing L and R speakers (LL LR RL RR) at specified sample rate and bit depth.
-    - HeSuVi WAV BRIRs: BRIRs in HeSuVi compatible WAV format. 14 channels, 24 or 32 bit depth, 44.1Khz and 48Khz. The directions of the channels can be configured in the 'HeSuVi & Multichannel Configuration' tab on the right.
-    - 16 Channel WAV BRIRs: BRIRs in FFMPEG compatible WAV format. 16 channels at specified sample rate and bit depth. Channel mapping can be configured in the 'HeSuVi & Multichannel Configuration' tab on the right.
-    - SOFA File: BRIR dataset file in SOFA (Spatially Oriented Format for Acoustics) format. The SOFA convention can be selected in the Misc. Settings section under 'Additional Tools & Settings' tab.
-15. **Click the 'Process' button** to export the binaural dataset to the output directory.
 
 ---
 ### Using the Correction Filters and Binaural Simulations
 
 The outputs can be used to create spatial surround sound on headphones by convolving an audio stream with a set of binaural impulse responses and a headphone correction filter. This requires IR Convolution software that supports stereo or true stereo processing such as Equalizer APO
 
-### Apply Filters and Simulations in Equalizer APO
-V3.0.0 onwards of the toolset includes a 'Quick Configuration’ tab which will auto-configure 'config.txt' to apply selected filters and binaural simulations in Equalizer APO. Ensure 'Enable Headphone Correction' and/or 'Enable Binaural Room Simulation' are ticked for the changes to apply. The audio channels can be configured in the 'Channel Configuration' tab on the right side of the app.
+### Channel Configuration
+The audio channels can be configured in the 'E-APO Configuration' and 'Export Configuration' tabs, located on the right side of the main tab.
 
 ![Equalizer APO example](docs/images/e_apo_steps.png)
 
-- The preamplification control will apply the specified gain to all channels. An option to auto-adjust preamp has been included from V3.1.0 onwards. This option can be set to prevent all clipping, or align levels in low or mid frequencies which will keep levels consistent while comparing different simulations.
-- The estimated peak gain table can be used to identify potential clipping that may occur for different input channel configurations. Max. peak gain is the highest peak gain across the left and right channels whereas average peak gain is the average peak gain of the left and right channels. 
-- The input audio channel configuration can be selected using the drop down. The selected channel configuration must be supported by the sound device. An option to upmix 2.0 stereo to 7.1 is included. The upmix has available 2 methods: Method A which is a simple channel duplication and Method B which also includes Mid/Side channel separation.
-- The gains and source directions of each audio channel can be configured separately.
+- Preamplification Control
+	* Apply a gain (in dB) to all channels.
+	* Auto-Adjust Preamp can automatically prevent clipping or align low/mid frequency levels for consistent comparisons across simulations.
+- Estimated Peak Gain Table
+	* Displays potential clipping for different input channel configurations.
+	* Max. Peak Gain: highest peak across left and right channels.
+- Input Audio Channel Configuration
+	* Select the input channel setup from a dropdown. The configuration must be supported by your sound device.
+- Upmixing Parameters
+	* Upmixing from 2.0 stereo to 7.1 is available using two methods:
+		- Method A: simple channel duplication.
+		- Method B: includes Mid/Side channel separation.
+	* Side/Rear Delay: delay applied to side and rear channels to maintain proper timing in the spatial layout.
+- Individual Channel Settings. Each channel (e.g., L, R, C+SUB, SL, SR, RL, RR) can be:
+	* Muted/unmuted.
+	* Adjusted for gain (dB).
+	* Assigned an elevation angle (°) for vertical positioning. Positive values are above the listener while negative values are below the listener.
+	* Assigned an azimuth angle (°) for horizontal positioning. Positive values are to the right of the listener while negative values are to the left.
+	* These settings control how the audio is spatialised in the binaural simulation.
 
 
 ### 7.1 Surround Virtualisation
@@ -264,55 +309,43 @@ As an alternative to above method in Equalizer APO, the generated filters can be
 ---
 ### Acoustic Space Import
 
-This tab can be used to generate new acoustic spaces from reverberant impulse response (IR) files such as room impulse responses (RIRs). Imported acoustic spaces can be used in the quick configuration and filter & dataset export tabs.
+This tab allows generating new acoustic spaces from reverberant impulse response (IR) files such as room impulse responses (RIRs). Imported spaces can be used in the binaural simulations.
 
-**Set IR Folder**
-- To prepare new inputs, click **“Open Input Folder”** to open the directory where IR folders should be stored.
-  - Ensure all IR files for one space are grouped into a **single subfolder** (e.g., `Room A`).
-  - **Supported file types:** `.wav`, `.sofa`, `.mat`, `.npy`, `.hdf5`
-- Click **“Refresh Folder List”** to load available IR folders if new folder was created.
-- Select a folder from the **IR Folder List** dropdown. 
-
-**Enter Metadata (Optional)**
-- **Name:** Enter a name for the acoustic space. If left blank, the folder name will be used.
-- **Description:** Enter a brief description of the space.
-
-**IR Processing Options** 
-- **Long Reverb Tail Mode:**  
-  Enable if IRs have long decay tails (over 1.5 seconds). This increases processing time.
-- **Noise Reduction:**  
-  Enable if IRs contain a high noise floor.
-- **Low-frequency Mode:**  
-  Enable if the IRs are low frequency measurements such as subwoofer measurements. This will make the result available under Low-frequency responses.
-- **Rise Time (ms):**  
-  Select the duration of the fade in window applied to the response.
-
-**Spatial Sampling**
-- **Desired Directions:**  
-  Specify the number of simulated source directions to generate.  
-  - Minimum: `1000`, Maximum: `3000` (default: `1750`)
-  - Lower values will reduce processing time.
-- **Alignment Frequency (Hz):**  
-  Set the cutoff frequency for time-domain alignment.  
-  - Minimum: `50`, Maximum: `150` (default: `110`)
-
-**Pitch Shifting (for dataset expansion)**
-
-The below parameters are only used to expand the dataset with new simulated source directions in cases where few IRs are supplied
-- **Pitch Shift Range:**
-  - **Low:** Minimum pitch shift in semitones. *(default: `0.0`)*
-  - **High:** Maximum pitch shift in semitones. *(default: `24.0`)*
-- **Pitch Shift Compensation:**  
-  Enable to correct frequency response of pitch-shifted IRs. May introduce artifacts.
-
-**Start Processing**
-- Click **“Start Processing”** to begin.
-  - Processing may take several minutes depending on the dataset and settings.
+Steps for importing and processing acoustic spaces:
+1. Set IR Folder
+	- Click 'Open Input Folder' to go to the directory containing IR folders.
+	- All IR files for one space must be in a single subfolder (e.g., Room A).
+	- Supported file types: .wav, .sofa, .mat, .npy, .hdf5
+	- Click 'Refresh Folder List' to update available folders.
+	- Select a folder from the IR Folder List dropdown.
+2. Enter Metadata (Optional)
+	- Name: Name of the acoustic space. If blank, folder name is used.
+	- Description: Brief description of the space.
+3. Configure IR Processing Options
+	- Reverb Tail Mode: Use short mode for spaces with fast decay (< 1.5s). Only enable long mode if IRs have long decay tails (>= 1.5 s) as this will increase processing time. Windowed mode can be used to shorten and fade out long decay trails.
+	- Low-frequency Mode: Enable if IRs are low-frequency (subwoofer) measurements. This will make the result available under Low-frequency responses.
+	- Binaural measurements: Enable if the IRs are binaural measurements such as dummy head measurements. This will bypass application of new HRTFs to the inputs.
+	- Noise Reduction: Enable if IRs contain high noise floor.
+	- Rise Time (ms): Duration of fade-in window applied to IR. Min: 1 ms, Max: 20 ms
+	- Room Correction Factor: Select a value between 0 and 1 to control the strength of room correction.
+	- Listener: Controls which listener will be used to apply binaural transformations. If set to 'User Selection', the current listener selection in the first tab will be used. Not applicable when binaural measurements option is enabled.
+4. Set Spatial Sampling
+	- Desired Directions: Number of simulated source directions to generate.
+		* Minimum: 2000, Maximum: 5000
+		* Lower values reduce processing time but may also reduce quality.
+	- Alignment Frequency (Hz): Cutoff frequency for time-domain alignment.
+		* Minimum: 50, Maximum: 150
+5. (Optional) Configure Pitch Shifting for Dataset Expansion
+	- Pitch Shift Range: Maximum pitch shift in semitones (default: 12.0)
+	- Pitch Shift Compensation: Enable to correct frequency response of pitch-shifted IRs.
+6. Start Processing
+	- Click 'Start Processing' to begin.
+	- Processing time depends on dataset size and settings.
 
 ---
 ### Room Target Generator
 
-This tab can be used to create custom room target curves using low-shelf and high-shelf filters. These targets can be used later in quick configuration and dataset export.
+This tab can be used to create custom room target curves using low-shelf and high-shelf filters. These targets can be used later in the binaural simulations.
 
 **Enter Target Name (Optional)**
 - **Name:** Provide a name for your new room target.
@@ -351,22 +384,26 @@ This tab can be used to create custom room target curves using low-shelf and hig
 
 ---
 ### File Naming and Structure
-Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder under the output directory. This will be in the Equalizer APO config directory (e.g. `C:\Program Files\EqualizerAPO\config\ASH-Outputs`) by default. HeSuVi files will be saved within the HeSuVi folder (e.g. `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default. If required, the output directory can be changed using the directory selector. The `EqualizerAPO\config` directory should be selected if using Equalizer APO to ensure the filters and configurations can be read by Equalizer APO. 
+By default, outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` folder inside the output directory.  
+  * In Quick Configuration, the default path is `C:\Program Files\EqualizerAPO\config\ASH-Outputs`. This is to ensure Equalizer APO can read the filters. 
+  * In Filter & Dataset Export, the output directory can be customised using the directory selector.
+  * HeSuVi files are saved in the HeSuVi folder (e.g., `C:\Program Files\EqualizerAPO\config\HeSuVi`) by default to ensure compatibility with HeSuVi.
 
 **Binaural Room Impulse Responses**
-- Binaural room impulse responses are saved within the ASH-Outputs\BRIRs folder.
-- A folder is created for each set of WAV BRIRs and is named as per the selected parameters.
-    - The naming convention for the folder is `(Listener)_(Acoustic_Space)_(Direct_Sound_Gain)_(Room_Target)_(Low-Freq_Response)_(Headphone_Type)`.
-- A WAV file is created for a range of source directions around the listener. Each WAV file corresponds to a unique direction.
-    - The naming convention for the BRIR WAV files is `BRIR_E(Elevation)_A(Azimuth).wav`.
-    - Positive elevation angles correspond to points above the listener while negative angles correspond to points below the listener. An elevation of 0 corresponds to a point at the same level as the listener.
-    - Positive azimuth angles correspond to points to the right of the listener while negative angles correspond to points to the left of the listener. An azimuth of -90 corresponds to a point directly to the left of the listener while an azimuth of 90 corresponds to a point directly to the right of the listener.
-- A true stereo WAV file is also located in each folder with naming `BRIR_True_Stereo.wav`
-- SOFA files are located under the SOFA folder
+- BRIRs are saved within the `ASH-Outputs\BRIRs` folder.  
+- A separate folder is created for each binaural dataset, named according to the selected parameters:
+    (Acoustic_Space)_(Direct_Sound_Gain)_(Listener)_(Room_Target)_(Headphone_Type)_(Low-Freq_Response)
+- If Direction-specific export enabled, Individual WAV files are generated for a range of source directions around the listener. Each file corresponds to a unique direction:
+    - Naming convention: `BRIR_E(Elevation)_A(Azimuth).wav`
+    - Positive elevation: above the listener; negative: below. Zero: same level as listener.
+    - Positive azimuth: to the right of the listener; negative: to the left. Azimuth -90°: directly left; 90°: directly right.
+- If True Stereo export enabled, a true stereo WAV is also included in each folder: `BRIR_True_Stereo.wav`
+- If 16 Channel export enabled, a 16 Channel WAV is also included in each folder prefixed with `BRIR_16ch_`.
+- If SOFA export enabled, a corresponding SOFA file is saved under the `SOFA` folder. Refer to reference tables tab for SOFA convention information.
 
 **Headphone Correction Filters**
 - Correction filters are saved within the ASH-Outputs\HpCFs folder
-- A folder is created for each filter type and for each headphone brand that has an exported filter
+- A folder is created for each filter type (FIRs, FIRs_Stereo, Graphic_EQ_31_band, Graphic_EQ_127_band) and for each headphone brand/type that has an exported filter
 - The filters are named as per the headphone name
 
 
@@ -388,54 +425,6 @@ Outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` child folder
 | GeneralFIR-E        | 2.1     | 2                      | Yes  | No    |
 | FreeFieldHRIR       | 2.1     | 1                      | Yes  | No    |
 
-### Acoustic Spaces
-
-|Name              |Estimated RT60 (ms)|Name              |Estimated RT60 (ms)|Name              |Estimated RT60 (ms)|
-|------------------|-------------------|------------------|-------------------|------------------|-------------------|
-|Atrium A          |2894               |Courtyard         |1496               |Outdoors A        |1935               |
-|Atrium B          |1282               |Foyer             |1246               |Outdoors B        |1183               |
-|Audio Lab A       |305                |Hall A            |1418               |Outdoors C        |1199               |
-|Audio Lab B       |413                |Hall B            |949                |Recording Room    |284                |
-|Audio Lab C       |508                |Hall C            |1052               |Recording Studio A|723                |
-|Audio Lab D       |193                |Hall D            |1069               |Recording Studio B|739                |
-|Audio Lab E       |442                |Hall E            |1414               |Seminar Room A    |839                |
-|Audio Lab F       |631                |Kiln              |777                |Seminar Room B    |710                |
-|Audio Lab G       |360                |Large Treated Room|624                |Seminar Room C    |705                |
-|Audio Lab H       |528                |Lecture Hall A    |901                |Small Room A      |500                |
-|Audio Lab I       |539                |Lecture Hall B    |685                |Small Room B      |467                |
-|Auditorium A      |1455               |Lecture Room A    |704                |Small Room C      |476                |
-|Auditorium B      |346                |Lecture Room B    |728                |Small Theatre     |920                |
-|Auditorium C      |1213               |Lecture Room C    |794                |Smoking Room      |660                |
-|Broadcast Studio A|1183               |Listening Room A  |221                |Stairway          |876                |
-|Broadcast Studio B|1241               |Listening Room B  |379                |Studio A          |398                |
-|Broadcast Studio C|914                |Listening Room C  |562                |Studio B          |351                |
-|Chamber A         |1408               |Listening Room D  |312                |Tatami Room       |513                |
-|Chamber B         |730                |Listening Room E  |824                |Tennis Court A    |1432               |
-|Classroom         |1147               |Listening Room F  |771                |Tennis Court B    |1273               |
-|Concert Hall A    |1599               |Listening Room G  |233                |Tennis Court C    |1345               |
-|Concert Hall B    |1386               |Living Room       |967                |Theatre           |884                |
-|Concert Hall C    |1526               |Lobby A           |735                |Treated Room      |178                |
-|Concert Hall D    |1461               |Lobby B           |859                |Tunnel            |1404               |
-|Conference Room A |467                |Meeting Room      |458                |Yoga Studio       |1325               |
-|Conference Room B |541                |Office A          |408                |                  |                   |
-|Control Room      |260                |Office B          |496                |                  |                   |
-
-
-### Low-frequency Responses
-
-|Name                                                |Estimated rt60|Comments                       |Frequency Range|Tolerance          |Measurement Dataset                     |Source Type|Listener Type|
-|----------------------------------------------------|--------------|-------------------------------|---------------|-------------------|----------------------------------------|-----------|-------------|
-|Low-frequency Response A - Audio Lab, smooth        |320           |Primary response used in v3.1.2|3Hz-150Hz      |20Hz-120Hz +/-0.8dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
-|Low-frequency Response B - Audio Lab, smooth        |340           |Newly added in v3.2.0          |0Hz-150Hz      |20Hz-120Hz +/-1.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
-|Low-frequency Response C - Listening Room, natural  |350           |Newly added in v3.2.0          |5Hz-150Hz      |20Hz-120Hz +/-1.4dB|ASH-Listening-Set                       |Subwoofer  |Binaural     |
-|Low-frequency Response D - Studio, fast & smooth    |240           |Newly added in v3.2.0          |0Hz-150Hz      |20Hz-120Hz +/-1.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
-|Low-frequency Response E - Audio Lab, resonant      |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
-|Low-frequency Response F - Studio Live Room, natural|350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-2.0dB|BBC Maida Vale Impulse Response Dataset |Loudspeaker|Binaural     |
-|Low-frequency Response G - Listening Room, slow     |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
-|Low-frequency Response H - Listening Room, boomy    |600           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-4.0dB|The ISOBEL Sound Field Dataset          |Subwoofer  |Binaural     |
-|Low-frequency Response I - Recording Studio, slow   |700           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-2.0dB|RSoANU: RIR Dataset                     |Loudspeaker|Binaural     |
-|Low-frequency Response J - Listening Room, boomy    |350           |Newly added in v3.4.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|The ISOBEL Sound Field Dataset          |Subwoofer  |Binaural     |
-|Low-frequency Response K - Studio, boomy            |400           |Newly added in v3.6.0          |0Hz-150Hz      |20Hz-120Hz +/-3.0dB|Derived from multiple RIR Datasets      |Mixed      |Binaural     |
 
 
 ---
