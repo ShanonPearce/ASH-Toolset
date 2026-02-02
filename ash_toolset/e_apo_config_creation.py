@@ -10,11 +10,9 @@ Created on Fri Aug 18 23:20:14 2023
 from os.path import join as pjoin
 import os
 from pathlib import Path
-import time
 import logging
 from datetime import date
 from ash_toolset import constants as CN
-from scipy.io import wavfile
 import numpy as np
 from ash_toolset import helper_functions as hf
 import dearpygui.dearpygui as dpg
@@ -31,12 +29,12 @@ log_info=1
 
 
  
-def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, gain_adjustment=None, spatial_res=1, upmix_method='Method A', side_delay=0, rear_delay=0, gui_logger=None):
+def write_ash_e_apo_config(primary_path, hpcf_dict, brir_meta_dict, audio_channels,  spatial_res=1, upmix_method=CN.UPMIXING_METHODS[0], side_delay=0, rear_delay=0, gui_logger=None):
     """
     Function creates equalizer APO configuration file to perform relevant convolution commands. This file needs to be loaded into config.txt
     :param primary_path: string, base path to save files to
     :param hpcf_dict: dict, dictionary containing hpcf related metadata
-    :param brir_dict: dict, dictionary containing brir related metadata
+    :param brir_meta_dict: dict, dictionary containing brir related metadata
     :param primary_path: string, selected audio channel configuration
     :param spatial_res: int, spatial resolution, 0= low, 1 = moderate, 2 = high, 3 = full
     :param gain_adjustment: float, a value to adjust gain with
@@ -44,16 +42,9 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
     :return: float containing overall gain
     """ 
     out_file=''
-    additional_gain=CN.HRTF_A_GAIN_ADDIT#
-    #impulse
-    fft_size=CN.N_FFT
-    impulse=np.zeros(fft_size)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat = hf.mag2db(fr_flat_mag)
     preamp=0.0
     
-    if upmix_method == 'Method A':
+    if upmix_method == CN.UPMIXING_METHODS[0]:
         gain_adjust_upmix = 0.8128
         upmix_factor_front=0.5
         upmix_factor_side=0.3 
@@ -81,27 +72,27 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
         if not headphone or headphone == '' or not sample or sample == '':
             enable_hpcf_conv=False #dont proceed with hpcf convolution if no headphone or sample provided
         
-        enable_brir_conv = brir_dict.get('enable_conv')
-        brir_set_folder=brir_dict.get('brir_set_folder')
-        brir_set_name=brir_dict.get('brir_set_name')
+        enable_brir_conv = brir_meta_dict.get('enable_conv')
+        brir_set_folder=brir_meta_dict.get('brir_set_folder')
+        brir_set_name=brir_meta_dict.get('brir_set_name')
         if not brir_set_name or brir_set_name == '' or not brir_set_folder or brir_set_folder == '':
             enable_brir_conv=False #dont proceed with brir convolution if no set name provided
         
-        mute_fl=brir_dict.get('mute_fl')
-        mute_fr=brir_dict.get('mute_fr')
-        mute_c=brir_dict.get('mute_c')
-        mute_sl=brir_dict.get('mute_sl')
-        mute_sr=brir_dict.get('mute_sr')
-        mute_rl=brir_dict.get('mute_rl')
-        mute_rr=brir_dict.get('mute_rr')
-        gain_oa=brir_dict.get('gain_oa')
-        gain_fl=brir_dict.get('gain_fl')
-        gain_fr=brir_dict.get('gain_fr')
-        gain_c=brir_dict.get('gain_c')
-        gain_sl=brir_dict.get('gain_sl')
-        gain_sr=brir_dict.get('gain_sr')
-        gain_rl=brir_dict.get('gain_rl')
-        gain_rr=brir_dict.get('gain_rr')
+        mute_fl=brir_meta_dict.get('mute_fl')
+        mute_fr=brir_meta_dict.get('mute_fr')
+        mute_c=brir_meta_dict.get('mute_c')
+        mute_sl=brir_meta_dict.get('mute_sl')
+        mute_sr=brir_meta_dict.get('mute_sr')
+        mute_rl=brir_meta_dict.get('mute_rl')
+        mute_rr=brir_meta_dict.get('mute_rr')
+        gain_oa=brir_meta_dict.get('gain_oa')
+        gain_fl=brir_meta_dict.get('gain_fl')
+        gain_fr=brir_meta_dict.get('gain_fr')
+        gain_c=brir_meta_dict.get('gain_c')
+        gain_sl=brir_meta_dict.get('gain_sl')
+        gain_sr=brir_meta_dict.get('gain_sr')
+        gain_rl=brir_meta_dict.get('gain_rl')
+        gain_rr=brir_meta_dict.get('gain_rr')
         if mute_fl == True:
             gain_fl=-100
         if mute_fr == True:
@@ -117,21 +108,21 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
         if mute_rr == True:
             gain_rr=-100
             
-        elev_fl=brir_dict.get('elev_fl')
-        elev_fr=brir_dict.get('elev_fr')
-        elev_c=brir_dict.get('elev_c')
-        elev_sl=brir_dict.get('elev_sl')
-        elev_sr=brir_dict.get('elev_sr')
-        elev_rl=brir_dict.get('elev_rl')
-        elev_rr=brir_dict.get('elev_rr')
+        elev_fl=brir_meta_dict.get('elev_fl')
+        elev_fr=brir_meta_dict.get('elev_fr')
+        elev_c=brir_meta_dict.get('elev_c')
+        elev_sl=brir_meta_dict.get('elev_sl')
+        elev_sr=brir_meta_dict.get('elev_sr')
+        elev_rl=brir_meta_dict.get('elev_rl')
+        elev_rr=brir_meta_dict.get('elev_rr')
         
-        azim_fl=brir_dict.get('azim_fl')
-        azim_fr=brir_dict.get('azim_fr')
-        azim_c=brir_dict.get('azim_c')
-        azim_sl=brir_dict.get('azim_sl')
-        azim_sr=brir_dict.get('azim_sr')
-        azim_rl=brir_dict.get('azim_rl')
-        azim_rr=brir_dict.get('azim_rr')
+        azim_fl=brir_meta_dict.get('azim_fl')
+        azim_fr=brir_meta_dict.get('azim_fr')
+        azim_c=brir_meta_dict.get('azim_c')
+        azim_sl=brir_meta_dict.get('azim_sl')
+        azim_sr=brir_meta_dict.get('azim_sr')
+        azim_rl=brir_meta_dict.get('azim_rl')
+        azim_rr=brir_meta_dict.get('azim_rr')
         
 
         #find file names for desired brirs
@@ -174,18 +165,9 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_dict, audio_channels, g
         conv_hpcf_command = 'Convolution: ..\\HpCFs\\FIRs\\'+brand_formatted+'\\'+ hpcf_name_wav
         conv_brir_rel_dir = 'Convolution: ..\\BRIRs\\'+brir_set_formatted+'\\'
    
-        #calculate overall gain to prevent clipping
-        output_fr_db = fr_flat
-        max_level_db=0
-        if enable_hpcf_conv == True:
-            #assume -6dB is peak for all hpcfs
-            max_level_db=max_level_db-6
-  
-        max_level_db = max_level_db + additional_gain
-        preamp=preamp-max_level_db+gain_oa
+        #use overall gain as basis for preamp, user defined or auto adjusted
+        preamp=preamp+gain_oa
         #override gain if a value is passed into function
-        if gain_adjustment is not None:
-            preamp=preamp+gain_adjustment
         preamp = round(preamp,1)
         if preamp > 50 or preamp < -100:
             log_string = 'invalid gains calculated: ' + str(preamp)
@@ -541,32 +523,7 @@ def get_hrtf_type_from_dir(brir_set, spatial_res=1):
     
     return hrtf_type
     
-def get_as_gain_from_dir(brir_set):
-    """
-    Function reads BRIR folders in output directory and returns float containing gain for acoustic space.
-    :param brir_set: string, name of brir set
-    :param spatial_res: int, spatial resolution
-    :return: float containing gain for acoustic space
-    """  
-    
-    gain=0#default value
-    
-    try:
 
-        #find hrtf type from file name
-        brir_set_formatted = brir_set.replace(" ", "_")       
-        ac_list=CN.AC_SPACE_LIST_SHORT
-
-        for idx, x in enumerate(ac_list):
-                ac_name_delim = '_'+x+'_'
-                if ac_name_delim in brir_set_formatted:
-                    gain=CN.AC_SPACE_GAINS[idx]
-    
-    except Exception as ex:
-        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)   
-    
-    return gain
-     
     
 
     
@@ -627,244 +584,146 @@ def get_exported_hp_list(primary_path, delimiters, gui_logger=None):
     except Exception as ex:
         hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)
         return []
-    
-def est_peak_gain_from_dir(primary_path, brir_set, hpcf_dict, brir_dict, gain_config=0, calc_mode=0, channel_config = '2.0 Stereo', freq_mode='default'):
+ 
+
+
+def est_peak_gain_from_dir(
+    primary_path,
+    brir_set,
+    hpcf_dict,
+    brir_meta_dict,
+    gain_config=0,
+    calc_mode=0,
+    channel_config='2.0 Stereo',
+    freq_mode='default'
+):
     """
-    Function reads BRIR folders in output directory and returns float containing estimated peak gain.
-    :param primary_path: string, base path
-    :param brir_set: string, name of brir set
-    :param calc_mode: int, calculation mode, 0 = max, 1 = mean
-    :return: float containing estimated peak gain
-    """  
-    n_fft=CN.N_FFT
-    peak_gain=0#default value
-    impulse=np.zeros(n_fft)
-    impulse[0]=1
-    fr_flat_mag = np.abs(np.fft.fft(impulse))
-    fr_flat = hf.mag2db(fr_flat_mag)
-    
+    Estimate peak gain from BRIRs and optional HpCF convolution.
+
+    Args:
+        primary_path (str): Base path to project folders.
+        brir_set (str): Name of BRIR set.
+        hpcf_dict (dict): Headphone correction FIR info.
+        brir_meta_dict (dict): BRIR metadata dict.
+        gain_config (float): Overall gain to add.
+        calc_mode (int): 0=max, 1=mean
+        channel_config (str): '2.0 Stereo', '5.1 Surround', '7.1 Surround'
+        freq_mode (str): 'default', 'Align Low Frequencies', 'Align Mid Frequencies'
+
+    Returns:
+        float: Estimated peak gain (dB)
+    """
     try:
-        enable_hpcf_conv = hpcf_dict.get('enable_conv')
-        enable_brir_conv = brir_dict.get('enable_conv')
-        
-        spatial_res=0
-        mute_fl=brir_dict.get('mute_fl')
-        mute_fr=brir_dict.get('mute_fr')
-        mute_c=brir_dict.get('mute_c')
-        mute_sl=brir_dict.get('mute_sl')
-        mute_sr=brir_dict.get('mute_sr')
-        mute_rl=brir_dict.get('mute_rl')
-        mute_rr=brir_dict.get('mute_rr')
-        gain_oa=brir_dict.get('gain_oa')
-        gain_fl=brir_dict.get('gain_fl')
-        gain_fr=brir_dict.get('gain_fr')
-        gain_c=brir_dict.get('gain_c')
-        gain_sl=brir_dict.get('gain_sl')
-        gain_sr=brir_dict.get('gain_sr')
-        gain_rl=brir_dict.get('gain_rl')
-        gain_rr=brir_dict.get('gain_rr')
-        if mute_fl == True:
-            gain_fl=-100
-        if mute_fr == True:
-            gain_fr=-100
-        if mute_c == True:
-            gain_c=-100
-        if mute_sl == True:
-            gain_sl=-100
-        if mute_sr == True:
-            gain_sr=-100
-        if mute_rl == True:
-            gain_rl=-100
-        if mute_rr == True:
-            gain_rr=-100
-        gain_fl_mag=hf.db2mag(gain_fl)
-        gain_fr_mag=hf.db2mag(gain_fr)
-        gain_c_mag=hf.db2mag(gain_c)
-        gain_sl_mag=hf.db2mag(gain_sl)
-        gain_sr_mag=hf.db2mag(gain_sr)
-        gain_rl_mag=hf.db2mag(gain_rl)
-        gain_rr_mag=hf.db2mag(gain_rr)
-        elev_fl=brir_dict.get('elev_fl')
-        elev_fr=brir_dict.get('elev_fr')
-        elev_c=brir_dict.get('elev_c')
-        elev_sl=brir_dict.get('elev_sl')
-        elev_sr=brir_dict.get('elev_sr')
-        elev_rl=brir_dict.get('elev_rl')
-        elev_rr=brir_dict.get('elev_rr')
-        azim_fl=brir_dict.get('azim_fl')
-        azim_fr=brir_dict.get('azim_fr')
-        azim_c=brir_dict.get('azim_c')
-        azim_sl=brir_dict.get('azim_sl')
-        azim_sr=brir_dict.get('azim_sr')
-        azim_rl=brir_dict.get('azim_rl')
-        azim_rr=brir_dict.get('azim_rr')
-  
-        
-        brir_name_wav_fl = 'BRIR' + '_E' + str(elev_fl) + '_A' + str(azim_fl) + '.wav'
-        brir_name_wav_fr = 'BRIR' + '_E' + str(elev_fr) + '_A' + str(azim_fr) + '.wav'
-        brir_name_wav_c = 'BRIR' + '_E' + str(elev_c) + '_A' + str(azim_c) + '.wav'
-        brir_name_wav_sl = 'BRIR' + '_E' + str(elev_sl) + '_A' + str(azim_sl) + '.wav'
-        brir_name_wav_sr = 'BRIR' + '_E' + str(elev_sr) + '_A' + str(azim_sr) + '.wav'
-        brir_name_wav_rl = 'BRIR' + '_E' + str(elev_rl) + '_A' + str(azim_rl) + '.wav'
-        brir_name_wav_rr = 'BRIR' + '_E' + str(elev_rr) + '_A' + str(azim_rr) + '.wav'
-        
-        result_spectrum_l = np.copy(fr_flat)
-        result_spectrum_r = np.copy(fr_flat)
+        n_fft = CN.N_FFT
+        # Use half-spectrum reference (RFFT)
+        result_spectrum_l = np.copy(CN.FR_FLAT_DB_RFFT)
+        result_spectrum_r = np.copy(CN.FR_FLAT_DB_RFFT)
 
-        if enable_hpcf_conv == True:
-            #get max gain from HpCF
-            brand_folder = hpcf_dict.get('brand')
-            brand_formatted = brand_folder.replace(" ", "_")
-            headphone = hpcf_dict.get('headphone')
-            headphone_formatted = headphone.replace(" ", "_")
-            sample = hpcf_dict.get('sample')
-            sample_formatted = sample.replace(" ", "_")
-            out_file_dir_wav = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS,'FIRs',brand_formatted)
-            hpcf_name_wav = headphone_formatted + '_' + sample_formatted + '.wav'
-            out_file_path = pjoin(out_file_dir_wav, hpcf_name_wav)
-            # if not os.path.exists(out_file_path):
-            #     print("Missing file:", out_file_path)
-            # else:
-            #     print("Found file:", out_file_path, "Size:", os.path.getsize(out_file_path))
-            try: 
-                samplerate, data = hf.read_wav_file(out_file_path)
-                fir_array = data
-            except:
-                samplerate, data = wavfile.read(out_file_path)
-                fir_array = data / (2.**31)
-            data_pad=np.zeros(n_fft)
-            data_pad[0:(CN.HPCF_FIR_LENGTH-1)]=fir_array[0:(CN.HPCF_FIR_LENGTH-1)]
-            data_fft = np.fft.fft(data_pad)
-            output_fr = np.abs(data_fft)
-            output_fr_db=hf.mag2db(output_fr)
-            result_spectrum_l=np.add(result_spectrum_l,output_fr_db)
-            result_spectrum_r=np.add(result_spectrum_r,output_fr_db)
-            max_level_hpcf_db = round(np.max(output_fr_db),1)
+        # --- Helper: convert gain/mute ---
+        def get_channel_mag(gain_key, mute_key):
+            gain = brir_meta_dict.get(gain_key, 0)
+            if brir_meta_dict.get(mute_key, False):
+                gain = -100
+            return hf.db2mag(gain)
 
-        if enable_brir_conv == True:
-            #get max gain from BRIRs
-            #find file names for desired brirs
-            brir_set_formatted = brir_set.replace(" ", "_")
-            brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_formatted)
-            brir_in_arr_l=np.zeros(n_fft)
-            brir_in_arr_r=np.zeros(n_fft)
-            #find specific directions
+        gains_mag = {
+            'fl': get_channel_mag('gain_fl', 'mute_fl'),
+            'fr': get_channel_mag('gain_fr', 'mute_fr'),
+            'c':  get_channel_mag('gain_c',  'mute_c'),
+            'sl': get_channel_mag('gain_sl', 'mute_sl'),
+            'sr': get_channel_mag('gain_sr', 'mute_sr'),
+            'rl': get_channel_mag('gain_rl', 'mute_rl'),
+            'rr': get_channel_mag('gain_rr', 'mute_rr')
+        }
+        
+        # --- Zero out unused channels based on channel_config ---
+        if channel_config == '2.0 Stereo':
+            gains_mag['c']  = 0
+            gains_mag['sl'] = 0
+            gains_mag['sr'] = 0
+            gains_mag['rl'] = 0
+            gains_mag['rr'] = 0
+        elif channel_config == '5.1 Surround':
+            gains_mag['sl'] = 0
+            gains_mag['sr'] = 0
+        elif channel_config == '7.1 Surround':
+            # all channels used, nothing to zero
+            pass
+
+        # --- Helper: BRIR filename ---
+        def brir_fname(prefix, elev, azim):
+            return f"{prefix}_E{elev}_A{azim}.wav"
+
+        brir_files = {
+            'fl': brir_fname('BRIR', brir_meta_dict.get('elev_fl'), brir_meta_dict.get('azim_fl')),
+            'fr': brir_fname('BRIR', brir_meta_dict.get('elev_fr'), brir_meta_dict.get('azim_fr')),
+            'c':  brir_fname('BRIR', brir_meta_dict.get('elev_c'),  brir_meta_dict.get('azim_c')),
+            'sl': brir_fname('BRIR', brir_meta_dict.get('elev_sl'), brir_meta_dict.get('azim_sl')),
+            'sr': brir_fname('BRIR', brir_meta_dict.get('elev_sr'), brir_meta_dict.get('azim_sr')),
+            'rl': brir_fname('BRIR', brir_meta_dict.get('elev_rl'), brir_meta_dict.get('azim_rl')),
+            'rr': brir_fname('BRIR', brir_meta_dict.get('elev_rr'), brir_meta_dict.get('azim_rr'))
+        }
+
+        # --- HpCF convolution ---
+        if hpcf_dict.get('enable_conv', False):
+            brand_fmt = hpcf_dict.get('brand', '').replace(" ", "_")
+            hp_fmt = hpcf_dict.get('headphone', '').replace(" ", "_")
+            sample_fmt = hpcf_dict.get('sample', '').replace(" ", "_")
+            hpcf_path = pjoin(primary_path, CN.PROJECT_FOLDER_HPCFS, 'FIRs', brand_fmt,
+                              f"{hp_fmt}_{sample_fmt}.wav")
+            sr, data = hf.read_wav_file(hpcf_path)
+            data_pad = hf.pad_or_truncate_1d(data, n_fft)
+            output_fr_db = hf.mag2db(np.abs(np.fft.rfft(data_pad)))
+            result_spectrum_l += output_fr_db
+            result_spectrum_r += output_fr_db
+
+        # --- BRIR convolution ---
+        if brir_meta_dict.get('enable_conv', False):
+            brir_set_fmt = brir_set.replace(" ", "_")
+            brirs_path = pjoin(primary_path, CN.PROJECT_FOLDER_BRIRS, brir_set_fmt)
+
+            brir_acc_l = np.zeros(n_fft)
+            brir_acc_r = np.zeros(n_fft)
+
             for root, dirs, files in os.walk(brirs_path):
-                for filename in files:
-                    if channel_config == '2.0 Stereo' or channel_config == '5.1 Surround' or channel_config == '7.1 Surround':
-                        if filename == brir_name_wav_fl:
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_fl_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_fl_mag))
-                        if filename == brir_name_wav_fr:
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_fr_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_fr_mag))
-                    if channel_config == '5.1 Surround' or channel_config == '7.1 Surround':
-                        if filename == brir_name_wav_c:#center
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_c_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_c_mag))
-                        if filename == brir_name_wav_c:#subwoofer
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_c_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_c_mag))
-                        if filename == brir_name_wav_rl:
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_rl_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_rl_mag))
-                        if filename == brir_name_wav_rr:
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_rr_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_rr_mag))
-                    if channel_config == '7.1 Surround':
-                        if filename == brir_name_wav_sl:
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_sl_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_sl_mag))
-                        if filename == brir_name_wav_sr:
-                            #read wav files
-                            wav_fname = pjoin(root, filename)
-                            samplerate, fir_array = hf.read_wav_file(wav_fname)
-                            fir_length = min(len(fir_array),n_fft)
-                            #load into separate array for each channel
-                            brir_in_arr_l[0:fir_length]=np.add(brir_in_arr_l[0:fir_length],np.multiply(fir_array[0:fir_length,0],gain_sr_mag))
-                            brir_in_arr_r[0:fir_length]=np.add(brir_in_arr_r[0:fir_length],np.multiply(fir_array[0:fir_length,1],gain_sr_mag))             
-            #calculate peak gain from BRIRs
-            #need to take into account: overall gain from config, individual channel gains, hpcf gain, & brir gains
-            if freq_mode == 'Align Low Frequencies':#low frequency mode - only assess low frequency levels
-                min_freq = 10
-                max_freq = 120
-            elif freq_mode == 'Align Mid Frequencies':#mid frequency mode - only assess mid frequency levels
-                min_freq = 800
-                max_freq = 1200
+                for ch_key, fname in brir_files.items():
+                    if fname in files:
+                        wav_path = pjoin(root, fname)
+                        sr, brir_data = hf.read_wav_file(wav_path)
+                        fir_len = min(len(brir_data), n_fft)
+                        brir_acc_l[:fir_len] += brir_data[:fir_len,0] * gains_mag[ch_key]
+                        brir_acc_r[:fir_len] += brir_data[:fir_len,1] * gains_mag[ch_key]
+
+            # --- Determine frequency range ---
+            if freq_mode == CN.AUTO_GAIN_METHODS[2]:
+                min_f, max_f = 10, 120
+            elif freq_mode == CN.AUTO_GAIN_METHODS[3]:
+                min_f, max_f = 800, 1200
             else:
-                min_freq = 10
-                max_freq = 19000
-            data_fft = np.fft.fft(brir_in_arr_l[0:CN.N_FFT])
-            mag_fft=np.abs(data_fft)
-            mag_fft = hf.level_spectrum_ends(mag_fft, min_freq, max_freq, smooth_win = 0)
-            db_fft = hf.mag2db(mag_fft)
-            result_spectrum_l=np.add(result_spectrum_l,db_fft)
-            
-            data_fft = np.fft.fft(brir_in_arr_r[0:CN.N_FFT])
-            mag_fft=np.abs(data_fft)
-            mag_fft = hf.level_spectrum_ends(mag_fft, min_freq, max_freq, smooth_win = 0)
-            db_fft = hf.mag2db(mag_fft)
-            result_spectrum_r=np.add(result_spectrum_r,db_fft)
-            
-        max_db_l = np.max(result_spectrum_l)
-        max_db_r = np.max(result_spectrum_r)
-        
-        #finalise gain
-        if calc_mode == 1:
-            peak_gain = peak_gain+np.mean([max_db_l,max_db_r])
-        else:
-            peak_gain = peak_gain+np.max([max_db_l,max_db_r])
-        if enable_brir_conv == True or enable_hpcf_conv == True:
-            peak_gain = peak_gain+gain_config
-        peak_gain = round(peak_gain,1)
-        
-        
+                min_f, max_f = 10, 19000
 
-    except Exception as ex:  
-        hf.log_with_timestamp(f"Error: {ex}", log_type=2, exception=ex)
-        
-    return peak_gain
+            # --- FFT via rfft ---
+            for ch_acc, res_spectrum in zip([brir_acc_l, brir_acc_r], [result_spectrum_l, result_spectrum_r]):
+                mag = np.abs(np.fft.rfft(ch_acc[:n_fft]))
+                mag = hf.level_spectrum_ends(mag, min_f, max_f, smooth_win=0)
+                res_spectrum += hf.mag2db(mag)
+
+        # --- Peak gain ---
+        max_l = np.max(result_spectrum_l)
+        max_r = np.max(result_spectrum_r)
+        peak_gain = np.mean([max_l, max_r]) if calc_mode==1 else max(max_l, max_r)
+
+        if hpcf_dict.get('enable_conv', False) or brir_meta_dict.get('enable_conv', False):
+            peak_gain += gain_config
+
+        return round(peak_gain, 1)
+
+    except Exception as ex:
+        hf.log_with_timestamp(f"Error in est_peak_gain_from_dir: {ex}", log_type=2, exception=ex)
+        return 0.0  
 
 
-  
-
-
-def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config='2.0 Stereo'):
+def dataset_all_brirs_found(primary_path, brir_set, brir_meta_dict, channel_config='2.0 Stereo'):
     """
     Function reads BRIR folders in output directory and returns bool indicating if all BRIRs 
     were found AND are fresh based on timestamp comparison.
@@ -872,24 +731,24 @@ def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config='2
 
     all_brirs_found = False
     try:
-        enable_brir_conv = brir_dict.get("enable_conv")
+        enable_brir_conv = brir_meta_dict.get("enable_conv")
 
         # --- Build expected filenames ---
-        elev_fl = brir_dict.get("elev_fl")
-        elev_fr = brir_dict.get("elev_fr")
-        elev_c  = brir_dict.get("elev_c")
-        elev_sl = brir_dict.get("elev_sl")
-        elev_sr = brir_dict.get("elev_sr")
-        elev_rl = brir_dict.get("elev_rl")
-        elev_rr = brir_dict.get("elev_rr")
+        elev_fl = brir_meta_dict.get("elev_fl")
+        elev_fr = brir_meta_dict.get("elev_fr")
+        elev_c  = brir_meta_dict.get("elev_c")
+        elev_sl = brir_meta_dict.get("elev_sl")
+        elev_sr = brir_meta_dict.get("elev_sr")
+        elev_rl = brir_meta_dict.get("elev_rl")
+        elev_rr = brir_meta_dict.get("elev_rr")
 
-        azim_fl = brir_dict.get("azim_fl")
-        azim_fr = brir_dict.get("azim_fr")
-        azim_c  = brir_dict.get("azim_c")
-        azim_sl = brir_dict.get("azim_sl")
-        azim_sr = brir_dict.get("azim_sr")
-        azim_rl = brir_dict.get("azim_rl")
-        azim_rr = brir_dict.get("azim_rr")
+        azim_fl = brir_meta_dict.get("azim_fl")
+        azim_fr = brir_meta_dict.get("azim_fr")
+        azim_c  = brir_meta_dict.get("azim_c")
+        azim_sl = brir_meta_dict.get("azim_sl")
+        azim_sr = brir_meta_dict.get("azim_sr")
+        azim_rl = brir_meta_dict.get("azim_rl")
+        azim_rr = brir_meta_dict.get("azim_rr")
 
         wav_fl = f"BRIR_E{elev_fl}_A{azim_fl}.wav"
         wav_fr = f"BRIR_E{elev_fr}_A{azim_fr}.wav"
@@ -946,7 +805,7 @@ def dataset_all_brirs_found(primary_path, brir_set, brir_dict, channel_config='2
 
             # --- Timestamp freshness check ---
             try:
-                ts_str = dpg.get_value("qc_e_apo_sel_brir_set_ts")
+                ts_str = dpg.get_value("e_apo_sel_brir_set_ts")
                 if ts_str not in (None, "", "0"):
                     run_ts = datetime.fromisoformat(ts_str)
                     tolerance = timedelta(seconds=10)

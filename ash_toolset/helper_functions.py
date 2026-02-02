@@ -16,15 +16,10 @@ from ash_toolset import constants as CN
 from os.path import join as pjoin
 import dearpygui.dearpygui as dpg
 import librosa
-from difflib import SequenceMatcher, _nlargest  # necessary imports of functions used by modified get_close_matches
-from thefuzz import fuzz
-from thefuzz import process
-import functools
 import os
 import re
 import requests
 import logging
-import gdown
 from SOFASonix import SOFAFile
 import sofar as sof
 import csv
@@ -42,14 +37,23 @@ import ast
 import json
 from pathlib import Path
 from scipy.signal import resample_poly
-import sounddevice as sd
-import numpy as np
-from numpy.fft import fft
+from urllib.parse import urlsplit, urlunsplit, quote
 from numpy import unwrap, diff
-from scipy.signal import savgol_filter, windows
-from scipy.ndimage import gaussian_filter1d
-from numpy.fft import fft, fftfreq
+from scipy.signal import  windows
 from numpy.fft import rfft, rfftfreq  
+from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import interp1d
+import platform
+import queue
+from scipy.optimize import minimize
+
+IS_WINDOWS = platform.system() == "Windows"
+# Try to import sounddevice safely
+try:
+    import sounddevice as sd
+    SD_AVAILABLE = True
+except Exception:
+    SD_AVAILABLE = False
 
 
 def plot_data(
@@ -83,9 +87,10 @@ def plot_data(
         mag_response = level_spectrum_ends(
             mag_response, 200, 19000, n_fft=n_fft
         )
-        mag_response = smooth_freq_octaves(
-            data=mag_response, n_fft=n_fft
-        )
+        # mag_response = smooth_freq_octaves(
+        #     data=mag_response, n_fft=n_fft
+        # )
+        mag_response = smooth_gaussian_octave(data=mag_response, n_fft=n_fft, fs=samp_freq, fraction=24)
 
     n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
     freq_array = np.arange(0, n_unique_pts) * (samp_freq / n_fft)
@@ -139,18 +144,18 @@ def plot_data(
 def _resolve_plot_tags(plot_dest):
     tag_map = {
         2: 'fde_series_tag',
-        1: 'qc_series_tag',
-        3: 'qc_ia_series_tag'
+        1: 'series_tag',
+        3: 'ia_series_tag'
     }
     x_axis_map = {
         2: 'fde_x_axis',
-        1: 'qc_x_axis',
-        3: 'qc_ia_x_axis'
+        1: 'x_axis',
+        3: 'ia_x_axis'
     }
     y_axis_map = {
         2: 'fde_y_axis',
-        1: 'qc_y_axis',
-        3: 'qc_ia_y_axis'
+        1: 'y_axis',
+        3: 'ia_y_axis'
     }
 
     return (
@@ -221,93 +226,95 @@ def plot_fir_generic(
         Optional manual y-axis limits.
     """
 
-    fir = _extract_fir(fir_array)
+    try:
+        fir = _extract_fir(fir_array)
+        
+        # Always zero-pad FIR if n_fft is larger
+        if n_fft > len(fir):
+            padded = np.zeros(n_fft, dtype=fir.dtype)
+            padded[:len(fir)] = fir
+            fir = padded
     
-    # Always zero-pad FIR if n_fft is larger
-    if n_fft > len(fir):
-        padded = np.zeros(n_fft, dtype=fir.dtype)
-        padded[:len(fir)] = fir
-        fir = padded
-
-    series_tag, x_axis_tag, y_axis_tag = _resolve_plot_tags(plot_dest)
-    if series_tag is None:
-        return
+        series_tag, x_axis_tag, y_axis_tag = _resolve_plot_tags(plot_dest)
+        if series_tag is None:
+            return
+        
+        #update user data dict with plot information, so that it can be regenerated when plot type changes
+        if plot_dest == CN.TAB_QC_CODE:
+            plot_type_tag = "plot_type"
+        elif plot_dest == CN.TAB_QC_IA_CODE:
+            plot_type_tag = "ia_plot_type"
+        else:
+            return
+        
+        plot_state = dpg.get_item_user_data(plot_type_tag)
+        if plot_state is None:
+            plot_state = {}
+        plot_state.clear()
+        plot_state.update(dict(
+            fir=fir,
+            title=title_name,
+            samp_freq=samp_freq,
+            n_fft=n_fft,
+            normalise=normalise,
+            level_ends=level_ends,
+            decay_start_ms=decay_start_ms,
+            decay_end_ms=decay_end_ms,
+            decay_step_ms=decay_step_ms,
+            decay_win_ms=decay_win_ms,
+            x_lim_adjust=x_lim_adjust,
+            x_lim_a=x_lim_a,
+            x_lim_b=x_lim_b,
+            plot_dest=plot_dest,
+            y_lim_adjust=y_lim_adjust,
+            y_lim_a=y_lim_a,
+            y_lim_b=y_lim_b,
+        ))
     
-    #update user data dict with plot information, so that it can be regenerated when plot type changes
-    if plot_dest == CN.TAB_QC_CODE:
-        plot_type_tag = "qc_plot_type"
-    elif plot_dest == CN.TAB_FDE_CODE:
-        plot_type_tag = "fde_plot_type"
-    elif plot_dest == CN.TAB_QC_IA_CODE:
-        plot_type_tag = "qc_ia_plot_type"
-    else:
-        return
+        # Clear existing plot data
+        dpg.set_value(series_tag, [[], []])
+        dpg.set_item_label(series_tag, title_name)
     
-    plot_state = dpg.get_item_user_data(plot_type_tag)
-    if plot_state is None:
-        plot_state = {}
-    plot_state.clear()
-    plot_state.update(dict(
-        fir=fir,
-        title=title_name,
-        samp_freq=samp_freq,
-        n_fft=n_fft,
-        normalise=normalise,
-        level_ends=level_ends,
-        decay_start_ms=decay_start_ms,
-        decay_end_ms=decay_end_ms,
-        decay_step_ms=decay_step_ms,
-        decay_win_ms=decay_win_ms,
-        x_lim_adjust=x_lim_adjust,
-        x_lim_a=x_lim_a,
-        x_lim_b=x_lim_b,
-        plot_dest=plot_dest,
-        y_lim_adjust=y_lim_adjust,
-        y_lim_a=y_lim_a,
-        y_lim_b=y_lim_b,
-    ))
-
-    # Clear existing plot data
-    dpg.set_value(series_tag, [[], []])
-    dpg.set_item_label(series_tag, title_name)
-
-    if view == "Magnitude Response":
-        _plot_magnitude_dpg(
-            fir, samp_freq, n_fft,
-            series_tag, x_axis_tag, y_axis_tag,
-            normalise, level_ends,
-            x_lim_adjust, x_lim_a, x_lim_b,
-            y_lim_adjust, y_lim_a, y_lim_b,smooth_win_base=smooth_win_base
-        )
-
-    elif view == "Impulse Response":
-        _plot_impulse_dpg(
-            fir, samp_freq,
-            series_tag, x_axis_tag, y_axis_tag,
-            x_lim_adjust, x_lim_a, x_lim_b,
-            y_lim_adjust, y_lim_a, y_lim_b
-        )
-
-    elif view == "Group Delay":
-        _plot_group_delay_dpg(
-            fir, samp_freq, n_fft,
-            series_tag, x_axis_tag, y_axis_tag,
-            x_lim_adjust, x_lim_a, x_lim_b,
-            y_lim_adjust, y_lim_a, y_lim_b
-        )
-
-    elif view == "Decay":
-        _plot_decay_dpg(
-            fir, samp_freq, n_fft,
-            series_tag, x_axis_tag, y_axis_tag,
-            decay_start_ms, decay_end_ms,
-            decay_step_ms, decay_win_ms,
-            x_lim_adjust, x_lim_a, x_lim_b,
-            y_lim_adjust, y_lim_a, y_lim_b
-        )
-
-    else:
-        raise ValueError(f"Unsupported view: {view}")
+        if view == "Magnitude Response" or view == "Summary Response":
+            _plot_magnitude_dpg(
+                fir, samp_freq, n_fft,
+                series_tag, x_axis_tag, y_axis_tag,
+                normalise, level_ends,
+                x_lim_adjust, x_lim_a, x_lim_b,
+                y_lim_adjust, y_lim_a, y_lim_b,smooth_win_base=smooth_win_base
+            )
+    
+        elif view == "Impulse Response":
+            _plot_impulse_dpg(
+                fir, samp_freq,
+                series_tag, x_axis_tag, y_axis_tag,
+                x_lim_adjust, x_lim_a, x_lim_b,
+                y_lim_adjust, y_lim_a, y_lim_b
+            )
+    
+        elif view == "Group Delay":
+            _plot_group_delay_dpg(
+                fir, samp_freq, n_fft,
+                series_tag, x_axis_tag, y_axis_tag,
+                x_lim_adjust, x_lim_a, x_lim_b,
+                y_lim_adjust, y_lim_a, y_lim_b
+            )
+    
+        elif view == "Decay":
+            _plot_decay_dpg(
+                fir, samp_freq, n_fft,
+                series_tag, x_axis_tag, y_axis_tag,
+                decay_start_ms, decay_end_ms,
+                decay_step_ms, decay_win_ms,
+                x_lim_adjust, x_lim_a, x_lim_b,
+                y_lim_adjust, y_lim_a, y_lim_b
+            )
+    
+        else:
+            raise ValueError(f"Unsupported view: {view}")
+            
+    except Exception as ex:
+        log_with_timestamp(f"Failed to generate plot: {ex}", log_type=2, exception=ex)
 
 def _plot_magnitude_dpg(
     fir, samp_freq, n_fft,
@@ -323,9 +330,10 @@ def _plot_magnitude_dpg(
     mag = np.abs(F)
 
     if level_ends:
-        mag = level_spectrum_ends(mag, 220, 19000, n_fft=n_fft)
+        mag = level_spectrum_ends(mag, 240, 19000, n_fft=n_fft)
     if x_lim_b > 200:
-        mag = smooth_freq_octaves(mag, n_fft=n_fft,fund_freq=100,win_size_base=smooth_win_base)
+        #mag = smooth_freq_octaves(mag, n_fft=n_fft,fund_freq=100,win_size_base=smooth_win_base)
+        mag = smooth_gaussian_octave(data=mag, n_fft=n_fft, fs=samp_freq, fraction=12)
 
     mag_db = 20 * np.log10(np.maximum(mag, 1e-12))
 
@@ -351,14 +359,27 @@ def _plot_magnitude_dpg(
 
 
 
+
 def _plot_impulse_dpg(
     fir, samp_freq,
     series_tag, x_axis_tag, y_axis_tag,
     x_lim_adjust, x_lim_a, x_lim_b,
-    y_lim_adjust, y_lim_a, y_lim_b
+    y_lim_adjust, y_lim_a, y_lim_b,
+    crop_samples=80,  # number of initial samples to crop
+    tail_fraction=0.3, # fraction of IR tail to check
+    zero_threshold=1e-6
 ):
-    
     _clear_decay_children(y_axis_tag, series_tag)
+    
+    # ----------------- Determine if long IR -----------------
+    tail_start = int(len(fir) * (1 - tail_fraction))
+    tail_vals = fir[tail_start:]
+    tail_nonzero = np.abs(tail_vals) >= zero_threshold
+
+    if np.any(tail_nonzero):
+        # Long IR: crop first N samples to avoid skewing scale
+        fir = fir[crop_samples:]
+
     t_ms = np.arange(len(fir)) / samp_freq * 1000
 
     dpg.set_value(series_tag, [t_ms, fir])
@@ -368,8 +389,10 @@ def _plot_impulse_dpg(
 
     _apply_axis_limits(
         x_axis_tag, y_axis_tag,
-        x_adj=False,y_adj=False,series_tag=series_tag, mode="time"
+        x_adj=False, y_adj=False, series_tag=series_tag, mode="time"
     )
+    
+    
 
 def _plot_group_delay_dpg(
     fir, samp_freq, n_fft,
@@ -429,7 +452,8 @@ def _plot_decay_dpg(
     mag_full = np.abs(F_full)
 
     # ALWAYS smooth (matches magnitude plot)
-    mag_full = smooth_freq_octaves(mag_full, n_fft=n_fft_full,fund_freq=100,win_size_base=6)
+    #mag_full = smooth_freq_octaves(mag_full, n_fft=n_fft_full,fund_freq=100,win_size_base=6)
+    mag_full = smooth_gaussian_octave(data=mag_full, n_fft=n_fft, fs=samp_freq, fraction=12)
 
     mag_db_full = 20 * np.log10(np.maximum(mag_full, 1e-12))
 
@@ -486,7 +510,8 @@ def _plot_decay_dpg(
         mag_slice = np.abs(F_slice)
 
         # ALWAYS smooth slice
-        mag_slice = smooth_freq_octaves(mag_slice, n_fft=n_fft,fund_freq=100,win_size_base=6)
+        #mag_slice = smooth_freq_octaves(mag_slice, n_fft=n_fft,fund_freq=100,win_size_base=6)
+        mag_slice = smooth_gaussian_octave(data=mag_slice, n_fft=n_fft, fs=samp_freq, fraction=12)
 
         mag_db_slice = 20 * np.log10(np.maximum(mag_slice, 1e-12))
 
@@ -564,7 +589,7 @@ def _apply_axis_limits(
     y_adj=False, y_a=-10, y_b=10,
     series_tag=None,
     x_margin=0.0,
-    y_margin=5.0,
+    y_margin=20.0,
     mode="magnitude",      # "magnitude" or "time"
     min_threshold=CN.THRESHOLD_CROP  # for time-domain
 ):
@@ -610,9 +635,9 @@ def _apply_axis_limits(
         y_max = y_med + y_upper
 
     elif mode == "time":
-        # For time domain, use absolute min/max but clip at threshold
         y_max = np.max(y_vals)
         y_min = np.min(y_vals)
+            
     else:
         y_min, y_max = np.min(y_vals), np.max(y_vals)
 
@@ -986,127 +1011,12 @@ def calc_group_delay_from_ir(
 
 
 
-def save_group_delay_to_csv(frequencies, group_delay_ms, filename="group_delay_analysis.csv"):
-    """
-    Saves frequency and group delay data to a CSV file.
-
-    Args:
-        frequencies (np.ndarray): Array of frequency values (Hz).
-        group_delay_ms (np.ndarray): Array of group delay values (ms).
-        filename (str): Name of the CSV file to save. Defaults to 'group_delay_analysis.csv'.
-    """
-    if not len(frequencies) == len(group_delay_ms):
-        raise ValueError("Frequencies and group delay arrays must be the same length.")
-    
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Frequency (Hz)", "Group Delay (ms)"])
-        for f, gd in zip(frequencies, group_delay_ms):
-            writer.writerow([f, gd])
-    
-    print(f"Group delay data saved to '{os.path.abspath(filename)}'")
 
 
 
 
-def create_weighted_list(length: int, randomize: bool = False, seed: int = None, hot_index: int = None, verbose: bool = True) -> list:
-    """
-    Creates a list of specified length where the sum of all elements is 1.
 
-    Modes:
-    - One-hot: Set a specific index to 1, all others to 0 (if hot_index is specified).
-    - Random: Generate random weights summing to 1 (if randomize=True).
-    - Uniform: All values equal, summing to 1 (default).
 
-    Parameters:
-    length (int): The number of elements in the list (must be > 0).
-    randomize (bool): If True, generate random weights.
-    seed (int, optional): Seed for reproducible randomness (only used if randomize=True).
-    hot_index (int, optional): If set, creates a one-hot list with this index set to 1.
-    verbose (bool): If True, prints the generated weightings.
-
-    Returns:
-    list: A list of floats where the sum is 1.
-
-    Raises:
-    ValueError: If parameters are invalid.
-    """
-    if length <= 0:
-        raise ValueError("Length must be a positive integer.")
-
-    if hot_index is not None:
-        if not 0 <= hot_index < length:
-            raise ValueError(f"hot_index must be between 0 and {length - 1}")
-        one_hot = [0.0] * length
-        one_hot[hot_index] = 1.0
-        if verbose:
-            print(f"One-hot weighting (index {hot_index}): {one_hot}")
-        return one_hot
-
-    if randomize:
-        rng = np.random.default_rng(seed)
-        weights = rng.random(length)
-        weights /= weights.sum()
-        weights_list = weights.tolist()
-        if verbose:
-            print(f"Random weightings (seed={seed}): {weights_list}")
-        return weights_list
-    else:
-        weights = np.ones(length) / length
-        weights_list = weights.tolist()
-        if verbose:
-            print(f"Uniform weightings: {weights_list}")
-        return weights_list
-
-def combine_measurements_4d(arr: np.ndarray) -> np.ndarray:
-    """
-    Combines impulse response samples (dimension 4) of multiple measurements
-    (dimension 2) by summing, reducing the number of measurements to 7.
-
-    Args:
-        arr: The input 4D NumPy array with shape (1, measurements, 2, samples).
-             'measurements' is assumed to be at least 7.
-
-    Returns:
-        A 4D NumPy array with shape (1, 7, 2, samples), where the samples
-        are summed from the original measurements.
-    """
-
-    if arr.ndim != 4:
-        raise ValueError("Input array must be 4-dimensional.")
-
-    if arr.shape[0] != 1:
-        raise ValueError("Dimension 1 must have length 1.")
-
-    if arr.shape[2] != 2:
-        raise ValueError("Dimension 3 must have length 2.")
-
-    num_measurements = arr.shape[1]
-
-    if num_measurements < 7:
-        raise ValueError("Dimension 2 must have length of at least 7.")
-
-    # Calculate the number of measurements to combine per output measurement
-    combine_per = num_measurements // 7
-
-    # Calculate the remaining measurements after even division
-    remainder = num_measurements % 7
-
-    # Initialize the output array
-    output_arr = np.zeros((1, 7, 2, arr.shape[3]))
-
-    # Combine measurements
-    for i in range(7):
-        start_idx = i * combine_per
-        end_idx = (i + 1) * combine_per
-
-        # Handle the remainder: distribute it to the first 'remainder' output measurements
-        if i < remainder:
-            end_idx += 1
-
-        output_arr[0, i, :, :] = np.sum(arr[0, start_idx:end_idx, :, :], axis=0)
-
-    return output_arr
 
 def reshape_array_to_two_dims(arr: np.ndarray) -> np.ndarray:
     """
@@ -1160,6 +1070,61 @@ def reshape_array_to_two_dims(arr: np.ndarray) -> np.ndarray:
     reshaped_arr = arr.reshape(new_shape)
 
     return reshaped_arr
+
+
+
+def reshape_array_to_two_dims_preserve_pairs(arr: np.ndarray) -> np.ndarray:
+    """
+    Reshapes a NumPy array to 2D while preserving pairs (length 2) if they exist.
+    
+    Logic:
+    1. Identifies the longest dimension (samples).
+    2. Checks for a 'pair' dimension (length 2).
+    3. If a pair exists, it ensures the final 2D array interleaves them (L, R, L, R...).
+    4. If no pair exists, it reverts to the original logic of flattening all 
+       non-sample dimensions into the first axis.
+    """
+    original_shape = arr.shape
+    num_dims = len(original_shape)
+
+    if num_dims == 0:
+        return arr
+    if num_dims == 1:
+        return arr.reshape(1, original_shape[0])
+
+    # 1. Identify the longest dimension (Time/Samples)
+    longest_dim_index = int(np.argmax(original_shape))
+    longest_dim = original_shape[longest_dim_index]
+
+    # 2. Identify pair axes (length 2) that are not the samples axis
+    pair_axes = [i for i, s in enumerate(original_shape) if s == 2 and i != longest_dim_index]
+
+    # Define the order of axes for transposition
+    # 'others' preserves the original relative order of all remaining dimensions
+    others = [i for i in range(num_dims) if i != longest_dim_index]
+
+    if pair_axes:
+        # We found a pair (e.g., Ears). 
+        # To keep them together (L, R, L, R), the pair axis MUST be the last 
+        # axis before the samples.
+        pair_axis = pair_axes[0]
+        others = [i for i in others if i != pair_axis]
+        
+        # New order: [Remaining..., Pair, Samples]
+        new_axes_order = others + [pair_axis] + [longest_dim_index]
+    else:
+        # No pair found: Original logic.
+        # New order: [Remaining..., Samples]
+        new_axes_order = others + [longest_dim_index]
+
+    # 3. Transpose to bring the dimensions into the correct priority
+    arr = arr.transpose(new_axes_order)
+
+    # 4. Calculate the product of all dimensions except the longest one
+    other_dims_product = np.prod([original_shape[i] for i in range(num_dims) if i != longest_dim_index])
+    
+    # 5. Final reshape
+    return arr.reshape(other_dims_product, longest_dim)
 
 
 def reshape_array_to_three_dims(arr: np.ndarray) -> np.ndarray:
@@ -1224,182 +1189,45 @@ def reshape_array_to_three_dims(arr: np.ndarray) -> np.ndarray:
     return reshaped_arr
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-def average_measurement_groups(
-    data: np.ndarray,
-    group_size: int,
-    shuffle: bool = False,
-    seed: int = None,
-    smoothing_method: str = "savgol",
-    window_size: int = 115,#75,205
-    polyorder: int = 3,#3
-    gaussian_sigma: float = 1.0,
-    ema_alpha: float = 0.3
-) -> np.ndarray:
+def reshape_to_4d(measurement_array: np.ndarray, first_dim: int) -> np.ndarray:
     """
-    Averages every group of `group_size` rows in a 2D array, with optional shuffling and smoothing.
+    Reshape a 2D array (measurements x samples) into a 4D array with shape (first_dim x N x 1 x samples),
+    redistributing measurements across the first three dimensions. If needed, fills remaining
+    positions with zeros.
 
     Parameters:
-        data (np.ndarray): 2D array of shape (measurements, samples)
-        group_size (int): Number of measurements to average per group
-        shuffle (bool): Whether to shuffle rows before grouping
-        seed (int): Seed for random shuffle reproducibility
-        smoothing_method (str): Smoothing type: 'savgol', 'moving_average', 'gaussian', 'median', 'ema'
-        window_size (int): Window size for moving average, median, or Savitzky-Golay
-        polyorder (int): Polynomial order for Savitzky-Golay filter
-        gaussian_sigma (float): Sigma for Gaussian filter
-        ema_alpha (float): Alpha for exponential moving average
+        measurement_array (np.ndarray): A 2D NumPy array of shape (measurements x samples)
+        first_dim (int): The desired size of the first dimension (e.g., 7)
 
     Returns:
-        np.ndarray: Smoothed and averaged 2D array of shape (measurements // group_size, samples)
+        np.ndarray: A 4D array of shape (first_dim x N x 1 x samples)
     """
-    if data.ndim != 2:
-        raise ValueError("Input must be a 2D array (measurements x samples).")
-    if group_size < 1:
-        raise ValueError("group_size must be >= 1")
+    measurements, samples = measurement_array.shape
 
-    num_measurements, num_samples = data.shape
-    if num_measurements < group_size:
-        raise ValueError(f"Array must have at least {group_size} measurements.")
+    # Compute the number of slots needed per group
+    N = math.ceil(measurements / first_dim)
 
-    if shuffle:
-        rng = np.random.default_rng(seed)
-        data = rng.permutation(data)
+    # Initialize the output array with zeros
+    output = np.zeros((first_dim, N, 1, samples), dtype=measurement_array.dtype)
 
-    usable_rows = (num_measurements // group_size) * group_size
-    data_trimmed = data[:usable_rows]
-    reshaped = data_trimmed.reshape(-1, group_size, num_samples)
-    averaged = reshaped.mean(axis=1)
+    # Fill the array by distributing measurements across first_dim and N
+    for idx in range(measurements):
+        group = idx % first_dim  # Group index along the first dimension
+        slot = idx // first_dim  # Slot index along the second dimension
+        output[group, slot, 0, :] = measurement_array[idx]
 
-    # Apply smoothing to each row if specified
-    if smoothing_method:
-        for i in range(averaged.shape[0]):
-            row = averaged[i]
-            if smoothing_method == "savgol" and window_size > 1 and window_size % 2 == 1 and polyorder < window_size:
-                row = savgol_filter(row, window_length=window_size, polyorder=polyorder)
-            elif smoothing_method == "moving_average":
-                kernel = np.ones(window_size, dtype=np.float32) / window_size
-                row = np.convolve(row, kernel, mode='same')
-            elif smoothing_method == "gaussian":
-                row = gaussian_filter1d(row, sigma=gaussian_sigma)
-            elif smoothing_method == "median":
-                row = medfilt(row, kernel_size=window_size)
-            elif smoothing_method == "ema":
-                row = exponential_moving_average(row, alpha=ema_alpha)
-            averaged[i] = row
-
-    return averaged
+    return output
 
 
-def load_average_and_save_npy_directory(
-    directory: str,
-    output_file: str,
-    group_size: int = 7,#13 for combined_b, 20 for combined_c, 7 for d
-    shuffle: bool = True,#True for combined_b
-    seed: int = 120,#8,11,12 for combined_b, 19,29,80 for combined_c
-    smoothing_method: str = "savgol",
-    window_size: int = 2499,#115,135 for combined_b, 199 for combined_c, 39 for d
-    polyorder: int = 3,
-    gaussian_sigma: float = 1.0,
-    ema_alpha: float = 0.3
-) -> np.ndarray:
-    """
-    Loads all .npy files from a directory, crops arrays to same length,
-    averages them in groups (with optional shuffle and smoothing),
-    then saves the final combined array to disk.
-
-    Parameters:
-        directory (str): Folder containing .npy files (each 2D)
-        output_file (str): Where to save the final result
-        group_size (int): How many rows to average per group
-        shuffle (bool): Shuffle rows before averaging
-        seed (int): Random seed for reproducibility
-        smoothing_method (str): 'savgol', 'moving_average', 'gaussian', 'median', 'ema'
-        window_size (int): Smoothing window size
-        polyorder (int): Savitzky-Golay polyorder
-        gaussian_sigma (float): Sigma for Gaussian smoothing
-        ema_alpha (float): Alpha for EMA
-
-    Returns:
-        np.ndarray: Final stacked and smoothed array
-    """
-    arrays = []
-    min_samples = None
-    npy_files = sorted(f for f in os.listdir(directory) if f.endswith('.npy'))
-
-    if not npy_files:
-        raise FileNotFoundError(f"No .npy files found in directory: {directory}")
-
-    print(f"Found {len(npy_files)} files. Loading...")
-
-    for idx, file in enumerate(npy_files, start=1):
-        path = os.path.join(directory, file)
-        data = np.load(path)
-
-        if data.ndim != 2:
-            print(f"Skipping '{file}': not a 2D array.")
-            continue
-
-        if min_samples is None or data.shape[1] < min_samples:
-            min_samples = data.shape[1]
-
-        arrays.append(data)
-        print(f"[{idx}/{len(npy_files)}] Loaded '{file}' with shape {data.shape}")
-
-    processed = []
-    for i, array in enumerate(arrays, start=1):
-        cropped = array[:, :min_samples]
-        grouped = average_measurement_groups(
-            cropped,
-            group_size=group_size,
-            shuffle=shuffle,
-            seed=seed,
-            smoothing_method=smoothing_method,
-            window_size=window_size,
-            polyorder=polyorder,
-            gaussian_sigma=gaussian_sigma,
-            ema_alpha=ema_alpha
-        )
-        processed.append(grouped)
-        print(f"Processed {i}/{len(arrays)} arrays -> shape {grouped.shape}")
-
-    final_array = np.vstack(processed)
-    print(f"\nFinal array shape: {final_array.shape}")  # New line added
-    
-    # Ensure output directory exists
-    output_dir = os.path.dirname(output_file)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print(f"Created output directory: {output_dir}")
-
-    np.save(output_file, final_array)
-    print(f"Saved combined array to '{output_file}'")
-    
-    return final_array
 
 
-def compute_best_shift(reference: np.ndarray, target: np.ndarray, max_shift: int = 1024) -> int:
-    """
-    Compute the lag that maximizes cross-correlation between reference and target.
-    The max_shift parameter limits how far the target is allowed to shift.
-    """
-    corr = correlate(target, reference, mode="full")
-    lags = np.arange(-len(target) + 1, len(reference))
-    center = len(corr) // 2
-    window = slice(center - max_shift, center + max_shift + 1)
-    best_lag = lags[window][np.argmax(corr[window])]
-    return best_lag
+
+
+
+
+
+
+
 
 
 
@@ -1455,21 +1283,25 @@ def plot_average_measurements(file_path: str):
 
 
 
-def expand_measurements_with_pitch_shift(
+
+def expand_measurements(
     measurement_array: np.ndarray,
     desired_measurements: int,
     fs: int = CN.SAMP_FREQ,
     pitch_range: tuple = (-12, 12),
     shuffle: bool = False,
-    antialias: bool = False,   # unused
-    seed=65529189939976765123732762606216328531,
-    plot_sample: int = 0,      # unused
+    seed="random",#"random"
     num_threads: int = 4,
+    plot_first_n: int = 1,
+    plot: bool = False, 
     gui_logger=None,
     cancel_event=None,
     pitch_shift_comp=True,
+    comp_strength=1.0,
     ignore_ms: float = CN.IGNORE_MS,
-    report_progress=0
+    report_progress=0, 
+    pitch_shift_mode: str = "librosa", #resample or librosa
+    preserve_originals: bool = False#False
 ) -> tuple[np.ndarray, int]:
     """
     Expand a measurement array by generating pitch-shifted variants.
@@ -1485,8 +1317,8 @@ def expand_measurements_with_pitch_shift(
     # ------------------------------------------------------------
     # Constants & Setup
     # ------------------------------------------------------------
-    n_fft        = 4096
-    truncate_len = 512
+    n_fft        = 16384#4096,8192,32768,16384
+    truncate_len = 4096#512,8192,
     f_min        = 20
     f_max        = 20000
 
@@ -1495,94 +1327,578 @@ def expand_measurements_with_pitch_shift(
 
     output = np.empty((desired_measurements, sample_len), dtype=np.float64)
     status = 1
-
-
+    
 
     # ------------------------------------------------------------
     # Precompute magnitude spectra of ORIGINAL IRs for compensation
     # ------------------------------------------------------------
     orig_mag = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
+    
+    # ------------------------------------------------------------
+    # === NEW: GLOBAL REFERENCE (mean dB response) ===
+    # ------------------------------------------------------------
+    orig_db = 20.0 * np.log10(np.maximum(orig_mag, 1e-12))
+    ref_db_global = np.mean(orig_db, axis=0)   # <-- SINGLE reference
+    
+    ref_mag = 10.0 ** (ref_db_global / 20.0)
+    #ref_mag = smooth_freq_octaves(ref_mag,fund_freq=100,win_size_base=5,n_fft=n_fft,fs=fs,to_full=False)
+    ref_mag = smooth_gaussian_octave(data=ref_mag, n_fft=n_fft,fs=fs, fraction=12)
+    ref_db_global = 20.0 * np.log10(np.maximum(ref_mag, 1e-12))
 
     # ------------------------------------------------------------
     # Pitch shift value generator
     # ------------------------------------------------------------
     if abs(pitch_range[0]) < 1e-6 and abs(pitch_range[1]) < 1e-6:
         pitch_range = (-12, 12)
-        log_with_timestamp("Invalid pitch range, resetting to default (0, 24)", gui_logger)
+        log_with_timestamp("Invalid pitch range, resetting to default", gui_logger)
+        
 
     if seed == "random":
         seed = np.random.SeedSequence().entropy
 
     rng = np.random.default_rng(seed)
-    pitch_shifts = rng.uniform(pitch_range[0], pitch_range[1], desired_measurements)
+    num_augmented = desired_measurements
+    zero_ir = np.zeros(sample_len)
+    
+    if preserve_originals:
+        num_augmented = max(desired_measurements - base_n, 0)
+    
+    pitch_shifts = rng.uniform(
+        pitch_range[0],
+        pitch_range[1],
+        num_augmented
+    )
 
-    # ------------------------------------------------------------
-    # Helper: Pitch shift
-    # ------------------------------------------------------------
+    # Thread-safe plot queue
+    plot_queue = queue.Queue()
+
     def apply_pitch_shift(ir, shift_val):
-        return librosa.effects.pitch_shift(
-            ir, sr=fs, n_steps=shift_val, res_type="kaiser_best"
-        )
-
-    # ------------------------------------------------------------
-    # Helper: Build compensation filter for ONE IR
-    # ------------------------------------------------------------
-    def build_compensation_filter(shifted_ir, ir_index):
-        shifted_mag = np.abs(np.fft.rfft(shifted_ir, n=n_fft))
-        ref_mag     = orig_mag[ir_index]
-
-        comp_mag = ref_mag / np.maximum(shifted_mag, 1e-12)
-        
-        # === Apply HF taper to stabilise high-frequency compensation ===
-        hf_start = 7500.0     #8000 start taper (Hz)
-        hf_end   = 9000.0    #1000 full stop (Hz)
-        
-        # frequency bin conversion (resolution = fs / n_fft)
-        bin_start = int(np.round(hf_start * n_fft / fs))
-        bin_end   = int(np.round(hf_end   * n_fft / fs))
-        
-        # clamp to valid bins of comp_mag
-        n_bins = comp_mag.shape[-1]
-        bin_start = max(0, min(bin_start, n_bins - 1))
-        bin_end   = max(0, min(bin_end, n_bins))
-        
-        # if there is no taper region, simply force HF to 1.0
-        if bin_end <= bin_start:
-            comp_mag[bin_start:] = 1.0
+        if pitch_shift_mode == "librosa":
+            return apply_pitch_shift_librosa(ir, shift_val, fs)
+    
+        elif pitch_shift_mode == "resample":
+            return apply_pitch_shift_resample(ir, shift_val, fs)
+    
         else:
-            # build cosine taper that goes 1 -> 0 across the region
-            length = bin_end - bin_start
-            t = np.linspace(0.0, np.pi, length, endpoint=True)
-            taper = 0.5 * (1.0 + np.cos(t))   # 1 -> 0
+            raise ValueError(
+                f"Invalid pitch_shift_mode '{pitch_shift_mode}'. "
+                "Use 'librosa' or 'resample'."
+            )
+            
+    # ------------------------------------------------------------
+    # === CHANGED: compensation uses GLOBAL reference ===
+    # ------------------------------------------------------------
+    def build_compensation_filter(shifted_ir, plot_idx=None):
+        shifted_mag = np.abs(np.fft.rfft(shifted_ir, n=n_fft))
+        #shifted_mag = smooth_freq_octaves(shifted_mag,fund_freq=100,win_size_base=9,n_fft=n_fft,fs=fs,to_full=False)
+        shifted_mag = smooth_gaussian_octave(data=shifted_mag, n_fft=n_fft,fs=fs, fraction=12)
+
+        shifted_db = 20.0 * np.log10(np.maximum(shifted_mag, 1e-12))
+  
+        comp_mag_raw_db = ref_db_global - shifted_db
         
-            # Blend comp_mag toward 1.0 across the taper window:
-            seg = comp_mag[bin_start:bin_end]
-            comp_mag[bin_start:bin_end] = seg * taper + (1.0 - taper)
+        # ------------------------------------------------------------
+        # NEW: limit compensation strength to ±15 dB
+        # ------------------------------------------------------------
+        comp_mag_raw_db = np.clip(comp_mag_raw_db, -15.0, 15.0)
         
-            # Above the taper region, disable compensation entirely
-            comp_mag[bin_end:] = 1.0
+        comp_mag = 10.0 ** (comp_mag_raw_db / 20.0)
+        #comp_mag = smooth_freq_octaves(comp_mag,fund_freq=100,win_size_base=9,n_fft=n_fft,fs=fs,to_full=False)
+        comp_mag = smooth_gaussian_octave(data=comp_mag, n_fft=n_fft,fs=fs, fraction=6)
+        comp_mag_db = 20.0 * np.log10(np.maximum(comp_mag, 1e-12))
 
-        smoothed_mag = smooth_freq_octaves(
-            comp_mag,
-            fund_freq=120,
-            win_size_base=36,#30
-            n_fft=n_fft,
-            fs=fs,
-            to_full=False
-        )
+        # HF taper
+        hf_start, hf_end = 6000.0, 11000.0
+        bin_start = int(round(hf_start * n_fft / fs))
+        bin_end   = int(round(hf_end   * n_fft / fs))
 
-        return build_min_phase_filter(
-            smoothed_mag,
-            fs,
-            n_fft=n_fft,
-            truncate_len=truncate_len,
-            f_min=f_min,
-            f_max=f_max,
-            band_limit=True
-        )
+        n_bins = comp_mag_db.shape[-1]
+        bin_start = np.clip(bin_start, 0, n_bins - 1)
+        bin_end   = np.clip(bin_end, bin_start + 1, n_bins)
 
+        length = bin_end - bin_start
+        t = np.linspace(0.0, np.pi, length, endpoint=True)
+        taper = 0.5 * (1.0 + np.cos(t))
+
+        comp_mag_db[bin_start:bin_end] *= taper
+        comp_mag_db[bin_end:] = 0.0
+
+        comp_mag = 10.0 ** (comp_mag_db*comp_strength / 20.0)
+
+        if plot and plot_idx is not None and plot_idx < plot_first_n:
+            fft_freqs = np.fft.rfftfreq(n_fft, 1.0 / fs)
+            plot_queue.put(
+                (plot_idx, fft_freqs, shifted_db, comp_mag_raw_db, comp_mag_db, ref_db_global)
+            )
+
+        return build_min_phase_filter(comp_mag,fs=fs,n_fft=n_fft,truncate_len=truncate_len,f_min=f_min,f_max=f_max,band_limit=True)
+ 
     # ------------------------------------------------------------
     # Thread Process Function
+    # ------------------------------------------------------------
+    count_lock = threading.Lock()
+    count = 0
+    last_print_time = time.time()
+
+    def process_one(i):
+        nonlocal count, last_print_time
+    
+        if cancel_event and cancel_event.is_set():
+            return None
+    
+        ir_index = i % base_n
+        ir = measurement_array[ir_index]
+    
+        try:
+            # ------------------------------------------------------------
+            # Case 1: Preserve originals (no pitch shift, no compensation)
+            # ------------------------------------------------------------
+            if preserve_originals and i < base_n:
+                shifted = ir.copy()
+    
+            # ------------------------------------------------------------
+            # Case 2: Pitch-shifted augmentation
+            # ------------------------------------------------------------
+            else:
+                shift_idx = i if not preserve_originals else (i - base_n)
+                shift = pitch_shifts[shift_idx]
+    
+                shifted = apply_pitch_shift(ir, shift)
+    
+                # Pad / crop
+                if len(shifted) < sample_len:
+                    temp = np.zeros(sample_len)
+                    temp[:len(shifted)] = shifted
+                    shifted = temp
+                else:
+                    shifted = shifted[:sample_len]
+  
+                # Compensation only for pitch-shifted IRs
+                if pitch_shift_comp:
+                    comp = build_compensation_filter(shifted, ir_index)
+                    conv = sp.signal.fftconvolve(shifted, comp, mode="full")
+                    # trim to original IR length
+                    shifted = conv[:sample_len]
+      
+            # ------------------------------------------------------------
+            # Progress tracking
+            # ------------------------------------------------------------
+            with count_lock:
+                count += 1
+                now = time.time()
+                if (count % 100 == 0) or (count == desired_measurements) or (now - last_print_time >= 10.0):
+                    log_with_timestamp(
+                        f"Expansion Progress: {count}/{desired_measurements} measurements processed.",
+                        gui_logger
+                    )
+                    last_print_time = now
+    
+                    if report_progress > 0:
+                        a, b = 0.1, 0.35
+                        progress = a + (count / desired_measurements) * (b - a)
+                        update_gui_progress(report_progress, progress=progress)
+    
+            return i, shifted
+    
+        except Exception as e:
+            log_with_timestamp(f"Error processing measurement {i}: {e}", gui_logger)
+            return i, None
+
+
+        
+    # ------------------------------------------------------------
+    # ThreadPool execution (OPTIMISED)
+    # ------------------------------------------------------------
+    try:
+        max_in_flight = max(num_threads * 2, 8)  # small buffer
+        next_index = 0
+        in_flight = set()
+    
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+    
+            # Prime the queue
+            while next_index < desired_measurements and len(in_flight) < max_in_flight:
+                in_flight.add(executor.submit(process_one, next_index))
+                next_index += 1
+    
+            while in_flight:
+                done, in_flight = concurrent.futures.wait(
+                    in_flight,
+                    return_when=concurrent.futures.FIRST_COMPLETED
+                )
+    
+                for f in done:
+                    if cancel_event and cancel_event.is_set():
+                        status = 2
+                        log_with_timestamp("Expansion cancelled by user.", gui_logger)
+                        return output, status
+    
+                    result = f.result()
+                    if result is None:
+                        status = 2
+                        log_with_timestamp("Expansion cancelled by user.", gui_logger)
+                        return output, status
+    
+                    idx, shifted = result
+                    output[idx] = shifted if shifted is not None else zero_ir
+    
+                    # Submit next job
+                    if next_index < desired_measurements:
+                        in_flight.add(executor.submit(process_one, next_index))
+                        next_index += 1
+    
+        status = 0
+        log_with_timestamp("Expansion complete.", gui_logger)
+    
+        if shuffle:
+            rng.shuffle(output)
+    
+    except Exception as e:
+        log_with_timestamp(f"Exception in expansion: {e}", gui_logger)
+        status = 1
+        
+    # ---------------------- Plot the queued first 10 IRs ----------------------
+    if plot:
+        while not plot_queue.empty():
+            ir_index, fft_freqs, shifted_db, comp_mag_db, smoothed_mag_db, ref_db = plot_queue.get()
+            plt.figure(figsize=(10,5))
+            plt.semilogx(fft_freqs, ref_db, label='Reference IR (dB)', linestyle='--', color='black')
+            plt.semilogx(fft_freqs, shifted_db, label='Shifted IR (dB)')
+            plt.semilogx(fft_freqs, comp_mag_db, label='Compensation (dB)')
+            plt.semilogx(fft_freqs, smoothed_mag_db, label='Smoothed Comp (dB)')
+            plt.axhline(0.0, linestyle='--', color='gray', linewidth=0.8)
+            plt.xlabel('Frequency (Hz)')
+            plt.ylabel('Magnitude (dB)')
+            plt.title(f'Compensation Filter IR #{ir_index}')
+            plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+            plt.legend()
+            plt.xlim(20, fs/2)
+            plt.ylim(-20, 20)
+            plt.show()
+            plt.close()  # <-- immediately free memory
+
+    return output, status
+
+
+
+
+
+# ------------------------------------------------------------
+# Helper: Pitch shift (librosa phase vocoder)
+# ------------------------------------------------------------
+def apply_pitch_shift_librosa(ir, shift_val, fs):
+    return librosa.effects.pitch_shift(
+        ir,
+        sr=fs,
+        n_steps=shift_val,
+        res_type="kaiser_best"
+    )
+
+
+# ------------------------------------------------------------
+# Helper: Pitch shift (fast resample-based)
+# ------------------------------------------------------------
+def apply_pitch_shift_resample(ir, shift_val, fs):
+    """
+    Fast pitch shift using librosa.resample with energy normalization.
+    """
+    factor = 2 ** (shift_val / 12.0)
+
+    shifted = librosa.resample(
+        ir,
+        orig_sr=fs,
+        target_sr=int(fs * factor),
+        res_type="kaiser_best",
+        axis=0,
+        scale=True
+    )
+
+    # Pad or truncate
+    if len(shifted) < len(ir):
+        temp = np.zeros_like(ir)
+        temp[:len(shifted)] = shifted
+        shifted = temp
+    else:
+        shifted = shifted[:len(ir)]
+
+    # Energy normalization (important for IRs)
+    shifted *= np.linalg.norm(ir) / max(np.linalg.norm(shifted), 1e-12)
+
+    return shifted
+
+
+
+
+
+def equalize_brirs_parametric(
+    brir_dataset,
+    fs = CN.SAMP_FREQ,
+    n_fft = 8192,
+    truncate_len = None,
+    num_filters = 24,
+    low_freq_cut = 20.0,
+    high_freq_cut = 6000.0,
+    fraction_smooth_target = 1.2,
+    fraction_smooth_avg = 12,
+    diff_db_override = None,
+    override_n_fft = None,
+    plot = CN.PLOT_ENABLE
+):
+    """
+    Smooths the low-frequency magnitude of a BRIR dataset using parametric peaking filters.
+    Applies the same filter chain to all channels to preserve interaural timing.
+
+    Parameters:
+    - brir_dataset: ndarray with shape (..., channels, samples)
+    - fs: sampling rate
+    - n_fft: FFT length for analysis
+    - truncate_len: optional length to trim output IRs
+    - num_filters: number of parametric peaking filters to fit
+    - low_freq_cut/high_freq_cut: flattening boundaries
+    - fraction_smooth_target/avg: octave smoothing fractions
+    """
+    using_override = diff_db_override is not None
+    brir_dataset = brir_dataset.astype(np.float64, copy=False)
+    shape = brir_dataset.shape
+    n_samples = shape[-1]
+    n_channels = shape[-2]
+    if truncate_len is None:
+        truncate_len = n_samples
+    output = np.empty_like(brir_dataset)
+
+    # Frequency axis
+    fft_freqs = np.fft.rfftfreq(n_fft, 1/fs)
+    omega = 2 * np.pi * fft_freqs / fs  # angular frequency for analytic response
+
+    # Step 1: average BRIR magnitude
+    if not using_override:
+        mag = np.abs(np.fft.rfft(brir_dataset.reshape(-1,n_samples), n=n_fft, axis=1))
+        avg_db = 20*np.log10(np.maximum(mag,1e-12)).mean(axis=0)
+        a_lo = np.searchsorted(fft_freqs, low_freq_cut)
+        a_hi = np.searchsorted(fft_freqs, high_freq_cut)
+        if a_lo>0: avg_db[:a_lo]=avg_db[a_lo]
+        if a_hi<len(avg_db): avg_db[a_hi:]=avg_db[a_hi]
+
+    # Step 2–4: difference curve
+    if diff_db_override is not None:
+        diff_db_override = np.asarray(diff_db_override)
+        if diff_db_override.ndim==1 and override_n_fft is not None:
+            full_freqs = np.fft.rfftfreq(override_n_fft, 1/fs)
+            diff_full = diff_db_override[:len(full_freqs)]
+            diff_db = np.interp(fft_freqs, full_freqs, diff_full,
+                                left=diff_full[0], right=diff_full[-1])
+        else:
+            if len(diff_db_override)!=len(fft_freqs):
+                raise ValueError("diff_db_override length mismatch")
+            diff_db = diff_db_override.copy()
+    else:
+        target_mag = smooth_gaussian_octave(10**(avg_db/20), n_fft=n_fft, fs=fs, fraction=fraction_smooth_target)
+        target_db = 20*np.log10(np.maximum(target_mag,1e-12))
+        avg_mag_cut = smooth_gaussian_octave(10**(avg_db/20), n_fft=n_fft, fs=fs, fraction=fraction_smooth_avg)
+        avg_db_cut = 20*np.log10(np.maximum(avg_mag_cut,1e-12))
+        diff_db = target_db - avg_db_cut
+    diff_db = np.clip(diff_db,-10,10)
+
+    # Step 5: initial filter params
+    freqs_init = np.geomspace(low_freq_cut, high_freq_cut, num_filters)
+    gains_init = np.interp(freqs_init, fft_freqs, diff_db)
+    Q_init = np.ones(num_filters)
+
+    # Analytic biquad coefficients
+    def biquad_coeffs(f0,Q,gain_db):
+        A = 10**(gain_db/40)
+        w0 = 2*np.pi*f0/fs
+        alpha = np.sin(w0)/(2*Q)
+        b0 = 1+alpha*A
+        b1 = -2*np.cos(w0)
+        b2 = 1-alpha*A
+        a0 = 1+alpha/A
+        a1 = -2*np.cos(w0)
+        a2 = 1-alpha/A
+        return b0/a0,b1/a0,b2/a0,1,a1/a0,a2/a0
+
+    # Analytic frequency response for cascaded biquads
+    def cascaded_freq_response(params):
+        H = np.ones_like(omega, dtype=np.complex128)
+        z1 = np.exp(-1j*omega)
+        z2 = np.exp(-2j*omega)
+        for i in range(num_filters):
+            f0,gain,Q = params[i*3:i*3+3]
+            b0,b1,b2,a0,a1,a2 = biquad_coeffs(f0,Q,gain)
+            H *= (b0 + b1*z1 + b2*z2) / (a0 + a1*z1 + a2*z2)
+        return 20*np.log10(np.maximum(np.abs(H),1e-12))
+
+    def objective(params):
+        return np.sum((cascaded_freq_response(params)-diff_db)**2)
+
+    # Flatten initial params and bounds
+    params0 = np.empty(num_filters*3)
+    params0[0::3]=freqs_init
+    params0[1::3]=gains_init
+    params0[2::3]=Q_init
+    bounds=[]
+    for i in range(num_filters):
+        bounds+=[(low_freq_cut,high_freq_cut),(-9,9),(0.5,5)]
+
+    res = minimize(objective, params0, bounds=bounds, method='L-BFGS-B', options={'maxiter':200})
+    if not res.success: log_with_timestamp(f"Parametric EQ optimizer note: {res.message}")
+    optimized_params = res.x
+    
+    # ------------------------------------------------------------
+    # Optional plotting for debugging
+    # ------------------------------------------------------------
+    if plot:
+        plt.figure(figsize=(10,5))
+        cumulative_resp = np.ones_like(fft_freqs, dtype=np.complex128)
+        
+        # Precompute z-transform terms
+        z1 = np.exp(-1j*omega)
+        z2 = np.exp(-2j*omega)
+    
+        # Plot individual filters
+        for j in range(num_filters):
+            f0, gain_db, Q = optimized_params[j*3:j*3+3]
+            b0,b1,b2,a0,a1,a2 = biquad_coeffs(f0,Q,gain_db)
+            h = (b0 + b1*z1 + b2*z2) / (a0 + a1*z1 + a2*z2)
+            cumulative_resp *= h
+            plt.semilogx(fft_freqs, 20*np.log10(np.maximum(np.abs(h),1e-12)),
+                         alpha=0.5, label=f'Filter {j+1}: {f0:.1f} Hz')
+    
+        # Plot cumulative EQ
+        plt.semilogx(fft_freqs, 20*np.log10(np.maximum(np.abs(cumulative_resp),1e-12)),
+                     'k', linewidth=2, label='Cumulative EQ')
+    
+        # Plot reference curves (only if internally generated)
+        if not using_override:
+            plt.semilogx(fft_freqs, target_db, 'b', linewidth=1.5, label='Target DB')
+            plt.semilogx(fft_freqs, avg_db_cut, 'g', linewidth=1.5, label='Avg DB Cut')
+            plt.semilogx(fft_freqs, avg_db, color='gray', linestyle='--', linewidth=1.5, label='Original Avg DB')
+    
+        # Always plot the difference curve actually being fitted
+        plt.semilogx(fft_freqs, diff_db, 'r--', linewidth=1.5, label='Diff DB (fitted)')
+    
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Magnitude (dB)')
+        plt.title('Fitted Parametric EQ Frequency Response')
+        plt.grid(True, which='both', ls='--', alpha=0.5)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    # Step 6: apply filter chain using sosfilt
+    sos_all = []
+    for i in range(num_filters):
+        f0,gain,Q = optimized_params[i*3:i*3+3]
+        b0,b1,b2,a0,a1,a2 = biquad_coeffs(f0,Q,gain)
+        sos_all.append([[b0,b1,b2,1,a1,a2]])
+    sos_all = np.vstack(sos_all)
+
+    leading_shape = brir_dataset.shape[:-2]
+    for idx in np.ndindex(*leading_shape):
+        data = brir_dataset[idx]
+        for ch in range(n_channels):
+            output[idx+(ch,)]=signal.sosfilt(sos_all,data[ch])[:truncate_len]
+
+    return output
+
+
+
+def equalize_low_freqs_db(
+    measurement_array: np.ndarray,
+    fs: int = CN.SAMP_FREQ,
+    n_fft: int = CN.N_FFT,
+    truncate_len: int = 8192,
+    num_threads: int = 4,
+    plot_first_n: int = 1,
+    plot: bool = CN.PLOT_ENABLE,
+    gui_logger=None,
+    cancel_event=None,
+    report_progress=0
+) -> tuple[np.ndarray, int]:
+    """
+    Equalizes low-frequency roll-off in a set of impulse responses.
+    Averages magnitude across all IRs in dB, flattens below `low_freq_cut`,
+    computes difference in dB, converts to min-phase FIR, and applies to IRs.
+    """
+
+    measurement_array = measurement_array.astype(np.float64, copy=False)
+    base_n, sample_len = measurement_array.shape
+    output = np.empty_like(measurement_array)
+    status = 1
+    
+    target_low_freq_cut = 50.0
+    avg_low_freq_cut    = 50.0
+
+    target_high_freq_cut = 16000.0
+    avg_high_freq_cut    = 16000.0
+
+    # Thread-safe plot queue
+    plot_queue = queue.Queue()
+
+    # ------------------------------------------------------------
+    # Step 1: Averaged magnitude spectrum
+    # ------------------------------------------------------------
+    mag = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
+    mag_db = 20 * np.log10(np.maximum(mag, 1e-12))
+    avg_db = np.mean(mag_db, axis=0)
+
+    fft_freqs = np.fft.rfftfreq(n_fft, 1.0 / fs)
+
+    # ------------------------------------------------------------
+    # Step 2: Build TARGET (less smooth, flatter extremes)
+    # ------------------------------------------------------------
+    target_mag = 10 ** (avg_db / 20.0)
+    target_mag = smooth_gaussian_octave(
+        data=target_mag, n_fft=n_fft, fs=fs, fraction=1.3
+    )
+
+    target_db = 20 * np.log10(np.maximum(target_mag, 1e-12))
+
+    # LF flatten
+    t_lo = np.searchsorted(fft_freqs, target_low_freq_cut)
+    if t_lo > 0:
+        target_db[:t_lo] = target_db[t_lo]
+
+    # HF flatten
+    t_hi = np.searchsorted(fft_freqs, target_high_freq_cut)
+    if t_hi < len(target_db):
+        target_db[t_hi:] = target_db[t_hi]
+
+    # ------------------------------------------------------------
+    # Step 3: Build AVERAGE reference (much smoother)
+    # ------------------------------------------------------------
+    avg_mag_cut = 10 ** (avg_db / 20.0)
+    avg_mag_cut = smooth_gaussian_octave(
+        data=avg_mag_cut, n_fft=n_fft, fs=fs, fraction=12
+    )
+
+    avg_db_cut = 20 * np.log10(np.maximum(avg_mag_cut, 1e-12))
+
+    # LF flatten
+    a_lo = np.searchsorted(fft_freqs, avg_low_freq_cut)
+    if a_lo > 0:
+        avg_db_cut[:a_lo] = avg_db_cut[a_lo]
+
+    # HF flatten
+    a_hi = np.searchsorted(fft_freqs, avg_high_freq_cut)
+    if a_hi < len(avg_db_cut):
+        avg_db_cut[a_hi:] = avg_db_cut[a_hi]
+
+    # ------------------------------------------------------------
+    # Step 4: Difference curve (peak remover)
+    # ------------------------------------------------------------
+    diff_db = target_db - avg_db_cut
+    diff_db = np.clip(diff_db, -9.0, 9.0)
+
+    diff_mag = 10 ** (diff_db / 20.0)
+    diff_mag = smooth_gaussian_octave(
+        data=diff_mag, n_fft=n_fft, fs=fs, fraction=10
+    )
+    diff_db = 20 * np.log10(np.maximum(diff_mag, 1e-12))
+    eq_fir = build_min_phase_filter(diff_mag, fs=fs, n_fft=n_fft, truncate_len=truncate_len,f_min=20, f_max=20000, band_limit=True)
+
+    # ------------------------------------------------------------
+    # Step 4: Threaded convolution
     # ------------------------------------------------------------
     count_lock = threading.Lock()
     count = 0
@@ -1594,181 +1910,79 @@ def expand_measurements_with_pitch_shift(
         if cancel_event and cancel_event.is_set():
             return None
 
-        ir_index = i % base_n
-        ir       = measurement_array[ir_index]
-        shift    = pitch_shifts[i]
+        ir = measurement_array[i]
+        eq_ir = sp.signal.fftconvolve(ir, eq_fir, mode="full")
+        # trim to original IR length
 
-        try:
-            # 1) Pitch shift
-            shifted = apply_pitch_shift(ir, shift)
+        with count_lock:
+            count += 1
+            now = time.time()
+            if (count % 100 == 0) or (count == base_n) or (now - last_print_time >= 5.0):
+                log_with_timestamp(f"Equalization Progress: {count}/{base_n} IRs processed.", gui_logger)
+                last_print_time = now
 
-            # 2) Pad or crop to original length
-            if len(shifted) < sample_len:
-                temp = np.zeros(sample_len)
-                temp[:len(shifted)] = shifted
-                shifted = temp
-            else:
-                shifted = shifted[:sample_len]
+                if report_progress > 0:
+                    a, b = 0.1, 0.35
+                    progress = a + (count / base_n) * (b - a)
+                    update_gui_progress(report_progress, progress=progress)
 
-            # 3) Compensation
-            if pitch_shift_comp:
-                comp = build_compensation_filter(shifted, ir_index)
-                shifted = sp.signal.fftconvolve(shifted, comp, mode="same")
+        # Optional plotting
+        if plot and i < plot_first_n:
+            plot_queue.put((i, fft_freqs, avg_db_cut, target_db, diff_db))
 
-            # 4) Progress tracking
-            with count_lock:
-                count += 1
-                now = time.time()
-                if (count % 100 == 0) or (count == desired_measurements) or (now - last_print_time >= 5.0):
-                    log_with_timestamp(
-                        f"Expansion Progress: {count}/{desired_measurements} measurements processed.",
-                        gui_logger
-                    )
-                    last_print_time = now
+        return i, eq_ir[:sample_len]
 
-                    if report_progress > 0:
-                        a, b = 0.1, 0.35
-                        progress = a + (count / desired_measurements) * (b - a)
-                        update_gui_progress(report_progress, progress=progress)
-
-            return i, shifted
-
-        except Exception as e:
-            log_with_timestamp(f"Error processing measurement {i}: {e}", gui_logger)
-            return i, None
-
-    # ------------------------------------------------------------
-    # ThreadPool execution
-    # ------------------------------------------------------------
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(process_one, i) for i in range(desired_measurements)]
-
+            futures = [executor.submit(process_one, i) for i in range(base_n)]
             for f in concurrent.futures.as_completed(futures):
                 if cancel_event and cancel_event.is_set():
                     status = 2
-                    log_with_timestamp("Expansion cancelled by user.", gui_logger)
+                    log_with_timestamp("Equalization cancelled by user.", gui_logger)
                     return output, status
 
                 result = f.result()
                 if result is None:
                     status = 2
-                    log_with_timestamp("Expansion cancelled by user.", gui_logger)
+                    log_with_timestamp("Equalization cancelled by user.", gui_logger)
                     return output, status
 
-                idx, shifted = result
-                output[idx] = shifted if shifted is not None else np.zeros(sample_len)
+                idx, eq_ir = result
+                output[idx] = eq_ir
 
         status = 0
-        log_with_timestamp("Expansion complete.", gui_logger)
-
-        if shuffle:
-            rng.shuffle(output)
+        log_with_timestamp("Low-frequency equalization complete.", gui_logger)
 
     except Exception as e:
-        log_with_timestamp(f"Exception in expansion: {e}", gui_logger)
+        log_with_timestamp(f"Exception in equalization: {e}", gui_logger)
         status = 1
+
+    # ------------------------------------------------------------
+    # Step 5: Plot queued results
+    # ------------------------------------------------------------
+    if plot:
+        while not plot_queue.empty():
+            i, freqs, avg_db_plot, target_db_plot, diff_db_plot = plot_queue.get()
+            plt.figure(figsize=(10,5))
+            plt.semilogx(freqs, avg_db_plot, label="Avg Magnitude (dB)")
+            plt.semilogx(freqs, target_db_plot, label="Target Flattened (dB)")
+            plt.semilogx(freqs, diff_db_plot, label="Difference (dB)")
+            plt.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+            plt.xlabel("Frequency (Hz)")
+            plt.ylabel("Magnitude (dB)")
+            plt.title(f"Low-Frequency EQ IR #{i}")
+            plt.legend()
+            plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+            plt.xlim(20, fs/2)
+            plt.show()
+            plt.close()
 
     return output, status
 
 
 
-def generate_sequence(start: int, multiplier: float, limit: int) -> list:
-    """
-    Generate a list of unique, rounded integers starting from a given number.
-    Each subsequent number is the previous one multiplied by a float.
-    Stops when the next value exceeds the specified limit.
-
-    Parameters:
-        start (int): The starting integer of the sequence.
-        multiplier (float): The multiplier applied to each step (can be a float).
-        limit (int): The maximum value the sequence can reach (inclusive).
-
-    Returns:
-        list: A list of unique, rounded integers in the generated sequence.
-    """
-    sequence = []
-    seen = set()
-    value = start
-
-    while value <= limit:
-        rounded = round(value)
-        if rounded not in seen:
-            sequence.append(rounded)
-            seen.add(rounded)
-        value *= multiplier
-
-    return sequence
 
 
-
-def reshape_to_4d(measurement_array: np.ndarray, first_dim: int) -> np.ndarray:
-    """
-    Reshape a 2D array (measurements x samples) into a 4D array with shape (first_dim x N x 1 x samples),
-    redistributing measurements across the first three dimensions. If needed, fills remaining
-    positions with zeros.
-
-    Parameters:
-        measurement_array (np.ndarray): A 2D NumPy array of shape (measurements x samples)
-        first_dim (int): The desired size of the first dimension (e.g., 7)
-
-    Returns:
-        np.ndarray: A 4D array of shape (first_dim x N x 1 x samples)
-    """
-    measurements, samples = measurement_array.shape
-
-    # Compute the number of slots needed per group
-    N = math.ceil(measurements / first_dim)
-
-    # Initialize the output array with zeros
-    output = np.zeros((first_dim, N, 1, samples), dtype=measurement_array.dtype)
-
-    # Fill the array by distributing measurements across first_dim and N
-    for idx in range(measurements):
-        group = idx % first_dim  # Group index along the first dimension
-        slot = idx // first_dim  # Slot index along the second dimension
-        output[group, slot, 0, :] = measurement_array[idx]
-
-    return output
-
-def reshape_to_4d_and_center_slots(measurement_array: np.ndarray, first_dim: int) -> np.ndarray:
-    """
-    Reshape a 2D array (measurements x samples) into a 4D array with shape (first_dim x N x 1 x samples),
-    redistributing measurements across the first three dimensions. Zero-pads as needed.
-    Then, for each group (axis 0), subtracts the per-sample mean across slots (axis 1),
-    and prints the residual mean magnitude for verification.
-
-    Parameters:
-        measurement_array (np.ndarray): 2D array of shape (measurements x samples).
-        first_dim (int): Desired size of the first dimension (e.g., 7).
-
-    Returns:
-        np.ndarray: A 4D array of shape (first_dim x N x 1 x samples), centered per group.
-    """
-    measurements, samples = measurement_array.shape
-    N = math.ceil(measurements / first_dim)
-
-    # Initialize output array
-    output = np.zeros((first_dim, N, 1, samples), dtype=measurement_array.dtype)
-
-    # Fill output array
-    for idx in range(measurements):
-        group = idx % first_dim
-        slot = idx // first_dim
-        output[group, slot, 0, :] = measurement_array[idx]
-
-    # Subtract mean per sample across slots and compute residuals
-    for g in range(first_dim):
-        group_data = output[g, :, 0, :]                     # Shape: (N, samples)
-        mean_per_sample = np.mean(group_data, axis=0)       # Shape: (samples,)
-        output[g, :, 0, :] -= mean_per_sample               # Subtract across slots
-
-        # Residual check
-        residual_mean = np.mean(output[g, :, 0, :], axis=0)
-        max_residual = np.max(np.abs(residual_mean))
-        print(f"Group {g} residual mean after subtraction (max abs): {max_residual:.2e}")
-
-    return output
 
 def delete_all_files_in_directory(directory, verbose=True, gui_logger=None):
     """
@@ -1821,6 +2035,8 @@ def sofa_load_object(sofa_local_fname, gui_logger=None):
             sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
             sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
             sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+            sofa_vars['sofa_source_position_type'] = loadsofa.SourcePosition_Type
+            sofa_vars['sofa_source_position_units'] = loadsofa.SourcePosition_Units
         except:
             log_string = 'Unable to load SOFA file with SOFAsonix. Attempting to load with sofar'
             log_with_timestamp(log_string, gui_logger=None)
@@ -1834,6 +2050,8 @@ def sofa_load_object(sofa_local_fname, gui_logger=None):
                 sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
                 sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
                 sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+                sofa_vars['sofa_source_position_type'] = loadsofa.SourcePosition_Type
+                sofa_vars['sofa_source_position_units'] = loadsofa.SourcePosition_Units
                 
                 log_string = 'Loaded Successfully with sofar'
                 log_with_timestamp(log_string, gui_logger=None)
@@ -1847,6 +2065,8 @@ def sofa_load_object(sofa_local_fname, gui_logger=None):
                     sofa_vars['sofa_convention_name'] = loadsofa.GLOBAL_SOFAConventions
                     sofa_vars['sofa_version'] = loadsofa.GLOBAL_Version
                     sofa_vars['sofa_convention_version'] = loadsofa.GLOBAL_SOFAConventionsVersion
+                    sofa_vars['sofa_source_position_type'] = loadsofa.SourcePosition_Type
+                    sofa_vars['sofa_source_position_units'] = loadsofa.SourcePosition_Units
                     
                     log_string = 'Loaded Successfully with sofar'
                     log_with_timestamp(log_string, gui_logger=None)
@@ -1943,19 +2163,11 @@ def crop_array_last_dimension(array: np.ndarray, num_samples: int) -> np.ndarray
     return array[..., :num_samples]
 
 
+
 def get_crop_index(input_array, threshold=CN.THRESHOLD_CROP, tail_ignore=0):
     """
     Returns the index in a 1D NumPy array where the amplitude last exceeds a given threshold,
     ignoring a specified number of samples at the end (up to half the array length).
-
-    Args:
-        input_array (numpy.ndarray): The 1D NumPy array representing the impulse response.
-        threshold (float): The amplitude threshold to determine the crop point.
-        tail_ignore (int): Number of samples from the end of the array to ignore in the search.
-
-    Returns:
-        int: The crop index (last index before `tail_ignore` where the signal exceeds the threshold).
-             Returns 0 if no value exceeds the threshold in the considered range.
     """
     array_len = len(input_array)
     max_tail_ignore = array_len // 2
@@ -1965,39 +2177,89 @@ def get_crop_index(input_array, threshold=CN.THRESHOLD_CROP, tail_ignore=0):
         return 0  # Redundant check, but safe
 
     # Work with the valid portion of the array
-    valid_range = input_array[:array_len - tail_ignore]
+    valid_len = array_len - tail_ignore
+    valid_range = input_array[:valid_len]
     abs_array = np.abs(valid_range)
-    
-    # Find the last index above the threshold
+
     indices_above_threshold = np.where(abs_array > threshold)[0]
 
     if indices_above_threshold.size == 0:
         return 0
 
-    return indices_above_threshold[-1]
+    last_idx = indices_above_threshold[-1]
 
-def get_crop_index_old(input_array, threshold=CN.THRESHOLD_CROP):
+    # NEW LOGIC:
+    # If the signal stayed above threshold until the end of the valid range,
+    # assume no cropping and return the end of the full array
+    if tail_ignore > 0 and last_idx == valid_len - 1:
+        return array_len - 1
+
+    return last_idx
+
+def get_crop_index_relative(input_array,threshold_db=-90.0,tail_ignore=0,head_ignore=0, min_floor_db=-140.0):
     """
-    Calculates the index at which a 1D NumPy array should be cropped 
-    based on a given threshold.  The input array is not modified.
+    Returns the index in a 1D NumPy array where the amplitude last exceeds
+    a threshold relative to the reflection decay level.
 
     Args:
-        input_array (numpy.ndarray): The 1D NumPy array.
-        threshold (float): The threshold value used for cropping.
+        input_array (np.ndarray): 1D impulse response
+        threshold_db (float): Threshold in dB relative to reflection peak (negative)
+        tail_ignore (int): Number of samples to ignore at the end
+        head_ignore (int): Number of samples to ignore at the beginning when
+                           computing the reference level (e.g. direct sound)
+        min_floor_db (float): Absolute safety floor relative to reference
 
     Returns:
-        int: The index at which the array should be cropped.
-             Returns 0 if no suitable crop index is found.
+        int: Crop index
     """
-    reversed_array = input_array[::-1]
-    try:
-        crop_index = len(reversed_array) - np.argmax(np.abs(reversed_array) > threshold) - 1
-    except ValueError:
-        # np.argmax returns ValueError if the array is all False
-        # In this case, return 0 as no crop index found
-        crop_index = 0
-    return crop_index
+    array_len = len(input_array)
+    if array_len == 0:
+        return 0
 
+    # --- Clamp ignores ---
+    max_tail_ignore = array_len // 2
+    tail_ignore = min(tail_ignore, max_tail_ignore)
+    head_ignore = max(0, min(head_ignore, array_len - 1))
+
+    valid_len = array_len - tail_ignore
+    if valid_len <= 0:
+        return 0
+
+    # Full valid range used for crop search
+    valid_range = input_array[:valid_len]
+    abs_array = np.abs(valid_range)
+
+    # --- Reference region (ignore direct sound) ---
+    ref_start = head_ignore
+    ref_end = valid_len
+
+    if ref_start >= ref_end:
+        return 0
+
+    ref_array = abs_array[ref_start:ref_end]
+
+    # Reference level (reflection peak)
+    peak = np.max(ref_array)
+    if peak <= 0:
+        return 0
+
+    # Convert dB threshold to linear (relative to reflection peak)
+    threshold_db = max(threshold_db, min_floor_db)
+    threshold_linear = peak * (10.0 ** (threshold_db / 20.0))
+
+    indices_above = np.where(abs_array > threshold_linear)[0]
+
+    if indices_above.size == 0:
+        return 0
+
+    last_idx = indices_above[-1]
+
+    # If signal stayed above threshold until the valid end,
+    # assume no cropping
+    if tail_ignore > 0 and last_idx == valid_len - 1:
+        return array_len - 1
+
+    return last_idx
 
 
 def crop_array(input_array, threshold):
@@ -2121,15 +2383,7 @@ def zero_pad_1d(arr, target_length):
     return padded_arr
 
 
-def combine_dims_old(a, i=0, n=1):
-    """
-    Combines dimensions of numpy array `a`, 
-    starting at index `i`,
-    and combining `n` dimensions
-    """
-    s = list(a.shape)
-    combined = functools.reduce(lambda x,y: x*y, s[i:i+n+1])
-    return np.reshape(a, s[:i] + [combined] + s[i+n+1:])
+
 
 def combine_dims(a, start=0, count=2):
     """ Reshapes numpy array a by combining count dimensions, 
@@ -2207,30 +2461,6 @@ def round_down_even(n):
 
 
 
-    
-
-def plot_td(signal, title_name = 'Output', samp_freq = 44100):
-    """
-    Function takes a time domain signal as an input and plots the reponse
-    :param signal: numpy array, time domain signal
-    :param title_name: string, name of plot
-    :param samp_freq: int, sample frequency in Hz
-    :return: None
-    """       
-
-    Time = np.linspace(0, len(signal) / samp_freq, num=len(signal))
-
-    plt.figure()
-    plt.plot(Time, signal, color='k', label="amplitude")
-    plt.xlabel("Time (S)")
-    plt.ylabel("Amplitude")
-    plt.grid()
-    #plt.xlim([20, 20000])
-    #plt.ylim([np.ceil(mag_response_log.max())-20, np.ceil(mag_response_log.max())+5])
-    plt.title(title_name)
-    plt.show()
-
-
 def mag2db(mag):
     """Convert a magnitude to decibels (dB).
 
@@ -2305,7 +2535,7 @@ def list_diff(list1,list2):
     
 def write2wav(file_name, data, samplerate=CN.SAMP_FREQ, prevent_clipping=0, bit_depth='PCM_24', enable_resample=False, resample_mode='fast'):
     """
-    Write a WAV file, optionally resampling the signal if samplerate != CN.SAMP_FREQ.
+    Write a WAV file, optionally resampling the signal if samplerate != CN.SAMP_FREQ. data must be shaped (samples, channels); (channels, samples) will be auto-detected and transposed.
 
     :param data: numpy array, time domain signal
     :param file_name: output wav filename
@@ -2318,6 +2548,16 @@ def write2wav(file_name, data, samplerate=CN.SAMP_FREQ, prevent_clipping=0, bit_
 
     # Ensure numpy float32
     data = np.asarray(data, dtype=np.float32)
+    
+    # ---- Ensure shape = (samples, channels) ----
+    if data.ndim == 2:
+        n0, n1 = data.shape
+
+        # Heuristic:
+        # samples dimension should be much larger than channels
+        # If not, assume (channels, samples) and transpose
+        if n0 < n1 and n1 > 1024 and (n1 / max(n0, 1)) > 4:
+            data = data.T
 
     # Optional resampling
     if enable_resample and samplerate != CN.SAMP_FREQ:
@@ -2394,6 +2634,7 @@ def wav_needs_update(path, samplerate, bit_depth, gui_logger=None):
             gui_logger
         )
         return True
+    
 
     # All good → no update needed
     return False   
@@ -2482,121 +2723,8 @@ def normalize_array(ir):
     return ir       
 
 
-def resample_by_interpolation(signal, input_fs = 44100, output_fs = 48000):
-    """
-    function to resample a signal. By default will upsample from 44100Hz to 48000Hz
-    does not contain a low-pass filter to prevent aliasing when downsampling (i.e. scale < 1).
-    This function is derived from https://github.com/nwhitehead/swmixer/blob/master/swmixer.py, which was released under LGPL. 
-    """  
-    
-    scale = output_fs / input_fs
-    # calculate new length of sample
-    n = round(len(signal) * scale)
-
-    # use linear interpolation
-    # endpoint keyword means than linspace doesn't go all the way to 1.0
-    # If it did, there are some off-by-one errors
-    # e.g. scale=2.0, [1,2,3] should go to [1,1.5,2,2.5,3,3]
-    # but with endpoint=True, we get [1,1.4,1.8,2.2,2.6,3]
-    # Both are OK, but since resampling will often involve
-    # exact ratios (i.e. for 44100 to 22050 or vice versa)
-    # using endpoint=False gets less noise in the resampled sound
-    resampled_signal = np.interp(
-        np.linspace(0.0, 1.0, n, endpoint=False),  # where to interpret
-        np.linspace(0.0, 1.0, len(signal), endpoint=False),  # known positions
-        signal,  # known data points
-    )
-    return resampled_signal    
 
 
-
-
- # ==============================================================================
-# Measure RT60
-# sourced from: https://dsp.stackexchange.com/questions/86316/a-python-code-for-blind-estimation-of-rt60-from-recorded-audio
-# ==============================================================================
-def measure_rt60(h, fs=1, decay_db=60, plot=False, rt60_tgt=None):
-    """
-    Analyze the RT60 of an impulse response. Optionaly plots some useful information.
-
-    Parameters
-    ----------
-    `h`: array_like
-        The impulse response.
-    `fs`: float or int, optional
-        The sampling frequency of h (default to 1, i.e., samples).
-    `decay_db`: float or int, optional
-        The decay in decibels for which we actually estimate the time. Although
-        we would like to estimate the RT60, it might not be practical. Instead,
-        we measure the RT20 or RT30 and extrapolate to RT60.
-    `plot`: bool, optional
-        If set to ``True``, the power decay and different estimated values will
-        be plotted (default False).
-    `rt60_tgt`: float
-        This parameter can be used to indicate a target RT60 to which we want
-        to compare the estimated value.
-    """
-
-    h = np.array(h)
-    fs = float(fs)
-
-    # The power of the impulse response in dB
-    power = h ** 2
-    energy = np.cumsum(power[::-1])[::-1]  # Integration according to Schroeder
-
-    # remove the possibly all zero tail
-    i_nz = np.max(np.where(energy > 0)[0])
-    energy = energy[:i_nz]
-    energy_db = 10 * np.log10(energy)
-    energy_db -= energy_db[0]
-
-    # -5 dB headroom
-    i_5db = np.min(np.where(-5 - energy_db > 0)[0])
-    e_5db = energy_db[i_5db]
-    t_5db = i_5db / fs
-
-    # after decay
-    i_decay = np.min(np.where(-5 - decay_db - energy_db > 0)[0])
-    t_decay = i_decay / fs
-
-    # compute the decay time
-    decay_time = t_decay - t_5db
-    est_rt60 = (60 / decay_db) * decay_time
-
-    if plot:
-        import matplotlib.pyplot as plt
-
-        # Remove clip power below to minimum energy (for plotting purpose mostly)
-        energy_min = energy[-1]
-        energy_db_min = energy_db[-1]
-        power[power < energy[-1]] = energy_min
-        power_db = 10 * np.log10(power)
-        power_db -= np.max(power_db)
-
-        # time vector
-        def get_time(x, fs):
-            return np.arange(x.shape[0]) / fs - i_5db / fs
-
-        T = get_time(power_db, fs)
-
-        # plot power and energy
-        plt.plot(get_time(energy_db, fs), energy_db, label="Energy")
-
-        # now the linear fit
-        plt.plot([0, est_rt60], [e_5db, -65], "--", label="Linear Fit")
-        plt.plot(T, np.ones_like(T) * -60, "--", label="-60 dB")
-        plt.vlines(
-            est_rt60, energy_db_min, 0, linestyles="dashed", label="Estimated RT60"
-        )
-
-        if rt60_tgt is not None:
-            plt.vlines(rt60_tgt, energy_db_min, 0, label="Target RT60")
-
-        plt.legend()
-
-        plt.show()
-
-    return est_rt60
 
 
 def calculate_rt60(ir: np.ndarray, fs=CN.FS, bands=CN.OCTAVE_BANDS):
@@ -2967,65 +3095,73 @@ def group_delay(sig):
 
 
 
+
 def smooth_freq(
     data,
     crossover_f=1000,
     win_size_a=150,
     win_size_b=750,
-    n_fft=CN.N_FFT,
-    fs=CN.FS,
+    n_fft=CN.N_FFT, # Example default
+    fs=CN.FS,    # Example default
     to_full=False,
-    log_domain=False
+    log_domain=True
 ):
     """
-    Applies two-stage smoothing to a magnitude FFT spectrum with different smoothing window
-    sizes below and above a crossover frequency.
-    Optionally performs smoothing in the log magnitude domain using mag2db/db2mag.
+    Applies zero-phase two-stage smoothing to a magnitude FFT spectrum.
     """
     is_half = len(data) == n_fft // 2 + 1
     nyq_bin = n_fft // 2
-
-    # Work on the positive frequency half only
     spectrum = data[:nyq_bin + 1].copy() if is_half else data.copy()
 
     if log_domain:
-        spectrum = mag2db(np.maximum(spectrum, 1e-12))
+        # Avoid log(0)
+        spectrum = 20 * np.log10(np.maximum(spectrum, 1e-12))
 
-    # Convert smoothing windows and crossover to bins
+    # Convert Hz to bins
     crossover_bin = int(round(crossover_f * n_fft / fs))
     win_a_bins = max(1, int(round(win_size_a * n_fft / fs)))
     win_b_bins = max(1, int(round(win_size_b * n_fft / fs)))
-    win_c_bins = min(win_a_bins, win_b_bins)
+    
+    # Ensure window sizes are odd for perfect centering
+    win_a_bins = win_a_bins if win_a_bins % 2 != 0 else win_a_bins + 1
+    win_b_bins = win_b_bins if win_b_bins % 2 != 0 else win_b_bins + 1
 
-    # Two-stage smoothing
-    smooth_a = sp.ndimage.uniform_filter1d(spectrum, size=win_a_bins)
-    smooth_b = sp.ndimage.uniform_filter1d(spectrum, size=win_b_bins)
+    # uniform_filter1d with origin=0 is zero-phase (centered)
+    # mode='reflect' handles the boundaries without adding a DC offset bias
+    smooth_a = sp.ndimage.uniform_filter1d(spectrum, size=win_a_bins, mode='reflect', origin=0)
+    smooth_b = sp.ndimage.uniform_filter1d(spectrum, size=win_b_bins, mode='reflect', origin=0)
 
+    # Cross-fade between smooth_a and smooth_b to prevent "steps" at the crossover
+    # We use a small 10-bin ramp for the transition
+    ramp_width = 10 
+    start = max(0, crossover_bin - ramp_width // 2)
+    end = min(len(spectrum), crossover_bin + ramp_width // 2)
+    
     combined = np.empty_like(spectrum)
-    combined[:crossover_bin] = smooth_a[:crossover_bin]
-    combined[crossover_bin:] = smooth_b[crossover_bin:]
-
-    # Final light smoothing
-    smoothed = sp.ndimage.uniform_filter1d(combined, size=win_c_bins)
+    combined[:start] = smooth_a[:start]
+    combined[end:] = smooth_b[end:]
+    
+    # Linear interpolation for the transition zone
+    if end > start:
+        alpha = np.linspace(0, 1, end - start)
+        combined[start:end] = (1 - alpha) * smooth_a[start:end] + alpha * smooth_b[start:end]
 
     if log_domain:
-        smoothed = db2mag(smoothed)
+        combined = 10**(combined / 20)
 
-    # Return in correct format
+    # Format return
     if is_half:
         if to_full:
-            full_spec = np.empty(n_fft, dtype=smoothed.dtype)
-            full_spec[:nyq_bin + 1] = smoothed
-            full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+            full_spec = np.empty(n_fft, dtype=combined.dtype)
+            full_spec[:nyq_bin + 1] = combined
+            full_spec[nyq_bin + 1:] = combined[1:nyq_bin][::-1]
             return full_spec
-        return smoothed
+        return combined
     else:
-        # Already full spectrum, replace mirrored part
         result = np.empty_like(data)
-        result[:nyq_bin + 1] = smoothed[:nyq_bin + 1]
-        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+        result[:nyq_bin + 1] = combined[:nyq_bin + 1]
+        result[nyq_bin + 1:] = combined[1:nyq_bin][::-1]
         return result
-
 
 def smooth_freq_octaves(
     data,
@@ -3089,150 +3225,304 @@ def smooth_freq_octaves(
 
     return smoothed
      
-    
-def build_min_phase_filter(
-    smoothed_mag,
-    fs=CN.FS,
+
+
+
+def smooth_fractional_octave(
+    data,
+    fraction=12,      # e.g., 3 for 1/3 octave, 12 for 1/12 octave
     n_fft=CN.N_FFT,
-    truncate_len=4096,
-    f_min=20,
-    f_max=20000,
-    band_limit=False
+    fs=CN.FS,
+    to_full=False,
+    log_domain=True
 ):
     """
-    Build a minimum-phase FIR filter from a magnitude spectrum (half or full).
-    
-    Parameters:
-        smoothed_mag (np.ndarray): Magnitude spectrum (half-spectrum or full-spectrum). Not log scale.
-        fs (int): Sampling frequency in Hz.
-        n_fft (int): FFT size.
-        truncate_len (int): Length to truncate time-domain IR.
-        f_min (float): Minimum band-limit frequency.
-        f_max (float): Maximum band-limit frequency.
-        band_limit (bool): Whether to band-limit the magnitude before conversion.
-
-    Returns:
-        np.ndarray: Minimum-phase FIR filter (real impulse response).
+    Applies fractional octave smoothing to a magnitude spectrum.
+    The smoothing window width increases proportionally with frequency.
     """
-    # Ensure half-spectrum
-    is_half = len(smoothed_mag) == n_fft // 2 + 1
-    if not is_half:
-        smoothed_mag = np.abs(smoothed_mag[:n_fft // 2 + 1])
+    is_half = len(data) == n_fft // 2 + 1
+    nyq_bin = n_fft // 2
+    spectrum = data[:nyq_bin + 1].copy() if is_half else data.copy()
 
-    freqs = np.fft.rfftfreq(n_fft, 1 / fs)
+    if log_domain:
+        spectrum = 20 * np.log10(np.maximum(spectrum, 1e-12))
 
-    # Band-limit magnitude if requested
-    if band_limit:
-        band_mask = (freqs >= f_min) & (freqs <= f_max)
-        mag = np.zeros_like(smoothed_mag)
-        mag[band_mask] = smoothed_mag[band_mask]
+    num_bins = len(spectrum)
+    bin_freqs = np.arange(num_bins) * (fs / n_fft)
+    
+    # Calculate the fractional octave width factor
+    # For 1/N octave, the upper bound is f * 2^(1/2N) and lower is f * 2^(-1/2N)
+    width_factor = 2**(1 / (2 * fraction))
+    
+    # Calculate bin boundaries for each frequency
+    # We ensure at least a 1-bin wide window (no smoothing) at very low frequencies
+    lower_bounds = np.round(np.arange(num_bins) / width_factor).astype(int)
+    upper_bounds = np.round(np.arange(num_bins) * width_factor).astype(int)
+    
+    # Clip bounds to valid array indices
+    lower_bounds = np.clip(lower_bounds, 0, num_bins - 1)
+    upper_bounds = np.clip(upper_bounds, 0, num_bins - 1)
+
+    # Fast sliding window average using cumulative sum
+    # We pad the start to handle the boundary logic easily
+    cumsum = np.cumsum(np.insert(spectrum, 0, 0))
+    
+    smoothed = np.empty_like(spectrum)
+    for i in range(num_bins):
+        low = lower_bounds[i]
+        high = upper_bounds[i]
+        # cumsum[high+1] is the sum up to index 'high'
+        # cumsum[low] is the sum up to index 'low-1'
+        smoothed[i] = (cumsum[high + 1] - cumsum[low]) / (high - low + 1)
+
+    if log_domain:
+        smoothed = 10**(smoothed / 20)
+
+    # Return in correct format (Mirroring for full spectrum)
+    if is_half:
+        if to_full:
+            full_spec = np.empty(n_fft, dtype=smoothed.dtype)
+            full_spec[:nyq_bin + 1] = smoothed
+            full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+            return full_spec
+        return smoothed
     else:
-        mag = smoothed_mag.copy()
+        result = np.empty_like(data)
+        result[:nyq_bin + 1] = smoothed[:nyq_bin + 1]
+        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+        return result
 
-    # Avoid log(0)
-    log_mag = np.log(np.maximum(mag, 1e-8))
 
-    # Real cepstrum
-    cepstrum = np.fft.irfft(log_mag, n=n_fft)
 
-    # Enforce minimum-phase symmetry (real cepstrum trick)
-    cepstrum[1:n_fft // 2] *= 2
-    cepstrum[n_fft // 2 + 1:] = 0
 
-    # Rebuild min-phase spectrum
-    min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
+def smooth_gaussian_octave(
+    data,
+    fraction=12,
+    n_fft=CN.N_FFT,
+    fs=CN.FS,
+    to_full=False,
+    log_domain=True
+):
+    """
+    High-performance Gaussian fractional octave smoothing using log-resampling.
+    Optimal for large N_FFT sizes.
+    """
+    is_half = len(data) == n_fft // 2 + 1
+    nyq_bin = n_fft // 2
+    spectrum = data[:nyq_bin + 1].copy() if is_half else data.copy()
 
-    # Time-domain impulse response
-    impulse = np.fft.irfft(min_phase_spec, n=n_fft)
+    if log_domain:
+        spectrum = 20 * np.log10(np.maximum(spectrum, 1e-12))
 
-    # Truncate and apply fade-out window
-    impulse = impulse[:truncate_len]
-    fade_out = np.hanning(2 * truncate_len)[truncate_len:]
-    impulse *= fade_out
+    num_bins = len(spectrum)
+    
+    # 1. Create a logarithmic frequency axis
+    # We start from the first bin (>0 Hz) to avoid log(0)
+    indices = np.arange(num_bins)
+    # Use a high-density log-grid to preserve detail (e.g., 4x the original resolution)
+    log_grid_size = num_bins 
+    log_indices = np.geomspace(1, num_bins - 1, log_grid_size)
+    
+    # 2. Interpolate linear spectrum to logarithmic space
+    # This "stretches" the low frequencies and "compresses" the high frequencies
+    interp_func = interp1d(indices, spectrum, kind='linear', fill_value="extrapolate")
+    log_spectrum = interp_func(log_indices)
 
-    return impulse
+    # 3. Apply a FIXED sigma Gaussian filter in log-space
+    # In log-space, 1 octave is a constant distance. 
+    # Points per octave = log_grid_size / (total octaves)
+    num_octaves = np.log2((num_bins-1) / 1)
+    points_per_octave = log_grid_size / num_octaves
+    
+    # Calculate sigma to match the fractional octave width
+    # 2.5 is a scaling factor to match standard acoustic smoothing curves
+    sigma = (points_per_octave / fraction) / 2.5
+    
+    # gaussian_filter1d is highly optimized C/Fortran code
+    log_smoothed = gaussian_filter1d(log_spectrum, sigma=sigma, mode='reflect')
 
-def build_min_phase_filter_intrp(
+    # 4. Interpolate back to the original linear frequency bins
+    back_interp_func = interp1d(log_indices, log_smoothed, kind='linear', 
+                                fill_value="extrapolate", bounds_error=False)
+    smoothed = back_interp_func(indices)
+    
+    # Fix the DC bin (index 0) which geomspace can't handle perfectly
+    smoothed[0] = spectrum[0] 
+
+    if log_domain:
+        smoothed = 10**(smoothed / 20)
+
+    # Return formatting
+    if is_half:
+        if to_full:
+            full_spec = np.empty(n_fft, dtype=smoothed.dtype)
+            full_spec[:nyq_bin + 1] = smoothed
+            full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+            return full_spec
+        return smoothed
+    else:
+        result = np.empty_like(data)
+        result[:nyq_bin + 1] = smoothed[:nyq_bin + 1]
+        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
+        return result
+
+
+def build_min_phase_filter( 
     smoothed_mag,
     freq_axis=None,
-    fs=44100,
-    n_fft=65536,
+    fs=CN.FS,
+    n_fft=CN.N_FFT,
     truncate_len=4096,
     f_min=20,
     f_max=20000,
     band_limit=False,
     normalize=False,
     norm_freq_range=(60, 300),
-    norm_target=0.5
+    norm_target=0.5,
+    hf_relax_to_zero=False,
+    hf_trust_freq=7000.0,
+    hf_anchor_freq=20000.0,
+    hf_decay_steps=5,          # number of synthetic HF points
+    hf_decay_power=1.5,        # controls how fast it returns to 0 dB
+    apply_smooth=False
 ):
     """
     Build a minimum-phase FIR filter from a magnitude spectrum (half or full).
 
-    Parameters:
-        smoothed_mag (np.ndarray): Measured magnitude spectrum in linear scale.
-        freq_axis (np.ndarray): Frequencies corresponding to smoothed_mag (Hz).
-        fs (int): Sampling frequency in Hz.
-        n_fft (int): FFT size for minimum-phase conversion.
-        truncate_len (int): Length of the output FIR.
-        f_min (float): Minimum frequency for band-limiting.
-        f_max (float): Maximum frequency for band-limiting.
-        band_limit (bool): Whether to zero out frequencies outside [f_min, f_max].
-        normalize (bool): Whether to normalize magnitude before time-domain conversion.
-        norm_freq_range (tuple): Frequency range (Hz) to compute mean for normalization.
-        norm_target (float): Target magnitude after normalization (scales mean to this).
-
-    Returns:
-        np.ndarray: Minimum-phase FIR impulse response.
+    Optional HF relaxation:
+    - Trust data up to hf_trust_freq
+    - Insert a knee at hf_knee_freq
+    - Force 0 dB at hf_anchor_freq
+    - Smoothly interpolate in between using PCHIP
     """
+    DEBUG = False
+    
+    try:
+        if DEBUG:
+            logging.info(f"smoothed_mag shape: {np.shape(smoothed_mag)}")
 
-    # FFT frequency bins
-    fft_freqs = np.fft.rfftfreq(n_fft, 1 / fs)
-
-    # Interpolate smoothed_mag onto FFT bins if freq_axis is provided
-    if freq_axis is not None:
-        mag_interp = np.interp(fft_freqs, freq_axis, smoothed_mag)
-    else:
-        mag_interp = np.abs(smoothed_mag[:n_fft // 2 + 1])
-
-    # Optional band-limiting
-    if band_limit:
-        band_mask = (fft_freqs >= f_min) & (fft_freqs <= f_max)
-        mag = np.zeros_like(mag_interp)
-        mag[band_mask] = mag_interp[band_mask]
-        mag[fft_freqs < f_min] = mag_interp[np.argmax(fft_freqs >= f_min)]
-        mag[fft_freqs > f_max] = mag_interp[np.argmax(fft_freqs > f_max) - 1]
-    else:
+        fft_freqs = np.fft.rfftfreq(n_fft, 1 / fs)
+    
+        # ------------------------------------------------------------
+        # Optional HF relaxation (multi-point decay scaffold)
+        # ------------------------------------------------------------
+        if hf_relax_to_zero and freq_axis is not None:
+            freq_axis = np.asarray(freq_axis, dtype=np.float64)
+            smoothed_mag = np.asarray(smoothed_mag, dtype=np.float64)
+        
+            # Normalize first if requested
+            if normalize:
+                norm_mask = (
+                    (freq_axis >= norm_freq_range[0]) &
+                    (freq_axis <= norm_freq_range[1])
+                )
+                mean_val = np.mean(smoothed_mag[norm_mask])
+                if mean_val != 0:
+                    smoothed_mag = smoothed_mag / mean_val * norm_target
+        
+            # Keep trusted region
+            keep_mask = freq_axis <= hf_trust_freq
+            freqs_kept = freq_axis[keep_mask]
+            mags_kept = smoothed_mag[keep_mask]
+        
+            mag_start = mags_kept[-1]
+        
+            # Generate decay scaffold (log-spaced freqs)
+            decay_freqs = np.geomspace(
+                hf_trust_freq,
+                hf_anchor_freq,
+                hf_decay_steps + 2
+            )[1:-1]  # exclude endpoints
+        
+            # Normalized progress 0 → 1
+            t = np.linspace(0, 1, hf_decay_steps + 2)[1:-1]
+        
+            # Power-law decay toward 1.0 (0 dB)
+            decay_mags = 1.0 + (mag_start - 1.0) * (1.0 - t) ** hf_decay_power
+        
+            freqs_kept = np.concatenate([freqs_kept, decay_freqs, [hf_anchor_freq]])
+            mags_kept = np.concatenate([mags_kept, decay_mags, [1.0]])
+        
+            freq_axis = freqs_kept
+            smoothed_mag = mags_kept
+    
+        # ------------------------------------------------------------
+        # Interpolate onto FFT bins
+        # ------------------------------------------------------------
+        if freq_axis is not None:
+            interp_func = PchipInterpolator(freq_axis, smoothed_mag, extrapolate=False)
+            mag_interp = interp_func(fft_freqs)
+            if DEBUG:
+                logging.info(f"mag_interp shape after interpolation: {np.shape(mag_interp)}")
+    
+            # Clamp edges
+            mag_interp[fft_freqs < freq_axis[0]] = smoothed_mag[0]
+            mag_interp[fft_freqs > freq_axis[-1]] = smoothed_mag[-1]
+    
+            # Octave smoothing
+            #mag_interp = smooth_freq_octaves(data=mag_interp,n_fft=n_fft,win_size_base=7,fund_freq=100)
+            mag_interp = smooth_gaussian_octave(data=mag_interp, n_fft=n_fft, fraction=12)
+            if DEBUG:
+                # After octave smoothing
+                logging.info(f"mag_interp shape after smoothing: {np.shape(mag_interp)}")
+        else:
+            mag_interp = np.abs(smoothed_mag[:n_fft // 2 + 1])
+        
+    
         mag = mag_interp.copy()
+        
+        if apply_smooth:
+            # Octave smoothing
+            #mag = smooth_freq_octaves(data=mag,n_fft=n_fft,win_size_base=6,fund_freq=100)
+            mag = smooth_gaussian_octave(data=mag, n_fft=n_fft, fraction=12)
+    
+        # ------------------------------------------------------------
+        # Optional band limiting
+        # ------------------------------------------------------------
+        if band_limit:
+            band_mask = (fft_freqs >= f_min) & (fft_freqs <= f_max)
+            mag_band = np.zeros_like(mag)
+            mag_band[band_mask] = mag[band_mask]
+            mag_band[fft_freqs < f_min] = mag[np.argmax(fft_freqs >= f_min)]
+            mag_band[fft_freqs > f_max] = mag[np.argmax(fft_freqs > f_max) - 1]
+            mag = mag_band
+            # Octave smoothing
+            #mag = smooth_freq_octaves(data=mag,n_fft=n_fft,win_size_base=8,fund_freq=100)
+            mag = smooth_gaussian_octave(data=mag, n_fft=n_fft, fraction=12)
+    
+        # ------------------------------------------------------------
+        # Cepstrum → minimum phase
+        # ------------------------------------------------------------
+        log_mag = np.log(np.maximum(mag, 1e-8))
+        # Before cepstrum
+        if DEBUG:
+            logging.info(f"log_mag shape: {np.shape(log_mag)}")
+    
+        cepstrum = np.fft.irfft(log_mag, n=n_fft)
+        cepstrum[1:n_fft // 2] *= 2
+        cepstrum[n_fft // 2 + 1:] = 0
+    
+        min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
+    
+        impulse = np.fft.irfft(min_phase_spec, n=n_fft)
+        impulse = impulse[:truncate_len]
+    
+        # Fade-out
+        fade_start = truncate_len // 4
+        fade_len = truncate_len - fade_start
+        if fade_len > 0:
+            fade_out = np.hanning(2 * fade_len)[fade_len:]
+            impulse[fade_start:] *= fade_out
+        
+        if DEBUG:
+            # Final impulse
+            logging.info(f"impulse shape: {np.shape(impulse)}")
+            
+        return impulse
 
-    # Optional normalization in specified frequency range
-    if normalize:
-        norm_mask = (fft_freqs >= norm_freq_range[0]) & (fft_freqs <= norm_freq_range[1])
-        mean_val = np.mean(mag[norm_mask])
-        if mean_val > 0:
-            mag = mag / mean_val * norm_target
+    except Exception as e:
+        log_with_timestamp(f"Failed to convert to min phase FIR: {e}")
 
-    # Avoid log(0)
-    log_mag = np.log(np.maximum(mag, 1e-8))
-
-    # Real cepstrum
-    cepstrum = np.fft.irfft(log_mag, n=n_fft)
-
-    # Enforce minimum-phase symmetry
-    cepstrum[1:n_fft // 2] *= 2
-    cepstrum[n_fft // 2 + 1:] = 0
-
-    # Rebuild min-phase spectrum
-    min_phase_spec = np.exp(np.fft.rfft(cepstrum, n=n_fft))
-
-    # Time-domain impulse response
-    impulse = np.fft.irfft(min_phase_spec, n=n_fft)
-
-    # Truncate and fade
-    impulse = impulse[:truncate_len]
-    fade_out = np.hanning(2 * truncate_len)[truncate_len:]
-    impulse *= fade_out
-
-    return impulse
 
 def build_min_phase_and_save(
     mag_response,
@@ -3286,13 +3576,87 @@ def build_min_phase_and_save(
 
     return impulse
 
+
+
+def build_summary_response_fir(
+    fir_array,
+    fs=CN.FS,
+    n_fft=CN.N_FFT,
+    truncate_len=4096,
+    eps=1e-12
+):
+    """
+    Build a representative minimum-phase FIR from an array of FIRs by
+    averaging magnitude responses in dB.
+
+    Parameters
+    ----------
+    fir_array : np.ndarray
+        Array of shape (..., samples). Last axis must be time samples.
+    fs : int
+        Sample rate.
+    n_fft : int
+        FFT size used for magnitude analysis.
+    truncate_len : int
+        Output FIR length after minimum-phase reconstruction.
+    eps : float
+        Numerical floor to avoid log(0).
+
+    All remaining parameters map 1:1 to build_min_phase_filter().
+    """
+
+    fir_array = np.asarray(fir_array)
+
+    if fir_array.ndim < 1:
+        raise ValueError("fir_array must have at least one dimension")
+
+    # ---- Flatten all measurement dimensions ----
+    samples = fir_array.shape[-1]
+    firs = fir_array.reshape(-1, samples)
+
+    if firs.shape[0] == 0:
+        raise ValueError("No FIRs found in array")
+
+    # ---- Zero pad or truncate ----
+    if samples < n_fft:
+        pad_width = n_fft - samples
+        firs = np.pad(firs, ((0, 0), (0, pad_width)))
+    else:
+        firs = firs[:, :n_fft]
+
+    # ---- FFT magnitude ----
+    mag = np.abs(np.fft.rfft(firs, axis=-1))
+
+    # ---- Convert to dB (log domain averaging) ----
+    mag_db = 20.0 * np.log10(np.maximum(mag, eps))
+
+    # ---- Average across all measurements ----
+    avg_mag_db = np.mean(mag_db, axis=0)
+
+    # ---- Back to linear magnitude ----
+    avg_mag = 10.0 ** (avg_mag_db / 20.0)
+
+    # ---- Build minimum-phase FIR ----
+    min_phase_fir = build_min_phase_filter(
+        smoothed_mag=avg_mag,
+        fs=fs,
+        n_fft=n_fft,
+        truncate_len=truncate_len
+    )
+
+    return min_phase_fir
+
+
+
+
+
 def level_spectrum_ends(
     data,
     low_freq=20,
     high_freq=20000,
     n_fft=CN.N_FFT,
     fs=CN.FS,
-    smooth_win=67,
+    smooth_win=1,
     to_full=False
 ):
     """
@@ -3314,7 +3678,6 @@ def level_spectrum_ends(
     """
     is_half_spectrum = len(data) == n_fft // 2 + 1
     freq_res = fs / n_fft
-    smooth_win_samples = max(1, int(round(smooth_win / freq_res)))
 
     # Define frequency bin bounds
     low_bin = int(low_freq / freq_res)
@@ -3330,8 +3693,9 @@ def level_spectrum_ends(
         data_mod[high_bin:] = data[high_bin - 1]
 
     # Smoothing
-    if smooth_win_samples > 1:
-        data_mod = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
+    if smooth_win >= 1:
+        #data_mod = sp.ndimage.uniform_filter1d(data_mod, size=smooth_win_samples)
+        data_mod = smooth_gaussian_octave(data=data_mod, n_fft=n_fft, fs=fs, fraction=12)
 
     if is_half_spectrum and to_full:
         # Convert to full (conjugate symmetric) real-valued spectrum
@@ -3354,335 +3718,12 @@ def padarray(A, size):
     return np.pad(A, pad_width=(0, t), mode='constant')
     
 
-def get_close_matches_lower(word, possibilities, n=3, cutoff=0.45):
-    """
-    function to find closest matching string in a list of strings
-    """  
-    if not n >  0:
-        raise ValueError("n must be > 0: %r" % (n,))
-    if not 0.0 <= cutoff <= 1.0:
-        raise ValueError("cutoff must be in [0.0, 1.0]: %r" % (cutoff,))
-    result = []
-    s = SequenceMatcher()
-    s.set_seq2(word)
-    for x in possibilities:
-        s.set_seq1(x.lower())  # lower-case for comparison
-        if s.real_quick_ratio() >= cutoff and \
-           s.quick_ratio() >= cutoff and \
-           s.ratio() >= cutoff:
-            result.append((s.ratio(), x))
 
-    # Move the best scorers to head of list
-    result = _nlargest(n, result)
-    # Strip scores for the best n matches
-    return [x for score, x in result]
-
-def get_close_matches_fuzz_simple(word, possibilities, n=2):
-    """
-    function to find closest matching string (word) in a list of strings (possibilities)
-    """ 
-    
-    result = process.extract(word, possibilities, limit=n, scorer=fuzz.token_set_ratio)
-    
-    return result
-
-
-def get_close_matches_fuzz(word, possibilities, n=2, score_cutoff=60):
-    """
-    Function to find closest matching string (word) in a list of strings (possibilities)
-    with improved accuracy using different fuzzy matching techniques and score cutoff.
-
-    Args:
-        word (str): The string to find matches for.
-        possibilities (list): A list of strings to search within.
-        n (int): The number of closest matches to return.
-        score_cutoff (int): Minimum score for a match to be considered.
-
-    Returns:
-        list: A list of tuples containing the best matches and their scores.
-    """
-
-    results = []
-
-    # 1. Token Sort Ratio with partial ratio boost
-    token_sort_results = process.extract(word, possibilities, limit=n, scorer=fuzz.token_sort_ratio)
-
-    for match, score in token_sort_results:
-        if score >= score_cutoff:
-            results.append((match, score))
-
-    # 2. Token Set Ratio (handles out-of-order words better)
-    token_set_results = process.extract(word, possibilities, limit=n, scorer=fuzz.token_set_ratio)
-
-    for match, score in token_set_results:
-        if score >= score_cutoff and (match, score) not in results:
-            results.append((match, score))
-
-    # 3. Partial Ratio (finds substrings) if initial results are poor.
-    if not results:
-        partial_results = process.extract(word, possibilities, limit=n, scorer=fuzz.partial_ratio)
-        for match, score in partial_results:
-            if score >= score_cutoff:
-                results.append((match, score))
-
-    # 4. Weighted Ratio (combines different ratios)
-    weighted_results = process.extract(word, possibilities, limit=n, scorer=fuzz.WRatio)
-    for match, score in weighted_results:
-        if score >= score_cutoff and (match, score) not in results:
-            results.append((match, score))
-
-    # Sort results by score (descending)
-    results.sort(key=lambda x: x[1], reverse=True)
-
-    # Return top n results (or fewer if there are less)
-    return results[:n]
-
-
-def find_delay_and_roll_lf(arr_a, arr_b):
-    """
-    function to find delay between arrays a and b and return number of elements to be shifted/rolled in array b for alignment
-    returns an int containing number of samples to roll array b by to align with a
-    """ 
-    
-    samp_freq=44100
-    
-    #contants for TD alignment of BRIRs
-    t_shift_interval = CN.T_SHIFT_INTERVAL
-    min_t_shift = CN.MIN_T_SHIFT_D
-    max_t_shift = CN.MAX_T_SHIFT_D
-    num_intervals = int(np.abs((max_t_shift-min_t_shift)/t_shift_interval))
-    order=CN.ORDER#7
-    delay_win_min_t = CN.DELAY_WIN_MIN_A
-    delay_win_max_t = CN.DELAY_WIN_MAX_A
-    delay_win_hop_size = CN.DELAY_WIN_HOP_SIZE
-    delay_win_hops = CN.DELAY_WIN_HOPS_A
-    
-    
-    cutoff_alignment = 110 #3.1.2 = 110Hz
-    
-    #peak to peak within a sufficiently small sample window
-    peak_to_peak_window = int(np.divide(samp_freq,cutoff_alignment)*0.95) #int(np.divide(samp_freq,cutoff_alignment)) 
-    
-    delay_eval_set = np.zeros((num_intervals))
-    
-    prior_airs = arr_a 
-    
-    calc_delay = 1
-        
-    if calc_delay == 1:
-        
-        this_air = arr_b
-     
-        if np.sum(np.abs(this_air)) > 0:
-            
-            #low pass of prior airs
-            prior_air_lp = signal_lowpass_filter(prior_airs, cutoff_alignment, samp_freq, order)
-            #low pass of this ir
-            this_air_lp = signal_lowpass_filter(this_air, cutoff_alignment, samp_freq, order)
-            
-            for delay in range(num_intervals):
-                
-                #shift current air
-                current_shift = min_t_shift+(delay*t_shift_interval)
-                n_air_shift = np.roll(this_air_lp,current_shift)
-                #add prior air to shifted current air
-                sum_ir_lp = np.add(prior_air_lp,n_air_shift)
-                peak_to_peak_iter=0
-                for hop_id in range(delay_win_hops):
-                    samples = hop_id*delay_win_hop_size
-                    peak_to_peak = np.abs(np.max(sum_ir_lp[delay_win_min_t+samples:delay_win_min_t+samples+peak_to_peak_window])-np.min(sum_ir_lp[delay_win_min_t+samples:delay_win_min_t+samples+peak_to_peak_window]))
-                    #if this window has larger pk to pk, store in iter var
-                    if peak_to_peak > peak_to_peak_iter:
-                        peak_to_peak_iter = peak_to_peak
-                #store largest pk to pk distance of all windows into delay set
-                delay_eval_set[delay] = peak_to_peak_iter
-            
-            #shift next room by delay that has largest peak to peak distance (method 4 and 5)
-            index_shift = np.argmax(delay_eval_set[:])
-            samples_shift=min_t_shift+(index_shift*t_shift_interval)
-        else:
-            samples_shift=0
-    else:
-        samples_shift=0
-     
-    return samples_shift
-
-
-        
-    #
 
     
     
     
-def roll_distribute_concatenate_npy_datasets_v1(input_dir):
-    """
-    Concatenates 4D NumPy arrays from .npy files in a folder, handling variable
-    lengths in the first two dimensions, redistributes items if dimension 1
-    length is less than 7, and rolls dimension 4 based on delay calculations
-    using the sum of arrays in dimension 4.
 
-    Args:
-        input_dir: The directory containing the input .npy files.
-
-    Returns:
-        The concatenated NumPy array, or None if no valid files are found.
-    """
-
-    data_list = []
-    previous_sum = None  # Store the sum of the previous arrays in dimension 4
-
-    for filename in sorted(os.listdir(input_dir)):
-        if filename.endswith(".npy"):
-            filepath = os.path.join(input_dir, filename)
-            try:
-                data = np.load(filepath)
-                if data.ndim != 4:
-                    print(f"Warning: {filename} does not have 4 dimensions. Skipping.")
-                    continue
-
-                dim1, dim2, dim3, dim4 = data.shape
-
-                # Calculate and apply delay
-                current_sum = np.sum(data, axis=(0, 1, 2))  # Sum along dimensions 0, 1, and 2
-                
-                if previous_sum is not None:
-                    roll_samples = find_delay_and_roll_lf(previous_sum, current_sum)
-                    if CN.LOG_INFO == True and CN.SHOW_DEV_TOOLS == True:
-                        logging.info('(AIR) samples_shift = ' + str(roll_samples))
-                    data = np.roll(data, roll_samples, axis=3)  # Roll dimension 4
-
-                previous_sum = current_sum.copy()  # Store the current sum
-
-                if dim1 < 7:
-                    new_dim1 = 7
-                    new_dim2 = int(dim2 * dim1 / new_dim1)  # Redistribute items
-
-                    if new_dim2 == 0:
-                        print(f"Warning: {filename} redistribution would result in dimension 2 having length 0. Skipping.")
-                        continue
-
-                    reshaped_data = np.zeros((new_dim1, new_dim2, dim3, dim4), dtype=data.dtype)
-
-                    # Iterate and fill the new array
-                    orig_i = 0
-                    orig_j = 0
-                    for new_i in range(new_dim1):
-                        for new_j in range(new_dim2):
-                            if orig_i < dim1 and orig_j < dim2:
-                                reshaped_data[new_i, new_j, :, :] = data[orig_i, orig_j, :, :]
-                                orig_j += 1
-                                if orig_j >= dim2:
-                                    orig_j = 0
-                                    orig_i += 1
-
-                    data = reshaped_data
-
-                data_list.append(data)
-
-            except Exception as e:
-                print(f"Error loading {filename}: {e}")
-
-    if not data_list:
-        print("No valid .npy files found in the input directory.")
-        return None
-
-    concatenated_data = data_list[0]
-    for data in data_list[1:]:
-        concatenated_data = np.concatenate((concatenated_data, data), axis=1)
-
-    return concatenated_data
-    
-def roll_distribute_concatenate_npy_datasets(input_dir):
-    """
-    Concatenates 4D NumPy arrays from .npy files in a folder, handling variable
-    lengths in the first two dimensions, redistributes items if dimension 1
-    length is less than 7, and rolls dimension 4 based on delay calculations
-    using the cumulative sum of arrays in dimension 4.
-
-    Args:
-        input_dir: The directory containing the input .npy files.
-
-    Returns:
-        The concatenated NumPy array, or None if no valid files are found.
-    """
-
-    data_list = []
-    cumulative_sum = None  # Store the cumulative sum of arrays in dimension 4
-    n_fft=CN.N_FFT
-
-    for filename in sorted(os.listdir(input_dir)):
-        if filename.endswith(".npy"):
-            filepath = os.path.join(input_dir, filename)
-            try:
-                data = np.load(filepath)
-                if data.ndim != 4:
-                    print(f"Warning: {filename} does not have 4 dimensions. Skipping.")
-                    continue
-
-                dim1, dim2, dim3, dim4 = data.shape
-                
-                # Crop dimension 4 if it exceeds n_fft
-                if dim4 > n_fft:
-                    data = data[:, :, :, :n_fft]
-                    print('Cropped to n_fft')
-                    dim4 = n_fft
-
-                # Calculate current sum
-                current_sum = np.sum(data, axis=(0, 1, 2))  # Sum along dimensions 0, 1, and 2
-
-                # Calculate and apply delay using cumulative sum
-                if cumulative_sum is not None:
-                    roll_samples = find_delay_and_roll_lf(cumulative_sum, current_sum)
-                    if CN.LOG_INFO == True and CN.SHOW_DEV_TOOLS == True:
-                        logging.info('(AIR) samples_shift = ' + str(roll_samples))
-                    data = np.roll(data, roll_samples, axis=3)  # Roll dimension 4
-
-                # Update cumulative sum
-                if cumulative_sum is None:
-                    cumulative_sum = current_sum.copy()
-                else:
-                    cumulative_sum = cumulative_sum + current_sum  # Accumulate the sum
-
-                # Redistribution logic
-                if dim1 < 7:
-                    new_dim1 = 7
-                    new_dim2 = int(dim2 * dim1 / new_dim1)  # Redistribute items
-
-                    if new_dim2 == 0:
-                        print(f"Warning: {filename} redistribution would result in dimension 2 having length 0. Skipping.")
-                        continue
-
-                    reshaped_data = np.zeros((new_dim1, new_dim2, dim3, dim4), dtype=data.dtype)
-
-                    # Iterate and fill the new array
-                    orig_i = 0
-                    orig_j = 0
-                    for new_i in range(new_dim1):
-                        for new_j in range(new_dim2):
-                            if orig_i < dim1 and orig_j < dim2:
-                                reshaped_data[new_i, new_j, :, :] = data[orig_i, orig_j, :, :]
-                                orig_j += 1
-                            if orig_j >= dim2:
-                                orig_j = 0
-                                orig_i += 1
-
-                    data = reshaped_data
-
-                data_list.append(data)
-
-            except Exception as e:
-                print(f"Error loading {filename}: {e}")
-
-    if not data_list:
-        print("No valid .npy files found in the input directory.")
-        return None
-
-    concatenated_data = data_list[0]
-    for data in data_list[1:]:
-        concatenated_data = np.concatenate((concatenated_data, data), axis=1)
-
-    return concatenated_data    
-    
 
 def summarize_array(arr):
     """
@@ -3750,13 +3791,13 @@ def update_gui_progress(report_progress, progress=None, message=''):
     """ 
     overlay_text=''
     if report_progress > 0:
-        if report_progress == 3:#AS tab
+        if report_progress == 3:#AS progress
             prev_progress = dpg.get_value('progress_bar_as')
             if progress == None:
                 progress=prev_progress#use previous progress if not specified
             dpg.set_value("progress_bar_as", progress)
-        elif report_progress == 2:
-            prev_progress = dpg.get_value('progress_bar_brir')
+        elif report_progress == 2:#fde progress
+            prev_progress = dpg.get_value('fde_progress_bar_brir')
             if progress == None:
                 progress=prev_progress#use previous progress if not specified
             if progress == 0:
@@ -3766,10 +3807,10 @@ def update_gui_progress(report_progress, progress=None, message=''):
                     overlay_text = str(int(progress*100))+'%'
                 else:
                     overlay_text = str(int(progress*100))+'% - '+message
-            dpg.set_value("progress_bar_brir", progress)
-            dpg.configure_item("progress_bar_brir", overlay = overlay_text)
-        else:
-            prev_progress = dpg.get_value('qc_progress_bar_brir')
+            dpg.set_value("fde_progress_bar_brir", progress)
+            dpg.configure_item("fde_progress_bar_brir", overlay = overlay_text)
+        else:#QC progress
+            prev_progress = dpg.get_value('e_apo_progress_bar_brir')
             if progress == None:
                 progress=prev_progress#use previous progress if not specified
             if progress == 0:
@@ -3779,8 +3820,8 @@ def update_gui_progress(report_progress, progress=None, message=''):
                     overlay_text = str(int(progress*100))+'%'
                 else:
                     overlay_text = str(int(progress*100))+'% - '+message
-            dpg.set_value("qc_progress_bar_brir", progress)
-            dpg.configure_item("qc_progress_bar_brir", overlay = overlay_text)
+            dpg.set_value("e_apo_progress_bar_brir", progress)
+            dpg.configure_item("e_apo_progress_bar_brir", overlay = overlay_text)
               
 def check_stop_thread(gui_logger=None):
     """
@@ -3788,8 +3829,8 @@ def check_stop_thread(gui_logger=None):
     """ 
     
     #exit if stop thread flag is true
-    stop_thread_1 = dpg.get_item_user_data("qc_progress_bar_brir")
-    stop_thread_2 = dpg.get_item_user_data("progress_bar_brir")
+    stop_thread_1 = dpg.get_item_user_data("e_apo_progress_bar_brir")
+    stop_thread_2 = dpg.get_item_user_data("fde_progress_bar_brir")
     if stop_thread_1 == True or stop_thread_2 == True:
         log_string = 'BRIR Processing cancelled by user'
         log_with_timestamp(log_string, gui_logger)
@@ -3834,55 +3875,141 @@ def check_and_download_file(file_path, file_link, download=False, gui_logger=Non
 
 
     
+
+    
+def _extract_gdrive_file_id(url: str) -> str | None:
+    """
+    Extract Google Drive file ID from common URL formats.
+    """
+    patterns = [
+        r"https://drive\.google\.com/file/d/([^/]+)",
+        r"https://drive\.google\.com/open\?id=([^&]+)",
+        r"https://drive\.google\.com/uc\?id=([^&]+)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _get_gdrive_confirm_token(response: requests.Response) -> str | None:
+    """
+    Google Drive sometimes requires a confirmation token for large files.
+    """
+    for k, v in response.cookies.items():
+        if k.startswith("download_warning"):
+            return v
+    return None
+
+
+
+def clean_url_if_needed(url: str) -> str:
+    """
+    Cleans a URL only if it contains illegal characters (e.g. spaces).
+    Preserves existing percent-encoding.
+    """
+    _ILLEGAL_URL_CHARS = re.compile(r"[ \t\n\r]")
+    
+    if not url:
+        return url
+
+    # Fast exit: URL already safe
+    if not _ILLEGAL_URL_CHARS.search(url):
+        return url
+
+    split = urlsplit(url)
+
+    cleaned_path = quote(split.path, safe="/%")
+
+    return urlunsplit((
+        split.scheme,
+        split.netloc,
+        cleaned_path,
+        split.query,
+        split.fragment
+    ))
+
 def download_file(url, save_location, gui_logger=None, overwrite=True):
     """
     Downloads a file from a URL and saves it to the specified location.
 
     Args:
         url (str): The URL of the file to download.
-        save_location (str): The full path (including filename) where the file should be saved.
-        gui_logger: A logger object for GUI logging (optional).
-        overwrite (bool): If True, re-download and overwrite the file even if it exists.
+        save_location (str): Full path (including filename) to save the file.
+        gui_logger: Optional GUI logger.
+        overwrite (bool): If False and file exists, skip download.
     """
 
-    # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(save_location), exist_ok=True)
 
-    # Check if the file already exists
     if os.path.exists(save_location) and not overwrite:
-        log_string = f"File already exists at: {save_location}"
-        log_with_timestamp(log_string, gui_logger)
-        return True  # Treat as success since the file is already present
+        log_with_timestamp(
+            f"File already exists at: {save_location}",
+            gui_logger
+        )
+        return True
 
     try:
-        # Google Drive download
-        if 'drive.google' in url:
-            gdown.download(url, save_location, fuzzy=True)  # google drive link
+        # ---- URL cleanup (only if needed) ----
+        cleaned_url = clean_url_if_needed(url)
+        if cleaned_url != url:
+            log_with_timestamp(f"Cleaned URL for download:\n{url}\n→ {cleaned_url}",gui_logger)
+        url = cleaned_url
+        
+        session = requests.Session()
 
-        else:
-            response = requests.get(url, timeout=10)
+        # ---- Google Drive handling ----
+        if "drive.google" in url:
+            file_id = _extract_gdrive_file_id(url)
+            if not file_id:
+                raise ValueError("Could not extract Google Drive file ID")
+
+            download_url = "https://drive.google.com/uc?export=download"
+            params = {"id": file_id}
+
+            response = session.get(download_url, params=params, stream=True, timeout=30)
             response.raise_for_status()
 
-            # Write file (overwrites if it already exists)
-            with open(save_location, 'wb') as file:
-                file.write(response.content)
+            token = _get_gdrive_confirm_token(response)
+            if token:
+                params["confirm"] = token
+                response = session.get(download_url, params=params, stream=True, timeout=30)
+                response.raise_for_status()
 
-        log_string = (
-            f"File downloaded successfully and saved to: {save_location}"
-            if not os.path.exists(save_location) or overwrite
-            else f"File already existed and was overwritten at: {save_location}"
+        # ---- Normal HTTP(S) download ----
+        else:
+            response = session.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+
+        # ---- Write file ----
+        with open(save_location, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        log_with_timestamp(
+            f"File downloaded successfully and saved to: {save_location}",
+            gui_logger
         )
-        log_with_timestamp(log_string, gui_logger)
         return True
 
     except requests.exceptions.RequestException as e:
-        log_string = f"Error downloading file: {e}"
-        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type=2, exception=e)
+        log_with_timestamp(
+            log_string=f"Error downloading file: {e}",
+            gui_logger=gui_logger,
+            log_type=2,
+            exception=e
+        )
         return False
 
     except Exception as ex:
-        log_string = "An unexpected error occurred"
-        log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type=2, exception=ex)
+        log_with_timestamp(
+            log_string="An unexpected error occurred",
+            gui_logger=gui_logger,
+            log_type=2,
+            exception=ex
+        )
         return False
 
 
@@ -4137,47 +4264,7 @@ def apply_fade_to_matrix(
 
     return faded_matrix
 
-def compute_rms(x: np.ndarray) -> float:
-    """Compute the RMS of a 1D NumPy array using float64 precision."""
-    x = np.asarray(x, dtype=np.float64)
-    return np.sqrt(np.mean(np.square(x, dtype=np.float64), dtype=np.float64))
 
-def balance_rms_fade(array: np.ndarray, region_size: int = 3000) -> np.ndarray:
-    """
-    Scales each measurement (row) so that the RMS of the last region matches the RMS of the first,
-    using a linear gain ramp across the samples. All calculations are done in float64 to avoid
-    precision loss.
-    
-    Parameters:
-        array (np.ndarray): 2D array of shape (M, N) to apply RMS balancing to.
-        region_size (int): Number of samples to use for start/end RMS regions.
-    
-    Returns:
-        np.ndarray: RMS-balanced array of the same shape and dtype as input.
-    """
-    # Ensure working in float64 precision
-    array = np.asarray(array, dtype=np.float64)
-    M, N = array.shape
-    x = np.linspace(0, 1, N, dtype=np.float64)
-
-    balanced = np.empty_like(array)
-
-    for i in range(M):
-        row = array[i]
-        start_rms = compute_rms(row[:region_size])
-        end_rms = compute_rms(row[-region_size:])
-        
-        gain_ratio = start_rms / end_rms if end_rms != 0 else 1.0
-
-        # Gain ramp: linear interpolation from 1 to gain_ratio
-        gain = 1.0 + (gain_ratio - 1.0) * x
-        balanced[i] = row * gain
-
-    # Cast back to original dtype if needed
-    if array.dtype != balanced.dtype:
-        balanced = balanced.astype(array.dtype)
-
-    return balanced
 
 def crop_samples(arr: np.ndarray, crop_length: int) -> np.ndarray:
     """
@@ -4374,29 +4461,32 @@ def check_write_permissions(path, gui_logger=None):
         log_with_timestamp(msg, gui_logger)
         return False    
     
-    
-
-
+ 
+ 
+        
 def get_default_output_info():
-    """Return default output device name and sample rate (truncated by PortAudio/Windows if long)."""
+    """Return default output device name and sample rate, or Unknown if sounddevice fails."""
+    if not SD_AVAILABLE:
+        return "Unknown device", 0
+
     try:
-        info = sd.query_devices(kind='output')  # always get current default output
-        device_name = info['name']
-        device_samplerate = int(info['default_samplerate'])
+        info = sd.query_devices(kind='output')  # default output device
+        device_name = info.get('name', 'Unknown device')
+        device_samplerate = int(info.get('default_samplerate', 0))
         return device_name, device_samplerate
     except Exception:
         return "Unknown device", 0
 
 
 def update_default_output_text(reset_sd=True):
-    """Update DPG text elements showing the default playback device and its sample rate,
-    and indicate if it mismatches the selected WAV sample rate."""
+    """Update DPG text elements showing the default playback device and its sample rate.
+    If sounddevice is unavailable or fails, show 'Unknown'."""
     try:
-        # Reset PortAudio host API/device info
-        if reset_sd:
+        # Reset PortAudio host API/device info on Windows
+        if IS_WINDOWS and SD_AVAILABLE and reset_sd:
             sd._terminate()
             sd._initialize()
-        
+
         # Get current default playback device info
         device_name, device_samplerate = get_default_output_info()
 
@@ -4404,29 +4494,29 @@ def update_default_output_text(reset_sd=True):
         sr_text = f"{device_samplerate / 1000:.1f} kHz" if device_samplerate != 0 else "Unknown"
 
         # Get currently selected WAV sample rate
-        qc_samp_freq_str = dpg.get_value('qc_wav_sample_rate')
-        qc_samp_freq_int = CN.SAMPLE_RATE_DICT.get(qc_samp_freq_str, 0)
+        samp_freq_str = dpg.get_value('wav_sample_rate')
+        samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str, 0)
 
         # Compare sample rates (both in Hz)
-        if device_samplerate != 0 and qc_samp_freq_int != 0 and qc_samp_freq_int != device_samplerate:
+        if device_samplerate != 0 and samp_freq_int != 0 and samp_freq_int != device_samplerate:
             sr_text += " (Mismatch)"
 
         # Update GUI text elements
-        if dpg.does_item_exist("qc_def_pb_device_name"):
-            dpg.set_value("qc_def_pb_device_name", f"{device_name}")
-
-        if dpg.does_item_exist("qc_def_pb_device_sr"):
-            dpg.set_value("qc_def_pb_device_sr", f"{sr_text}")
+        if dpg.does_item_exist("def_pb_device_name"):
+            dpg.set_value("def_pb_device_name", device_name)
+        if dpg.does_item_exist("def_pb_device_sr"):
+            dpg.set_value("def_pb_device_sr", sr_text)
 
     except Exception as e:
         # fallback text if anything goes wrong
-        if dpg.does_item_exist("qc_def_pb_device_name"):
-            dpg.set_value("qc_def_pb_device_name", "Default playback device: Unknown")
-        if dpg.does_item_exist("qc_def_pb_device_sr"):
-            dpg.set_value("qc_def_pb_device_sr", "Default sample rate: Unknown")
+        if dpg.does_item_exist("def_pb_device_name"):
+            dpg.set_value("def_pb_device_name", "Default playback device: Unknown")
+        if dpg.does_item_exist("def_pb_device_sr"):
+            dpg.set_value("def_pb_device_sr", "Default sample rate: Unknown")
         msg = f"[Warning] Could not update default output info: {e}"
-        log_with_timestamp(msg)
-        
+        log_with_timestamp(msg) 
+    
+ 
         
 def map_array_value_lookup(value, array_gui, array_internal, default=None):
     """
@@ -4460,22 +4550,139 @@ def map_array_value_lookup(value, array_gui, array_internal, default=None):
     except Exception:
         return default        
 
-def set_checkbox_and_sync_button(checkbox_tag, button_tag, value, on_texture=CN.BUTTON_IMAGE_ON,off_texture= CN.BUTTON_IMAGE_OFF):
+
+    
+def set_checkbox_and_sync_button(
+    checkbox_tag,
+    button_tag,
+    value=None,
+    on_texture=CN.BUTTON_IMAGE_ON,
+    off_texture=CN.BUTTON_IMAGE_OFF,
+    refresh=False
+):
     """
-    Set the value of a hidden checkbox and synchronise the corresponding image button.
+    Set or refresh the value of a hidden checkbox and synchronise the corresponding image button.
 
     Parameters:
-    - checkbox_tag: tag of the hidden checkbox
-    - button_tag: tag of the image button
-    - value: True/False, new checkbox state
-    - on_texture: texture tag for ON state
-    - off_texture: texture tag for OFF state
+        checkbox_tag (str): tag of the hidden checkbox
+        button_tag (str): tag of the image button
+        value (bool | None): checkbox value to set (ignored if refresh=True)
+        refresh (bool): if True, read current checkbox value and sync button only
+        on_texture (str): texture tag for ON state
+        off_texture (str): texture tag for OFF state
     """
-    # Set checkbox value (authoritative state)
-    dpg.set_value(checkbox_tag, value)
+    # Refresh mode: read authoritative state from checkbox
+    if refresh:
+        value = dpg.get_value(checkbox_tag)
+    else:
+        # Normal mode: explicitly set checkbox state
+        if value is None:
+            raise ValueError("value must be provided unless refresh=True")
+        dpg.set_value(checkbox_tag, value)
 
-    # Update button image to match
+    # Sync button image to checkbox state
     dpg.configure_item(
         button_tag,
         texture_tag=on_texture if value else off_texture
+    )    
+    
+    
+def pad_or_truncate_1d(x: np.ndarray, target_len: int) -> np.ndarray:
+    """
+    Truncate or zero-pad a 1D array to exactly target_len samples.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input 1D array.
+    target_len : int
+        Desired output length.
+
+    Returns
+    -------
+    np.ndarray
+        Array of length target_len.
+    """
+    x = np.asarray(x).flatten()
+
+    out = np.zeros(target_len, dtype=x.dtype)
+    copy_len = min(len(x), target_len)
+    out[:copy_len] = x[:copy_len]
+
+    return out
+
+def normalize_brir_band(
+    ir_data,
+    n_fft,
+    fs,
+    f_norm_start,
+    f_norm_end,
+    analysis_samples=None,
+    eps=1e-12
+):
+    """
+    Normalize IR/BRIR data by a single global scalar so that the
+    average magnitude around a frequency band equals 0 dB.
+
+    The magnitude is:
+    - Measured using only the first `analysis_samples` (if provided)
+    - Averaged in the log domain
+    - Averaged across ALL measurements
+    - Applied as a single scalar to the entire array
+
+    Assumes last axis is time.
+    """
+
+    # -----------------------------
+    # Determine analysis length
+    # -----------------------------
+    if analysis_samples is not None:
+        analysis_len = min(analysis_samples, ir_data.shape[-1], n_fft)
+    else:
+        analysis_len = min(ir_data.shape[-1], n_fft)
+
+    # -----------------------------
+    # Frequency band → FFT bins
+    # -----------------------------
+    fb_start = int(f_norm_start * n_fft / fs)
+    fb_end   = int(f_norm_end   * n_fft / fs)
+
+    # -----------------------------
+    # FFT of analysis window
+    # -----------------------------
+    fft_data = np.fft.rfft(
+        ir_data[..., :analysis_len],
+        n=n_fft,
+        axis=-1
     )
+
+    # -----------------------------
+    # Magnitude in band
+    # -----------------------------
+    mag_band = np.abs(fft_data[..., fb_start:fb_end])
+
+    # -----------------------------
+    # Convert to dB
+    # -----------------------------
+    mag_db = 20.0 * np.log10(np.clip(mag_band, eps, None))
+
+    # -----------------------------
+    # Global log-domain average
+    # -----------------------------
+    avg_mag_db = np.mean(mag_db)
+
+    # -----------------------------
+    # Back to linear scalar
+    # -----------------------------
+    avg_mag = 10.0 ** (avg_mag_db / 20.0)
+    avg_mag = max(avg_mag, eps)
+
+    # -----------------------------
+    # Apply single scalar
+    # -----------------------------
+    ir_data /= avg_mag
+
+    return ir_data
+
+
+
