@@ -331,6 +331,15 @@ By default, outputs (excluding HeSuVi files) are saved within the `ASH-Outputs` 
 ---
 ## Changelog <a name="Changelog"></a> 
 
+Version 4.1.0:
+- Added ‘Anechoic Chamber’ option to acoustic spaces to allow for removal of reverberation
+- Added ‘Max output length’ option in advanced settings which can be used to force trim/crop the outputs
+- Updated acoustic space import tool with more parameters allowing finer control of the spatial transformation.
+- Fixed a bug in the acoustic space import tool impacting time domain alignment accuracy
+- Added new acoustic spaces including the rooms from ASH Listening Set
+- Added new parameters in advanced settings for calibration control
+- Added option in advanced settings to clear the cache files including downloaded acoustic spaces and HRTF related data
+  
 Version 4.0.0:
 - Merged Quick Configuration and Filter/Dataset Export into a single tab named “Headphone Correction & Spatial Audio”
 - Added a range of new acoustic spaces
