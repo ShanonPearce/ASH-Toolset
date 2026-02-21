@@ -79,6 +79,10 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             hrtf_direction_misalign_comp = brir_meta_dict.get("hrtf_direction_misalign_comp")
             hrtf_df_cal_mode = brir_meta_dict.get("hrtf_df_cal_mode")
             reverb_tail_crop_db = brir_meta_dict.get("reverb_tail_crop_db")
+            brir_df_cal_mode = brir_meta_dict.get("brir_df_cal_mode")
+            brir_max_length=brir_meta_dict.get("brir_max_length")
+            octave_smoothing_n=brir_meta_dict.get("octave_smoothing_n")
+            brir_df_cal_factor=brir_meta_dict.get("brir_df_cal_factor")
         else:
             raise ValueError('brir_meta_dict not populated')
             
@@ -215,6 +219,12 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                     needs_update = True
         
             if needs_update:
+                log_string = 'Downloading updates'
+                hf.log_with_timestamp(log_string, gui_logger)
+                if report_progress > 0:
+                    progress = 1/100
+                    hf.update_gui_progress(report_progress=report_progress, progress=progress, message=log_string)
+                    
                 air_processing.acoustic_space_updates(download_updates=True, gui_logger=gui_logger)
         except Exception as e:
             hf.log_with_timestamp(f"Failed to check/update acoustic spaces: {e}", gui_logger)
@@ -347,9 +357,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         total_azim_hrir = len(hrir_selected[0])
         total_chan_hrir = len(hrir_selected[0][0])
         total_samples_hrir = len(hrir_selected[0][0][0])
-        base_elev_idx = total_elev_hrir//2
-        
-       
+ 
         ############################## DF calibration CTF loading
         #
         ctf_mag_db = None          # main CTF magnitude in dB
@@ -538,50 +546,51 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
       
     
         # grab reverberant BRIRs from interim matrix and place in output matrix
-        for elev in range(total_elev_hrir):
-            for azim in range(total_azim_hrir): 
-                azim_deg = int(azim*azim_nearest)
-                #case for minimal set (7 directions)
-                if total_azim_reverb == 7:
-                    if azim_deg < 15 or azim_deg > 345:
-                        brir_azim_ind=0
-                    elif azim_deg < 60:
-                        brir_azim_ind=1
-                    elif azim_deg < 120:
-                        brir_azim_ind=2
-                    elif azim_deg < 180: 
-                        brir_azim_ind=3
-                    elif azim_deg <= 240:
-                        brir_azim_ind=4
-                    elif azim_deg <= 300:
-                        brir_azim_ind=5
+        if meas_rt60 > 0:
+            for elev in range(total_elev_hrir):
+                for azim in range(total_azim_hrir): 
+                    azim_deg = int(azim*azim_nearest)
+                    #case for minimal set (7 directions)
+                    if total_azim_reverb == 7:
+                        if azim_deg < 15 or azim_deg > 345:
+                            brir_azim_ind=0
+                        elif azim_deg < 60:
+                            brir_azim_ind=1
+                        elif azim_deg < 120:
+                            brir_azim_ind=2
+                        elif azim_deg < 180: 
+                            brir_azim_ind=3
+                        elif azim_deg <= 240:
+                            brir_azim_ind=4
+                        elif azim_deg <= 300:
+                            brir_azim_ind=5
+                        else:
+                            brir_azim_ind=6
+                    #case for minimal set (5 directions)
+                    elif total_azim_reverb == 5:
+                        if azim_deg < 15 or azim_deg > 345:
+                            brir_azim_ind=0
+                        elif azim_deg < 120:
+                            brir_azim_ind=1
+                        elif azim_deg < 180: 
+                            brir_azim_ind=2
+                        elif azim_deg <= 240:
+                            brir_azim_ind=3
+                        else:
+                            brir_azim_ind=4
+                    #case for multiple directions on horizontal plane, every x deg azimuth
+                    elif total_azim_reverb > 0:
+                        #map hrir azimuth to appropriate brir azimuth
+                        #round azim to nearest X deg and get new ID
+                        brir_azim = hf.round_to_multiple(azim_deg,nearest_azim_reverb)#brir_reverberation is nearest X deg, variable
+                        if brir_azim >= 360:
+                            brir_azim = 0
+                        brir_azim_ind = int(brir_azim/nearest_azim_reverb)#get index
                     else:
-                        brir_azim_ind=6
-                #case for minimal set (5 directions)
-                elif total_azim_reverb == 5:
-                    if azim_deg < 15 or azim_deg > 345:
-                        brir_azim_ind=0
-                    elif azim_deg < 120:
-                        brir_azim_ind=1
-                    elif azim_deg < 180: 
-                        brir_azim_ind=2
-                    elif azim_deg <= 240:
-                        brir_azim_ind=3
-                    else:
-                        brir_azim_ind=4
-                #case for multiple directions on horizontal plane, every x deg azimuth
-                elif total_azim_reverb > 0:
-                    #map hrir azimuth to appropriate brir azimuth
-                    #round azim to nearest X deg and get new ID
-                    brir_azim = hf.round_to_multiple(azim_deg,nearest_azim_reverb)#brir_reverberation is nearest X deg, variable
-                    if brir_azim >= 360:
-                        brir_azim = 0
-                    brir_azim_ind = int(brir_azim/nearest_azim_reverb)#get index
-                else:
-                    raise ValueError('Unable to process BRIR reverberation data. Invalid number of reverberation sources: ' + str(total_azim_reverb) )
-                
-                for chan in range(CN.TOTAL_CHAN_BRIR):
-                    brir_out[elev][azim][chan][0:n_fft] = np.copy(brir_reverberation[0][brir_azim_ind][chan][0:n_fft])
+                        raise ValueError('Unable to process BRIR reverberation data. Invalid number of reverberation sources: ' + str(total_azim_reverb) )
+                    
+                    for chan in range(CN.TOTAL_CHAN_BRIR):
+                        brir_out[elev][azim][chan][0:n_fft] = np.copy(brir_reverberation[0][brir_azim_ind][chan][0:n_fft])
     
         
    
@@ -709,9 +718,9 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #convert to mag
         brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)      
         #level ends of spectrum
-        brir_fft_avg_mag_sm = hf.level_spectrum_ends(brir_fft_avg_mag, 15, 18500, smooth_win = 5, n_fft=CN.N_FFT)#40, 19000, smooth_win = 7 
+        brir_fft_avg_mag_sm = hf.level_spectrum_ends(brir_fft_avg_mag, 15, 18500, smooth_win = octave_smoothing_n, n_fft=CN.N_FFT)#40, 19000, smooth_win = 7 
         #octave smoothing
-        brir_fft_avg_mag_sm = hf.smooth_gaussian_octave(data=brir_fft_avg_mag_sm, n_fft=CN.N_FFT, fraction=6)
+        brir_fft_avg_mag_sm = hf.smooth_gaussian_octave(data=brir_fft_avg_mag_sm, n_fft=CN.N_FFT, fraction=octave_smoothing_n)
         
         #include CTF if DF calibration reversal is enabled
         if ctf_adj_loaded and ctf_adj_mag_db is not None:
@@ -720,8 +729,9 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             hf.log_with_timestamp("HRTF CTF Adjustment response available, applying to integrated response CTF.")
 
         
-        #invert response
-        brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1)
+        #invert response and scale by user selected strength factor
+        brir_df_cal_factor=max(0.05,brir_df_cal_factor)
+        brir_fft_avg_mag_inv = hf.db2mag(hf.mag2db(brir_fft_avg_mag_sm)*-1*brir_df_cal_factor)
         
         #include CTF if DF calibration reversal is enabled
         if df_cal_reversal:
@@ -732,7 +742,19 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 hf.log_with_timestamp("HRTF CTF DF response not available, skipping HRTF DF reintegration.", gui_logger)
                 
         #create min phase FIR
-        brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=4096, n_fft=CN.N_FFT)#2048
+        if brir_df_cal_mode == CN.BRIR_DF_CAL_MODE_LIST[0]:
+            brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=4096, n_fft=CN.N_FFT)
+        elif brir_df_cal_mode == CN.BRIR_DF_CAL_MODE_LIST[1]:
+            # 1. Define your impulse (e.g., 8192 samples long)
+            n_fft_param = 8192 
+            impulse = np.zeros((1, 1, n_fft_param))
+            impulse[0, 0, 0] = 1.0  # Set the first sample to 1.0
+            # 2. Run your function with the override
+            # This will return the EQ-IR as a (1, 1, n_fft) array
+            eq_ir_dataset = hf.equalize_brirs_parametric(brir_dataset=impulse, diff_db_override=hf.mag2db(brir_fft_avg_mag_inv), override_n_fft=CN.N_FFT, 
+                                                         num_filters=50,low_freq_cut = 12.0, high_freq_cut = 18000.0)
+            # 3. Extract the 1D array for easy convolution later
+            brir_df_inv_fir = eq_ir_dataset.flatten()
         
         if report_progress > 0:
             progress = 80/100
@@ -751,7 +773,9 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #larger reverb times will need additional samples
         #estimate output array length based on RT60
         #Below determines the most samples to keep based on estimated rt60
-        if meas_rt60 <=400:
+        if meas_rt60 <=0:
+            out_samples_max = 512
+        elif meas_rt60 <=400:
             out_samples_max = 33075
         elif meas_rt60 <=1250:
             out_samples_max = 64500    
@@ -768,6 +792,8 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         crop_samples = hf.get_crop_index_relative(ref_array, tail_ignore=8000,head_ignore=100, threshold_db=reverb_tail_crop_db) #crop_samples = hf.get_crop_index(ref_array, tail_ignore=10000)
         if crop_samples < 2000 or crop_samples > out_samples_max:#ensure it stays within limits. Not suitable for short IRs (<50ms)
             crop_samples=out_samples_max
+        if crop_samples > brir_max_length:#clamp to user specified max length
+            crop_samples = brir_max_length
  
         #merge filters into single EQ filter
         eq_filter = brir_df_inv_fir
@@ -1157,7 +1183,10 @@ def process_mono_cues_v5(gui_logger=None):
                   {'fc': 10500, 'q': 5.0, 'gain_db': -3.0}],
             'd': [{'fc': 3000, 'q': 2.0, 'gain_db': -6.0}, {'fc': 1500, 'q': 3.0, 'gain_db': 1.5}, {'fc': 5900, 'q': 3.0, 'gain_db': 3.5},
                   {'fc': 4500, 'q': 3.0, 'gain_db': 2.5}, {'fc': 9500, 'q': 7.0, 'gain_db': -4.0}, {'fc': 3600, 'q': 5.0, 'gain_db': -2.0},
-                  {'fc': 10800, 'q': 4.0, 'gain_db': -2.0}, {'fc': 7700, 'q': 7.0, 'gain_db': 2.0}, {'fc': 6300, 'q': 7.0, 'gain_db': 1.0}]
+                  {'fc': 10800, 'q': 4.0, 'gain_db': -2.0}, {'fc': 7700, 'q': 7.0, 'gain_db': 2.0}, {'fc': 6300, 'q': 7.0, 'gain_db': 1.0}],
+            'e': [{'fc': 1400, 'q': 2.5, 'gain_db': 1.0}, {'fc': 2100, 'q': 4.0, 'gain_db': -2.5}, {'fc': 2800, 'q': 2.5, 'gain_db': -3.0},
+                  {'fc': 4500, 'q': 4.0, 'gain_db': -3.0}, {'fc': 5900, 'q': 2.0, 'gain_db': 1.0}, {'fc': 6600, 'q': 8.0, 'gain_db': -1.5},
+                  {'fc': 7200, 'q': 4.0, 'gain_db': 4.0}, {'fc': 8200, 'q': 4.0, 'gain_db': 2.0}, {'fc': 10100, 'q': 9.0, 'gain_db': -7.0}, {'fc': 11000, 'q': 7.0, 'gain_db': -5.0}]
         }
 
         oe_hs_comp_mag = {}
@@ -1169,20 +1198,24 @@ def process_mono_cues_v5(gui_logger=None):
                 hf.plot_data(np.abs(data_fft), f'oe_hs_comp_{key}_mag', normalise=1)
 
         # Weighted average of HS comp a/b/c
-        oe_hs_comp_avg_db = np.sum([oe_hs_comp_mag[k]*w for k, w in zip(['a','b','c','d'], [0.25,0.15,0.15,0.45])], axis=0) * -1#0.4,0.3,0.3
-        oe_hs_new_avg_db = np.sum([oe_hs_comp_avg_db*0.6, hf.mag2db(over_ear_add_eq_mag)*0.4], axis=0)
+        oe_hs_comp_avg_db = np.sum([oe_hs_comp_mag[k]*w for k, w in zip(['a','b','c','d','e'], [0.17,0.17,0.17,0.29,0.20])], axis=0) * -1#0.4,0.3,0.3 - 0.25,0.15,0.15,0.45
+        oe_hs_new_avg_db = np.sum([oe_hs_comp_avg_db*0.70, hf.mag2db(over_ear_add_eq_mag)*0.30], axis=0)
         
         # --- Final over-ear curves ---
         over_ear_high_db = hf.mag2db(hp_est_avg_mag) + oe_hs_new_avg_db
         
         if CN.PLOT_ENABLE:
+            oe_hs_comp_avg_mag = hf.db2mag(oe_hs_comp_avg_db)
             oe_hs_new_avg_mag = hf.db2mag(oe_hs_new_avg_db)
             oe_hs_new_avg_mag_inv = hf.db2mag(oe_hs_new_avg_db*-1)
             over_ear_high_mag = hf.db2mag(over_ear_high_db)
             in_ear_high_mag = hf.db2mag(in_ear_high_db)
             in_ear_low_mag = hf.db2mag(in_ear_low_db)
+            
             hf.plot_data(hp_est_avg_mag, 'hp_est_avg_mag (Over ear HP Ear interactions, low strength)', normalise=1)
-            hf.plot_data(oe_hs_new_avg_mag, 'oe_hs_new_avg_mag (Over ear additional interactions)', normalise=1)
+            hf.plot_data(over_ear_add_eq_mag, 'over_ear_add_eq_mag (Over ear additional interactions v1)', normalise=1)
+            hf.plot_data(oe_hs_comp_avg_mag, 'oe_hs_comp_avg_mag (Over ear additional interactions v2)', normalise=1)
+            hf.plot_data(oe_hs_new_avg_mag, 'oe_hs_new_avg_mag (Over ear additional interactions v3 avg)', normalise=1)
             hf.plot_data(oe_hs_new_avg_mag_inv, 'oe_hs_new_avg_mag_inv (Over ear additional interactions inverted)', normalise=1)
             hf.plot_data(over_ear_high_mag, 'over_ear_high_mag (Over ear HP Ear interactions, high strength)', normalise=1)
             hf.plot_data(in_ear_low_mag, 'in_ear_high_mag (In ear HP Ear interactions, low strength)', normalise=1)

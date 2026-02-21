@@ -743,75 +743,90 @@ def sort_names_by_values(names, values, descending=False):
     
     return sorted_names
 
-def biased_spherical_coordinate_sampler(azim_src_set, elev_src_set, num_samples,
-                                                                     biased_azimuth_centers=np.array([45, 135, 225, 315]),
-                                                                     azimuth_bias_strength=20, plot_distribution=False):
+
+
+def calculate_room_corner_centers(front_angle_deg):
     """
-    Efficiently samples spherical coordinates (azimuth and elevation) with a bias
-    towards specified azimuth angles, accounting for circular wrap-around.
-    Optionally plots the distribution of selected azimuths.
+    Calculates 4 corner azimuths based on the angle of the front-right corner.
+    
+    Example: 
+    Input 45 -> [45, 135, 225, 315] (Square)
+    Input 40 -> [40, 140, 220, 320] (Slightly narrow/deep)
+    """
+    # 1. Front-Right (e.g., 40)
+    fr = front_angle_deg
+    
+    # 2. Front-Left (e.g., 360 - 40 = 320)
+    fl = 360 - front_angle_deg
+    
+    # 3. Rear-Right (e.g., 180 - 40 = 140)
+    rr = 180 - front_angle_deg
+    
+    # 4. Rear-Left (e.g., 180 + 40 = 220)
+    rl = 180 + front_angle_deg
+    
+    # Return sorted array for consistent processing
+    return np.sort(np.array([fr, rr, rl, fl]))
+
+def biased_spherical_coordinate_sampler(azim_src_set, elev_src_set, num_samples,
+                                       biased_azimuth_centers=np.array([45, 135, 225, 315]),
+                                       azimuth_spread=20, plot_distribution=False):
+    """
+    Samples spherical coordinates with a Gaussian bias towards specific azimuth centers.
+    
+    The bias is calculated using a circular wrapping distance. A smaller azimuth_spread 
+    results in a stronger, narrower bias (tight clusters), while a larger spread 
+    results in a weaker bias (more uniform distribution).
 
     Args:
-        azim_src_set (np.ndarray): Array of possible azimuth angles (degrees), sorted.
+        azim_src_set (np.ndarray): Sorted array of possible azimuth angles (degrees).
         elev_src_set (np.ndarray): Array of possible elevation angles (degrees).
-        num_samples (int): The number of spherical coordinates to sample.
-        biased_azimuth_centers (np.ndarray, optional): Array of azimuth angles
-            (degrees) around which the bias will be applied. Defaults to [45, 135, 225, 315].
-        azimuth_bias_strength (int, optional): Controls the strength of the azimuth 
-            bias (higher value = stronger bias, narrower distribution). Defaults to 20. note: higher is weaker bias
-        plot_distribution (bool, optional): If True, plots a histogram of the
-            selected azimuth angles after sampling. Defaults to False.
+        num_samples (int): Number of coordinate pairs to sample.
+        biased_azimuth_centers (np.ndarray): Azimuths (degrees) to bias towards.
+        azimuth_spread (float): Standard deviation of the bias. 
+            Lower = Stronger bias (narrower peaks).
+            Higher = Weaker bias (broader peaks/more uniform).
+        plot_distribution (bool): If True, shows a histogram of results.
 
     Returns:
-        tuple: A tuple containing two lists:
-            - selected_azimuths (list): List of randomly selected azimuth angles.
-            - selected_elevations (list): List of randomly selected elevation angles.
+        tuple: (selected_azimuths, selected_elevations) as lists.
     """
-    selected_azimuths = []
-    selected_elevations = []
-    num_azim = len(azim_src_set)
-    probabilities = np.zeros(num_azim, dtype=float)
-
-    for i, azim in enumerate(azim_src_set):
-        prob = 0.0
-        for center in biased_azimuth_centers:
-            diff = np.abs(azim - center)
-            circular_diff = np.min([diff, 360 - diff])
-            prob += np.exp(-(circular_diff**2) / (2 * azimuth_bias_strength**2))
-        probabilities[i] = prob
-
+    # Vectorized calculation of circular differences
+    # Reshape to (num_azim, 1) and (1, num_centers) for broadcasting
+    azim_col = azim_src_set[:, np.newaxis]
+    centers_row = biased_azimuth_centers[np.newaxis, :]
+    
+    diff = np.abs(azim_col - centers_row)
+    circular_diff = np.minimum(diff, 360 - diff)
+    
+    # Calculate Gaussian probabilities: P = sum( exp( -d^2 / (2 * sigma^2) ) )
+    # Higher azimuth_spread (sigma) increases the denominator, flattening the curve.
+    gauss_weights = np.exp(-(circular_diff**2) / (2 * azimuth_spread**2))
+    probabilities = np.sum(gauss_weights, axis=1)
     probabilities /= np.sum(probabilities)
 
-    # Create a CDF for efficient random sampling
+    # Sampling
     cdf = np.cumsum(probabilities)
+    
+    # Generate random values in bulk for speed
+    rand_azims = [random.random() for _ in range(num_samples)]
+    selected_azim_indices = np.searchsorted(cdf, rand_azims)
+    selected_azimuths = azim_src_set[selected_azim_indices].tolist()
 
-    for _ in range(num_samples):
-        # Efficiently sample azimuth using CDF
-        rand_val = random.random()
-        selected_azimuth_index = np.searchsorted(cdf, rand_val)
-        selected_azimuth = azim_src_set[selected_azimuth_index]
-        selected_azimuths.append(selected_azimuth)
-
-        # Randomly select an elevation angle (no bias)
-        random_elevation_index = random.randint(0, len(elev_src_set) - 1)
-        selected_elevation = elev_src_set[random_elevation_index]
-        selected_elevations.append(selected_elevation)
+    # Elevation sampling (Uniform/Unbiased)
+    selected_elevations = [random.choice(elev_src_set) for _ in range(num_samples)]
 
     if plot_distribution:
-        plt.figure(figsize=(10, 6))
-        plt.hist(selected_azimuths, bins=np.arange(azim_src_set.min(), azim_src_set.max() + 10, 10), edgecolor='black')
-        plt.xlabel("Azimuth Angle (degrees)")
+        plt.figure(figsize=(10, 5))
+        plt.hist(selected_azimuths, bins=np.arange(0, 370, 10), edgecolor='black', alpha=0.7)
+        plt.xlabel("Azimuth (degrees)")
         plt.ylabel("Frequency")
-        plt.title("Distribution of Selected Azimuth Angles (Circular, Efficient)")
+        plt.title(f"Azimuth Distribution (Spread={azimuth_spread})")
         plt.xticks(np.arange(0, 361, 45))
-        plt.grid(True)
-        plt.tight_layout()
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.show()
 
     return selected_azimuths, selected_elevations
-
-
-
 
 
 
@@ -1283,7 +1298,6 @@ def plot_average_measurements(file_path: str):
 
 
 
-
 def expand_measurements(
     measurement_array: np.ndarray,
     desired_measurements: int,
@@ -1292,16 +1306,17 @@ def expand_measurements(
     shuffle: bool = False,
     seed="random",#"random"
     num_threads: int = 4,
-    plot_first_n: int = 1,
-    plot: bool = False, 
+    plot_first_n: int = 10,
+    plot: bool = CN.PLOT_ENABLE, 
     gui_logger=None,
     cancel_event=None,
-    pitch_shift_comp=True,
+    pitch_shift_comp=CN.AS_PS_COMP_LIST[1],
     comp_strength=1.0,
     ignore_ms: float = CN.IGNORE_MS,
     report_progress=0, 
-    pitch_shift_mode: str = "librosa", #resample or librosa
-    preserve_originals: bool = False#False
+    pitch_shift_mode: str = CN.AS_SPAT_EXP_LIST[1], #resample or librosa
+    preserve_originals: bool = False #False due to compatibility issues with pitch shift
+
 ) -> tuple[np.ndarray, int]:
     """
     Expand a measurement array by generating pitch-shifted variants.
@@ -1317,33 +1332,40 @@ def expand_measurements(
     # ------------------------------------------------------------
     # Constants & Setup
     # ------------------------------------------------------------
-    n_fft        = 16384#4096,8192,32768,16384
+    n_fft        = 4096#4096,8192,32768,16384
     truncate_len = 4096#512,8192,
     f_min        = 20
     f_max        = 20000
 
     measurement_array = measurement_array.astype(np.float64, copy=False)
     base_n, sample_len = measurement_array.shape
+    
 
     output = np.empty((desired_measurements, sample_len), dtype=np.float64)
     status = 1
-    
-
+  
     # ------------------------------------------------------------
     # Precompute magnitude spectra of ORIGINAL IRs for compensation
     # ------------------------------------------------------------
     orig_mag = np.abs(np.fft.rfft(measurement_array, n=n_fft, axis=1))
     
     # ------------------------------------------------------------
-    # === NEW: GLOBAL REFERENCE (mean dB response) ===
+    # === NEW: PER-IR AND GLOBAL REFERENCES ===
     # ------------------------------------------------------------
     orig_db = 20.0 * np.log10(np.maximum(orig_mag, 1e-12))
-    ref_db_global = np.mean(orig_db, axis=0)   # <-- SINGLE reference
     
-    ref_mag = 10.0 ** (ref_db_global / 20.0)
-    #ref_mag = smooth_freq_octaves(ref_mag,fund_freq=100,win_size_base=5,n_fft=n_fft,fs=fs,to_full=False)
-    ref_mag = smooth_gaussian_octave(data=ref_mag, n_fft=n_fft,fs=fs, fraction=12)
-    ref_db_global = 20.0 * np.log10(np.maximum(ref_mag, 1e-12))
+    # Precompute smoothed reference for EVERY original IR
+    ref_db_per_ir = np.zeros_like(orig_db)
+    for i in range(base_n):
+        tmp_mag = 10.0 ** (orig_db[i] / 20.0)
+        tmp_mag = smooth_gaussian_octave(data=tmp_mag, n_fft=n_fft, fs=fs, fraction=12)
+        ref_db_per_ir[i] = 20.0 * np.log10(np.maximum(tmp_mag, 1e-12))
+
+    # Precompute smoothed GLOBAL reference (mean)
+    ref_db_global_raw = np.mean(orig_db, axis=0)
+    ref_mag_g = 10.0 ** (ref_db_global_raw / 20.0)
+    ref_mag_g = smooth_gaussian_octave(data=ref_mag_g, n_fft=n_fft, fs=fs, fraction=12)
+    ref_db_global = 20.0 * np.log10(np.maximum(ref_mag_g, 1e-12))
 
     # ------------------------------------------------------------
     # Pitch shift value generator
@@ -1373,10 +1395,10 @@ def expand_measurements(
     plot_queue = queue.Queue()
 
     def apply_pitch_shift(ir, shift_val):
-        if pitch_shift_mode == "librosa":
+        if pitch_shift_mode == CN.AS_SPAT_EXP_LIST[1]:
             return apply_pitch_shift_librosa(ir, shift_val, fs)
     
-        elif pitch_shift_mode == "resample":
+        elif pitch_shift_mode == CN.AS_SPAT_EXP_LIST[2]:
             return apply_pitch_shift_resample(ir, shift_val, fs)
     
         else:
@@ -1388,14 +1410,15 @@ def expand_measurements(
     # ------------------------------------------------------------
     # === CHANGED: compensation uses GLOBAL reference ===
     # ------------------------------------------------------------
-    def build_compensation_filter(shifted_ir, plot_idx=None):
+    def build_compensation_filter(shifted_ir, ir_index, plot_idx=None):
         shifted_mag = np.abs(np.fft.rfft(shifted_ir, n=n_fft))
-        #shifted_mag = smooth_freq_octaves(shifted_mag,fund_freq=100,win_size_base=9,n_fft=n_fft,fs=fs,to_full=False)
-        shifted_mag = smooth_gaussian_octave(data=shifted_mag, n_fft=n_fft,fs=fs, fraction=12)
-
+        shifted_mag = smooth_gaussian_octave(data=shifted_mag, n_fft=n_fft, fs=fs, fraction=6)#12
         shifted_db = 20.0 * np.log10(np.maximum(shifted_mag, 1e-12))
+
+        # Choose between the average curve or the specific source curve
+        target_ref_db = ref_db_global if pitch_shift_comp == CN.AS_PS_COMP_LIST[2]  else ref_db_per_ir[ir_index]
   
-        comp_mag_raw_db = ref_db_global - shifted_db
+        comp_mag_raw_db = target_ref_db - shifted_db
         
         # ------------------------------------------------------------
         # NEW: limit compensation strength to ±15 dB
@@ -1403,8 +1426,7 @@ def expand_measurements(
         comp_mag_raw_db = np.clip(comp_mag_raw_db, -15.0, 15.0)
         
         comp_mag = 10.0 ** (comp_mag_raw_db / 20.0)
-        #comp_mag = smooth_freq_octaves(comp_mag,fund_freq=100,win_size_base=9,n_fft=n_fft,fs=fs,to_full=False)
-        comp_mag = smooth_gaussian_octave(data=comp_mag, n_fft=n_fft,fs=fs, fraction=6)
+        comp_mag = smooth_gaussian_octave(data=comp_mag, n_fft=n_fft,fs=fs, fraction=4)#6
         comp_mag_db = 20.0 * np.log10(np.maximum(comp_mag, 1e-12))
 
         # HF taper
@@ -1427,9 +1449,17 @@ def expand_measurements(
 
         if plot and plot_idx is not None and plot_idx < plot_first_n:
             fft_freqs = np.fft.rfftfreq(n_fft, 1.0 / fs)
-            plot_queue.put(
-                (plot_idx, fft_freqs, shifted_db, comp_mag_raw_db, comp_mag_db, ref_db_global)
-            )
+            original_ir = measurement_array[ir_index]
+    
+            plot_queue.put({
+                "idx": ir_index,
+                "freqs": fft_freqs,
+                "shifted_db": shifted_db,
+                "comp_db": comp_mag_db,
+                "ref_db": target_ref_db,
+                "time_orig": original_ir,
+                "time_shifted": shifted_ir
+            })
 
         return build_min_phase_filter(comp_mag,fs=fs,n_fft=n_fft,truncate_len=truncate_len,f_min=f_min,f_max=f_max,band_limit=True)
  
@@ -1465,17 +1495,18 @@ def expand_measurements(
     
                 shifted = apply_pitch_shift(ir, shift)
     
-                # Pad / crop
-                if len(shifted) < sample_len:
-                    temp = np.zeros(sample_len)
-                    temp[:len(shifted)] = shifted
-                    shifted = temp
-                else:
-                    shifted = shifted[:sample_len]
-  
+                # Ensure the shifted IR is the correct length before alignment
+                if len(shifted) != sample_len:
+                    if len(shifted) < sample_len:
+                        temp = np.zeros(sample_len)
+                        temp[:len(shifted)] = shifted
+                        shifted = temp
+                    else:
+                        shifted = shifted[:sample_len]
+   
                 # Compensation only for pitch-shifted IRs
-                if pitch_shift_comp:
-                    comp = build_compensation_filter(shifted, ir_index)
+                if pitch_shift_comp != CN.AS_PS_COMP_LIST[0]:
+                    comp = build_compensation_filter(shifted, ir_index, i)
                     conv = sp.signal.fftconvolve(shifted, comp, mode="full")
                     # trim to original IR length
                     shifted = conv[:sample_len]
@@ -1556,30 +1587,86 @@ def expand_measurements(
     except Exception as e:
         log_with_timestamp(f"Exception in expansion: {e}", gui_logger)
         status = 1
-        
-    # ---------------------- Plot the queued first 10 IRs ----------------------
+
+    # ---------------------- Plot the queued IRs ----------------------
     if plot:
         while not plot_queue.empty():
-            ir_index, fft_freqs, shifted_db, comp_mag_db, smoothed_mag_db, ref_db = plot_queue.get()
-            plt.figure(figsize=(10,5))
-            plt.semilogx(fft_freqs, ref_db, label='Reference IR (dB)', linestyle='--', color='black')
-            plt.semilogx(fft_freqs, shifted_db, label='Shifted IR (dB)')
-            plt.semilogx(fft_freqs, comp_mag_db, label='Compensation (dB)')
-            plt.semilogx(fft_freqs, smoothed_mag_db, label='Smoothed Comp (dB)')
-            plt.axhline(0.0, linestyle='--', color='gray', linewidth=0.8)
-            plt.xlabel('Frequency (Hz)')
-            plt.ylabel('Magnitude (dB)')
-            plt.title(f'Compensation Filter IR #{ir_index}')
-            plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-            plt.legend()
-            plt.xlim(20, fs/2)
-            plt.ylim(-20, 20)
+            data = plot_queue.get()
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8))
+            plt.subplots_adjust(hspace=0.4)
+    
+            # --- Subplot 1: Frequency Domain ---
+            ax1.semilogx(data["freqs"], data["ref_db"], label='Reference (dB)', linestyle='--', color='black', alpha=0.7)
+            ax1.semilogx(data["freqs"], data["shifted_db"], label='Shifted IR (dB)', color='tab:blue')
+            ax1.semilogx(data["freqs"], data["comp_db"], label='Comp Filter (dB)', color='tab:red')
+            ax1.axhline(0.0, linestyle='--', color='gray', linewidth=0.8)
+            ax1.set_xlim(20, fs/2)
+            ax1.set_ylim(-20, 20)
+            ax1.set_title(f'Spectral Analysis: IR #{data["idx"]}')
+            ax1.set_ylabel('Magnitude (dB)')
+            ax1.grid(True, which='both', alpha=0.3)
+            ax1.legend(loc='upper right', fontsize='small')
+    
+            # --- Subplot 2: Time Domain (Zoomed on Peak) ---
+            time_axis = np.arange(len(data["time_orig"])) / fs * 1000 # in ms
+            
+            # Calculate a nice zoom window around the original peak
+            peak_sample = np.argmax(np.abs(data["time_orig"]))
+            start_ms = max(0, (peak_sample - 100) / fs * 1000)
+            end_ms = min(len(data["time_orig"]) / fs * 1000, (peak_sample + 1000) / fs * 1000)
+    
+            ax2.plot(time_axis, data["time_orig"], label='Original', color='black', alpha=0.5)
+            ax2.plot(time_axis, data["time_shifted"], label='Shifted + Aligned', color='tab:orange', linestyle='--')
+            
+            ax2.set_xlim(start_ms, end_ms) # Zoom into the first few milliseconds
+            ax2.set_title(f'Time Domain Alignment (Zoomed View)')
+            ax2.set_xlabel('Time (ms)')
+            ax2.set_ylabel('Amplitude')
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='upper right', fontsize='small')
+    
             plt.show()
-            plt.close()  # <-- immediately free memory
+            plt.close()
 
     return output, status
 
 
+def apply_ir_shift(arr, shift_amt, fade_len=10, circular=False):
+    """
+    Shifts an IR array and applies a tiny linear fade-in.
+    
+    Args:
+        arr: The input impulse response array.
+        shift_amt: Samples to shift (positive for delay, negative for advance).
+        fade_len: Length of the linear fade-in ramp at the start of the buffer.
+        circular: If True, uses np.roll (wrap-around). 
+                  If False, uses zero-padding (linear shift).
+    """
+    if shift_amt == 0:
+        result = arr.copy()
+    elif circular:
+        # --- Circular Shift ---
+        result = np.roll(arr, shift_amt)
+    else:
+        # --- Linear Shift with Zero Padding (The "Safe" Way) ---
+        result = np.zeros_like(arr)
+        n = len(arr)
+        if shift_amt > 0:  # Delay (Shift Right)
+            s = min(shift_amt, n)
+            result[s:] = arr[:n-s]
+        elif shift_amt < 0:  # Advance (Shift Left)
+            s = min(abs(shift_amt), n)
+            result[:n-s] = arr[s:] # Take from sample S to the end, place at start
+
+    # --- Apply Fade-In ---
+    # Essential for circular shifts to kill wrap-around clicks,
+    # and helpful for linear shifts to ensure a clean start.
+    if fade_len > 0:
+        actual_fade = min(fade_len, len(result))
+        fade_curve = np.linspace(0.0, 1.0, actual_fade)
+        result[:actual_fade] *= fade_curve
+        
+    return result
 
 
 
@@ -1630,6 +1717,8 @@ def apply_pitch_shift_resample(ir, shift_val, fs):
 
 
 
+
+
 def equalize_brirs_parametric(
     brir_dataset,
     fs = CN.SAMP_FREQ,
@@ -1645,162 +1734,99 @@ def equalize_brirs_parametric(
     plot = CN.PLOT_ENABLE
 ):
     """
-    Smooths the low-frequency magnitude of a BRIR dataset using parametric peaking filters.
-    Applies the same filter chain to all channels to preserve interaural timing.
-
-    Parameters:
-    - brir_dataset: ndarray with shape (..., channels, samples)
-    - fs: sampling rate
-    - n_fft: FFT length for analysis
-    - truncate_len: optional length to trim output IRs
-    - num_filters: number of parametric peaking filters to fit
-    - low_freq_cut/high_freq_cut: flattening boundaries
-    - fraction_smooth_target/avg: octave smoothing fractions
+    Optimized version: Fits parametric EQ via vectorized log-magnitude response
+    and applies filtering via FFT convolution for massive speed gains.
     """
-    using_override = diff_db_override is not None
-    brir_dataset = brir_dataset.astype(np.float64, copy=False)
-    shape = brir_dataset.shape
-    n_samples = shape[-1]
-    n_channels = shape[-2]
-    if truncate_len is None:
-        truncate_len = n_samples
-    output = np.empty_like(brir_dataset)
+    # --- 1. Preparation ---
+    brir_dataset = np.asarray(brir_dataset, dtype=np.float64)
+    orig_shape = brir_dataset.shape
+    n_samples = orig_shape[-1]
+    if truncate_len is None: truncate_len = n_samples
 
-    # Frequency axis
     fft_freqs = np.fft.rfftfreq(n_fft, 1/fs)
-    omega = 2 * np.pi * fft_freqs / fs  # angular frequency for analytic response
-
-    # Step 1: average BRIR magnitude
-    if not using_override:
-        mag = np.abs(np.fft.rfft(brir_dataset.reshape(-1,n_samples), n=n_fft, axis=1))
-        avg_db = 20*np.log10(np.maximum(mag,1e-12)).mean(axis=0)
-        a_lo = np.searchsorted(fft_freqs, low_freq_cut)
-        a_hi = np.searchsorted(fft_freqs, high_freq_cut)
-        if a_lo>0: avg_db[:a_lo]=avg_db[a_lo]
-        if a_hi<len(avg_db): avg_db[a_hi:]=avg_db[a_hi]
-
-    # Step 2–4: difference curve
+    
+    # --- 2. Difference Curve Logic (With Shortcut) ---
     if diff_db_override is not None:
-        diff_db_override = np.asarray(diff_db_override)
-        if diff_db_override.ndim==1 and override_n_fft is not None:
+        # SHORTCUT: Skip all averaging and smoothing
+        diff_db = np.asarray(diff_db_override)
+        if override_n_fft is not None:
             full_freqs = np.fft.rfftfreq(override_n_fft, 1/fs)
-            diff_full = diff_db_override[:len(full_freqs)]
-            diff_db = np.interp(fft_freqs, full_freqs, diff_full,
-                                left=diff_full[0], right=diff_full[-1])
-        else:
-            if len(diff_db_override)!=len(fft_freqs):
-                raise ValueError("diff_db_override length mismatch")
-            diff_db = diff_db_override.copy()
+            diff_db = np.interp(fft_freqs, full_freqs, diff_db[:len(full_freqs)],
+                                left=diff_db[0], right=diff_db[-1])
+        elif len(diff_db) != len(fft_freqs):
+            raise ValueError(f"diff_db_override length ({len(diff_db)}) must match n_fft/2 + 1 ({len(fft_freqs)})")
     else:
+        # Standard logic: Only runs if no override is provided
+        mag = np.abs(np.fft.rfft(brir_dataset.reshape(-1, n_samples), n=n_fft, axis=1))
+        avg_db = 20 * np.log10(np.maximum(mag, 1e-12)).mean(axis=0)
+        a_lo, a_hi = np.searchsorted(fft_freqs, [low_freq_cut, high_freq_cut])
+        avg_db[:a_lo], avg_db[a_hi:] = avg_db[a_lo], avg_db[a_hi]
+
+        # smooth_gaussian_octave is assumed to be defined in your namespace
         target_mag = smooth_gaussian_octave(10**(avg_db/20), n_fft=n_fft, fs=fs, fraction=fraction_smooth_target)
-        target_db = 20*np.log10(np.maximum(target_mag,1e-12))
         avg_mag_cut = smooth_gaussian_octave(10**(avg_db/20), n_fft=n_fft, fs=fs, fraction=fraction_smooth_avg)
-        avg_db_cut = 20*np.log10(np.maximum(avg_mag_cut,1e-12))
-        diff_db = target_db - avg_db_cut
-    diff_db = np.clip(diff_db,-10,10)
+        diff_db = 20*np.log10(np.maximum(target_mag, 1e-12)) - 20*np.log10(np.maximum(avg_mag_cut, 1e-12))
 
-    # Step 5: initial filter params
+    diff_db = np.clip(diff_db, -20, 20)
+
+    # --- 3. Optimizer Setup (Subsampled for Speed) ---
+    fit_idx = np.unique(np.geomspace(1, len(fft_freqs)-1, 512).astype(int))
+    w_fit = 2 * np.pi * fft_freqs[fit_idx] / fs
+    target_fit = diff_db[fit_idx]
+    z1_fit = np.exp(-1j * w_fit)
+    z2_fit = np.exp(-2j * w_fit)
+
     freqs_init = np.geomspace(low_freq_cut, high_freq_cut, num_filters)
-    gains_init = np.interp(freqs_init, fft_freqs, diff_db)
-    Q_init = np.ones(num_filters)
-
-    # Analytic biquad coefficients
-    def biquad_coeffs(f0,Q,gain_db):
-        A = 10**(gain_db/40)
-        w0 = 2*np.pi*f0/fs
-        alpha = np.sin(w0)/(2*Q)
-        b0 = 1+alpha*A
-        b1 = -2*np.cos(w0)
-        b2 = 1-alpha*A
-        a0 = 1+alpha/A
-        a1 = -2*np.cos(w0)
-        a2 = 1-alpha/A
-        return b0/a0,b1/a0,b2/a0,1,a1/a0,a2/a0
-
-    # Analytic frequency response for cascaded biquads
-    def cascaded_freq_response(params):
-        H = np.ones_like(omega, dtype=np.complex128)
-        z1 = np.exp(-1j*omega)
-        z2 = np.exp(-2j*omega)
-        for i in range(num_filters):
-            f0,gain,Q = params[i*3:i*3+3]
-            b0,b1,b2,a0,a1,a2 = biquad_coeffs(f0,Q,gain)
-            H *= (b0 + b1*z1 + b2*z2) / (a0 + a1*z1 + a2*z2)
-        return 20*np.log10(np.maximum(np.abs(H),1e-12))
+    params0 = np.column_stack((freqs_init, np.interp(freqs_init, fft_freqs, diff_db), np.ones(num_filters))).flatten()
+    bounds = [(low_freq_cut, high_freq_cut) if i%3==0 else (-15, 15) if i%3==1 else (0.5, 5) for i in range(num_filters*3)]
 
     def objective(params):
-        return np.sum((cascaded_freq_response(params)-diff_db)**2)
+        p = params.reshape(-1, 3)
+        f0, gain, Q = p[:, 0:1], p[:, 1:2], p[:, 2:3]
+        A = 10**(gain/40); w0 = 2*np.pi*f0/fs; alpha = np.sin(w0)/(2*Q); cos_w0 = np.cos(w0)
+        b0, b1, b2 = 1 + alpha*A, -2*cos_w0, 1 - alpha*A
+        a0, a1, a2 = 1 + alpha/A, -2*cos_w0, 1 - alpha/A
+        H = (b0 + b1*z1_fit + b2*z2_fit) / (a0 + a1*z1_fit + a2*z2_fit)
+        resp_db = np.sum(20 * np.log10(np.abs(H) + 1e-12), axis=0)
+        return np.sum((resp_db - target_fit)**2)
 
-    # Flatten initial params and bounds
-    params0 = np.empty(num_filters*3)
-    params0[0::3]=freqs_init
-    params0[1::3]=gains_init
-    params0[2::3]=Q_init
-    bounds=[]
-    for i in range(num_filters):
-        bounds+=[(low_freq_cut,high_freq_cut),(-9,9),(0.5,5)]
+    res = minimize(objective, params0, bounds=bounds, method='L-BFGS-B', options={'maxiter': 120, 'ftol': 1e-4})
+    opt = res.x.reshape(-1, 3)
 
-    res = minimize(objective, params0, bounds=bounds, method='L-BFGS-B', options={'maxiter':200})
-    if not res.success: log_with_timestamp(f"Parametric EQ optimizer note: {res.message}")
-    optimized_params = res.x
+    # --- 4. EQ-IR Kernel Generation ---
+    sos = []
+    for f0, gain, Q in opt:
+        A = 10**(gain/40); w0 = 2*np.pi*f0/fs; alpha = np.sin(w0)/(2*Q)
+        b0, b1, b2 = 1+alpha*A, -2*np.cos(w0), 1-alpha*A
+        a0, a1, a2 = 1+alpha/A, -2*np.cos(w0), 1-alpha/A
+        sos.append([b0/a0, b1/a0, b2/a0, 1.0, a1/a0, a2/a0])
     
-    # ------------------------------------------------------------
-    # Optional plotting for debugging
-    # ------------------------------------------------------------
+    # Create the filter kernel (Impulse Response)
+    eq_ir = signal.sosfilt(np.array(sos), np.eye(1, n_fft)[0])
+
+    # --- 5. Application via FFT Convolution ---
+    flat_data = brir_dataset.reshape(-1, n_samples)
+    output = signal.fftconvolve(flat_data, eq_ir[None, :], mode='full', axes=1)[:, :truncate_len]
+    
     if plot:
-        plt.figure(figsize=(10,5))
-        cumulative_resp = np.ones_like(fft_freqs, dtype=np.complex128)
+        plt.figure(figsize=(10, 5))
+        # High-res curve for plotting
+        w_full = 2 * np.pi * fft_freqs / fs
+        z1_f, z2_f = np.exp(-1j * w_full), np.exp(-2j * w_full)
+        full_resp_db = np.zeros_like(fft_freqs)
+        for f0, gain, Q in opt:
+            A = 10**(gain/40); w0 = 2*np.pi*f0/fs; alpha = np.sin(w0)/(2*Q); cos_w0 = np.cos(w0)
+            b0, b1, b2 = 1+alpha*A, -2*cos_w0, 1-alpha*A
+            a0, a1, a2 = 1+alpha/A, -2*cos_w0, 1-alpha/A
+            h = (b0 + b1*z1_f + b2*z2_f) / (a0 + a1*z1_f + a2*z2_f)
+            full_resp_db += 20 * np.log10(np.abs(h) + 1e-12)
         
-        # Precompute z-transform terms
-        z1 = np.exp(-1j*omega)
-        z2 = np.exp(-2j*omega)
-    
-        # Plot individual filters
-        for j in range(num_filters):
-            f0, gain_db, Q = optimized_params[j*3:j*3+3]
-            b0,b1,b2,a0,a1,a2 = biquad_coeffs(f0,Q,gain_db)
-            h = (b0 + b1*z1 + b2*z2) / (a0 + a1*z1 + a2*z2)
-            cumulative_resp *= h
-            plt.semilogx(fft_freqs, 20*np.log10(np.maximum(np.abs(h),1e-12)),
-                         alpha=0.5, label=f'Filter {j+1}: {f0:.1f} Hz')
-    
-        # Plot cumulative EQ
-        plt.semilogx(fft_freqs, 20*np.log10(np.maximum(np.abs(cumulative_resp),1e-12)),
-                     'k', linewidth=2, label='Cumulative EQ')
-    
-        # Plot reference curves (only if internally generated)
-        if not using_override:
-            plt.semilogx(fft_freqs, target_db, 'b', linewidth=1.5, label='Target DB')
-            plt.semilogx(fft_freqs, avg_db_cut, 'g', linewidth=1.5, label='Avg DB Cut')
-            plt.semilogx(fft_freqs, avg_db, color='gray', linestyle='--', linewidth=1.5, label='Original Avg DB')
-    
-        # Always plot the difference curve actually being fitted
-        plt.semilogx(fft_freqs, diff_db, 'r--', linewidth=1.5, label='Diff DB (fitted)')
-    
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Magnitude (dB)')
-        plt.title('Fitted Parametric EQ Frequency Response')
-        plt.grid(True, which='both', ls='--', alpha=0.5)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
+        plt.semilogx(fft_freqs, diff_db, 'r--', label='Target (Override)' if diff_db_override is not None else 'Target')
+        plt.semilogx(fft_freqs, full_resp_db, 'k', linewidth=1.5, label='Fitted Parametric EQ')
+        plt.grid(True, which='both', alpha=0.3); plt.legend(); plt.xlim(20, 20000); plt.ylim(-25, 25)
+        plt.ylabel('Magnitude (dB)'); plt.xlabel('Frequency (Hz)'); plt.show()
 
-    # Step 6: apply filter chain using sosfilt
-    sos_all = []
-    for i in range(num_filters):
-        f0,gain,Q = optimized_params[i*3:i*3+3]
-        b0,b1,b2,a0,a1,a2 = biquad_coeffs(f0,Q,gain)
-        sos_all.append([[b0,b1,b2,1,a1,a2]])
-    sos_all = np.vstack(sos_all)
-
-    leading_shape = brir_dataset.shape[:-2]
-    for idx in np.ndindex(*leading_shape):
-        data = brir_dataset[idx]
-        for ch in range(n_channels):
-            output[idx+(ch,)]=signal.sosfilt(sos_all,data[ch])[:truncate_len]
-
-    return output
-
+    return output.reshape(orig_shape[:-1] + (truncate_len,))
 
 
 def equalize_low_freqs_db(
@@ -3071,7 +3097,7 @@ def apply_sos_filter(data, sos, filtfilt=False, axis=-1):
     if filtfilt:
         # Ensure padlen does not exceed the length of the signal along the axis
         signal_length = data.shape[axis]
-        padlen = min(30000, signal_length - 1) if signal_length > 1 else 0
+        padlen = min(20000, signal_length - 1) if signal_length > 1 else 0
 
         y = sps.sosfiltfilt(sos, data, padtype='even', padlen=padlen, axis=axis)
     else:
@@ -3793,12 +3819,12 @@ def update_gui_progress(report_progress, progress=None, message=''):
     if report_progress > 0:
         if report_progress == 3:#AS progress
             prev_progress = dpg.get_value('progress_bar_as')
-            if progress == None:
+            if progress is None:
                 progress=prev_progress#use previous progress if not specified
             dpg.set_value("progress_bar_as", progress)
         elif report_progress == 2:#fde progress
             prev_progress = dpg.get_value('fde_progress_bar_brir')
-            if progress == None:
+            if progress is None:
                 progress=prev_progress#use previous progress if not specified
             if progress == 0:
                 overlay_text = str(message)
@@ -3811,7 +3837,7 @@ def update_gui_progress(report_progress, progress=None, message=''):
             dpg.configure_item("fde_progress_bar_brir", overlay = overlay_text)
         else:#QC progress
             prev_progress = dpg.get_value('e_apo_progress_bar_brir')
-            if progress == None:
+            if progress is None:
                 progress=prev_progress#use previous progress if not specified
             if progress == 0:
                 overlay_text = str(message)

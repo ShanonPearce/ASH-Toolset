@@ -857,7 +857,7 @@ def main():
                 dpg.add_theme_color(dpg.mvThemeCol_SliderGrab, _hsv_to_rgb(i/7.0, 0.5*sat_mult, 0.7*val_mult)) 
                 dpg.add_theme_color(dpg.mvThemeCol_SliderGrabActive, _hsv_to_rgb(i/7.0, 0.5*sat_mult, 0.7*val_mult))
                 dpg.add_theme_color(dpg.mvPlotCol_TitleText, _hsv_to_rgb(i/7.0, 0.5*sat_mult, 0.7*val_mult))
-                dpg.add_theme_color(dpg.mvThemeCol_Header, _hsv_to_rgb(4.4/7.0, 0.1*sat_mult, 0.25*val_mult))
+                dpg.add_theme_color(dpg.mvThemeCol_Header, _hsv_to_rgb(4.4/7.0, 0.5*sat_mult, 0.25*val_mult))#bullet header
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, _hsv_to_rgb(j/7.0, 0.3*sat_mult, 0.5*val_mult)) 
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, _hsv_to_rgb(j/7.0, 0.3*sat_mult, 0.5*val_mult)) 
                 dpg.add_theme_color(dpg.mvThemeCol_TabHovered, _hsv_to_rgb(j/7.0, 0.3*sat_mult, 0.5*val_mult)) 
@@ -1965,7 +1965,7 @@ def main():
                 with dpg.group(horizontal=True):
                     # Panel 1 - Left
                     with dpg.child_window(width=400, height=610):
-                        with dpg.child_window(width=385, height=470):
+                        with dpg.child_window(width=385, height=90):
                             dpg.add_text("Select Inputs")
                             dpg.bind_item_font(dpg.last_item(), font_b_def)
                             #dpg.add_separator()
@@ -1988,147 +1988,225 @@ def main():
                             dpg.add_combo(items=[],label="",tag="ir_folder_list",callback=cb.folder_selected_callback,width=360)
                             with dpg.tooltip("ir_folder_list"):
                                 dpg.add_text("Choose an IR folder from the list")
-                            dpg.add_text(" ")
-                            dpg.add_separator()
+                            #dpg.add_text(" ")
+                            #dpg.add_separator()
+                        with dpg.child_window(width=385, height=370):
                             dpg.add_text("Set Parameters")
                             dpg.bind_item_font(dpg.last_item(), font_b_def)
-                       
-                            with dpg.table(header_row=True,resizable=False,policy=dpg.mvTable_SizingFixedFit,row_background=True,borders_outerH=True,borders_innerH=True,borders_outerV=True,borders_innerV=True,):
-                                dpg.add_table_column(label="Parameter", init_width_or_weight=150)
-                                dpg.add_table_column(label="Value", init_width_or_weight=260)
-                        
-                                # ---------- Name ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Name (optional)")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_input_text(tag="space_name", width=200)
-                                    with dpg.tooltip("space_name"):
-                                        dpg.add_text(
-                                            "Enter a name for the new acoustic space\n"
-                                            "If left blank, folder name will be used"
-                                        )
-                        
-                                # ---------- Description ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Description (optional)")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_input_text(tag="space_description",width=200,multiline=False)
-                                    with dpg.tooltip("space_description"):
-                                        dpg.add_text("Enter a brief description of the acoustic space (optional)")
-                        
-                                # ---------- Long Reverb Tail ----------
-                                with dpg.table_row():
-                             
-                                    dpg.add_text("Reverb Tail Mode")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                                    dpg.add_combo(items=CN.AS_TAIL_MODE_LIST,default_value=CN.AS_TAIL_MODE_LIST[0],label="",tag="reverb_tail_mode",width=120)
-                                    with dpg.tooltip("reverb_tail_mode"):
-                                        dpg.add_text("Use short mode for spaces with fast decay (< 1.5s)")
-                                        dpg.add_text("Only enable long mode if IRs have long decay tails (>= 1.5 s) as this will increase processing time")
-                                        dpg.add_text("Windowed mode can be used to shorten and fade out long decay trails")
-                                        
-                        
-                                # ---------- Low-frequency Mode ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Low-frequency Mode")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_checkbox(label="Enable", tag="as_subwoofer_mode")
-                                    with dpg.tooltip("as_subwoofer_mode"):
-                                        dpg.add_text("Enable to treat the IRs as low-frequency responses")
-                                        dpg.add_text("The result will appear under low-frequency extension options")
-                                        
-                                # ---------- Binaural Measurements ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Binaural Measurements")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_checkbox(label="Enable",tag="binaural_meas_inputs", default_value=False)
-                                    with dpg.tooltip("binaural_meas_inputs"):
-                                        dpg.add_text("Enable if the IRs are binaural measurements")
-                        
-                                # ---------- Noise Reduction ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Noise Reduction")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_checkbox(label="Enable", tag="noise_reduction_mode")
-                                    with dpg.tooltip("noise_reduction_mode"):
-                                        dpg.add_text("Enable if the IRs have a high noise floor")
-                        
-                                # ---------- Rise Time ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Rise Time (ms)")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_input_float(tag="as_rise_time",width=120,default_value=4.0,min_value=1.0,max_value=20.0,format="%.2f",min_clamped=True,max_clamped=True)
-                                    with dpg.tooltip("as_rise_time"):
-                                        dpg.add_text("Applies a fade-in window of specified duration")
-                                        dpg.add_text("Min: 1 ms, Max: 20 ms")
-                                        
-                                # ---------- Compensation Factor ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Room Correction Factor")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_input_float(label="",tag="asi_rm_cor_factor",width=120,default_value=1.0,min_value=0.0,max_value=1.0,format="%.2f",min_clamped=True,max_clamped=True,)
-                                    with dpg.tooltip("asi_rm_cor_factor"):
-                                        dpg.add_text("Select a value between 0 and 1 to control the strength of room correction")# and pitch shift correction
-                                        
-                                # ---------- User selected listener ----------
-                                with dpg.table_row():
-                             
-                                    dpg.add_text("Listener")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                                    dpg.add_combo(items=CN.AS_LISTENER_TYPE_LIST,default_value=CN.AS_LISTENER_TYPE_LIST[0],label="",tag="as_listener",width=170)
-                                    with dpg.tooltip("as_listener"):
-                                        dpg.add_text("Controls which listener will be used to apply binaural transformations")
-                                        dpg.add_text("If set to 'User Selection', the current listener selection in the first tab will be used")
-                                        dpg.add_text("Not applicable when binaural measurements option is enabled")
-                                        
-                                        
-                                # ---------- Alignment Frequency ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Alignment Frequency (Hz)")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_input_int(tag="alignment_freq",width=120,default_value=100,min_value=50,max_value=150)
-                                    with dpg.tooltip("alignment_freq"):
-                                        dpg.add_text("Low-pass cutoff used for time-domain alignment")
-                                        dpg.add_text("Min: 50 Hz, Max: 150 Hz")
-                        
-                                # ---------- Desired Directions ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Desired Directions")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_input_int(tag="unique_directions",width=120,default_value=3000,min_value=2000,max_value=5000,min_clamped=True,max_clamped=True)
-                                    with dpg.tooltip("unique_directions"):
-                                        dpg.add_text("Target number of spatial source directions")
-                                        dpg.add_text("Lower values reduce processing time")
-                                        dpg.add_text("Min: 2000, Max: 5000")
-               
-                                # ---------- Pitch Shift Range ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Pitch Shift Range")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                                    with dpg.group():
-                                        dpg.add_input_float(label="",tag="pitch_range_high",width=120,default_value=12.0,min_value=0.0,max_value=24.0,format="%.2f",min_clamped=True,max_clamped=True,)
-                                    with dpg.tooltip("pitch_range_high"):
-                                        dpg.add_text("Maximum pitch shift (semitones)")
-                                        dpg.add_text("Used to expand sparse datasets")
-                        
-                                # ---------- Pitch Shift Compensation ----------
-                                with dpg.table_row():
-                                    dpg.add_text("Pitch Shift Correction")
-                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
-                        
-                                    dpg.add_checkbox(label="Enable",tag="pitch_shift_comp", default_value=True)
-                                    with dpg.tooltip("pitch_shift_comp"):
-                                        dpg.add_text("Corrects pitch after dataset expansion")
-                        
+                            
+                            with dpg.child_window(width=375, height=330):
+                           
+                                with dpg.table(header_row=True,resizable=False,policy=dpg.mvTable_SizingFixedFit,row_background=True,borders_outerH=True,borders_innerH=True,borders_outerV=True,borders_innerV=True,):
+                                    dpg.add_table_column(label="Parameter", init_width_or_weight=145)
+                                    dpg.add_table_column(label="Value", init_width_or_weight=265)
+                            
+                                    # ---------- Name ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Name (optional)")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_text(tag="as_space_name", width=200)
+                                        with dpg.tooltip("as_space_name"):
+                                            dpg.add_text(
+                                                "Enter a name for the new acoustic space\n"
+                                                "If left blank, folder name will be used"
+                                            )
+                            
+                                    # ---------- Description ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Description (optional)")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_text(tag="as_space_description",width=200,multiline=False)
+                                        with dpg.tooltip("as_space_description"):
+                                            dpg.add_text("Enter a brief description of the acoustic space (optional)")
+                                            
+                                    
+                            
+                                    # ---------- Long Reverb Tail ----------
+                                    with dpg.table_row():
+                                 
+                                        dpg.add_text("Reverb Tail Mode")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        dpg.add_combo(items=CN.AS_TAIL_MODE_LIST,default_value=loaded_values["as_reverb_tail_mode"],label="",tag="as_reverb_tail_mode",width=120)
+                                        with dpg.tooltip("as_reverb_tail_mode"):
+                                            dpg.add_text("Use short mode for spaces with fast decay (< 1.5s)")
+                                            dpg.add_text("Only enable long mode if IRs have long decay tails (>= 1.5 s) as this will increase processing time")
+                                            dpg.add_text("Windowed mode can be used to shorten and fade out long decay trails")
+                                            
+                            
+                                    # ---------- Low-frequency Mode ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Low-frequency Mode")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_checkbox(label="Enable", tag="as_subwoofer_mode",default_value=loaded_values["as_subwoofer_mode"])
+                                        with dpg.tooltip("as_subwoofer_mode"):
+                                            dpg.add_text("Enable to treat the IRs as low-frequency responses")
+                                            dpg.add_text("The result will appear under low-frequency extension options")
+                                            
+                                    # ---------- Binaural Measurements ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Binaural Measurements")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_checkbox(label="Enable",tag="as_binaural_meas_inputs",default_value=loaded_values["as_binaural_meas_inputs"])
+                                        with dpg.tooltip("as_binaural_meas_inputs"):
+                                            dpg.add_text("Enable if the IRs are binaural measurements")
+                            
+                                    # ---------- Noise Reduction ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Noise Reduction")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_checkbox(label="Enable", tag="as_noise_reduction_mode",default_value=loaded_values["as_noise_reduction_mode"])
+                                        with dpg.tooltip("as_noise_reduction_mode"):
+                                            dpg.add_text("Enable if the IRs have a high noise floor")
+                            
+                                    # ---------- Rise Time ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Rise Time (ms)")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_float(tag="as_rise_time",width=120,default_value=loaded_values["as_rise_time"],min_value=1.0,max_value=20.0,format="%.2f",min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_rise_time"):
+                                            dpg.add_text("Applies a fade-in window of specified duration")
+                                            dpg.add_text("Min: 1 ms, Max: 20 ms")
+                                            
+                                    # ---------- Compensation Factor ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Room Correction Factor")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_float(label="",tag="as_rm_cor_factor",width=120,default_value=loaded_values["as_rm_cor_factor"],min_value=0.0,max_value=1.0,format="%.2f",min_clamped=True,max_clamped=True,)
+                                        with dpg.tooltip("as_rm_cor_factor"):
+                                            dpg.add_text("Select a value between 0 and 1 to control the strength of room correction")# and pitch shift correction
+                                            
+                                    
+                                            
+                                            
+                                    # ---------- Alignment Frequency ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Alignment Frequency (Hz)")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_int(tag="as_alignment_freq",width=120,default_value=loaded_values["as_alignment_freq"],min_value=50,max_value=150)
+                                        with dpg.tooltip("as_alignment_freq"):
+                                            dpg.add_text("Low-pass cutoff used for time-domain alignment")
+                                            dpg.add_text("Min: 50 Hz, Max: 150 Hz")
+                          
+                                    # ---------- Desired Grid Directions ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Spherical Grid Density")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_int(tag="as_grid_points",width=120,default_value=loaded_values["as_grid_points"],min_value=192,max_value=768,min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_grid_points"):
+                                            dpg.add_text("Total number of discrete points (directions) on the spherical measurement grid")
+                                            dpg.add_text("Determines the density of each spherical array used for binaural transformation")
+                                            dpg.add_text("Range: 192 - 768 points.")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    # ---------- Desired Speakers ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Virtual Speaker Count")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_int(tag="as_speaker_count",width=120,default_value=loaded_values["as_speaker_count"],min_value=1,max_value=24,min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_speaker_count"):
+                                            dpg.add_text("Number of independent speaker locations to simulate.")
+                                            dpg.add_text("Each speaker is rendered as a separate binauralized set.")
+                                            dpg.add_text("Example: 2 for Stereo, 5 for 5.1, 7 for 7.1 Surround.")
+                                            
+                                    # ---------- IR distribution mode ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("IR Distribution Mode")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        dpg.add_combo(items=CN.AS_DISTR_MODE_LIST,default_value=loaded_values["as_ir_dist_mode"],label="",tag="as_ir_dist_mode",width=180)
+                                        with dpg.tooltip("as_ir_dist_mode"):
+                                            dpg.add_text("Determines how the dataset of measurements are assigned to the virtual speaker sources")
+                                            dpg.add_text("Sequential: Distributes blocks of neighboring measurements to sources")
+                                            dpg.add_text("Round-Robin: Distributes measurements to sources in a fixed, circular order")
+                                            dpg.add_text("Random: Shuffles measurements for a diffuse spatial feel")
+                                            dpg.add_text("Single: Assigns exactly one measurement (or L/R pair) to each virtual speaker")
+                   
+                                    # ---------- Expansion Method ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Spatial Expansion Method")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+         
+                                        dpg.add_combo(items=CN.AS_SPAT_EXP_LIST,default_value=loaded_values["as_spatial_exp_method"],label="",tag="as_spatial_exp_method",width=184)
+                                        with dpg.tooltip("as_spatial_exp_method"):
+                                            dpg.add_text("Expands sparse datasets and increases the spatial resolution and density of the spherical array")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                   
+                                    # ---------- Pitch Shift Range ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Pitch Shift Range")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        with dpg.group():
+                                            dpg.add_input_float(label="",tag="as_pitch_range_high",width=120,default_value=loaded_values["as_pitch_range_high"],min_value=0.0,max_value=24.0,format="%.2f",min_clamped=True,max_clamped=True,)
+                                        with dpg.tooltip("as_pitch_range_high"):
+                                            dpg.add_text("Maximum pitch shift (semitones)")
+                                            dpg.add_text("Limits the variability of the spatial expansion")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                            
+                                    # ---------- Pitch Shift Correction ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Pitch Shift Correction")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+         
+                                        dpg.add_combo(items=CN.AS_PS_COMP_LIST,default_value=loaded_values["as_pitch_shift_comp"],label="",tag="as_pitch_shift_comp",width=180)
+                                        with dpg.tooltip("as_pitch_shift_comp"):
+                                            dpg.add_text("Corrects magnitude response after dataset expansion")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    # # ---------- DRR Correction ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Decay Curve Correction")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_checkbox(label="Enable", tag="as_drr_correction",default_value=loaded_values["as_drr_correction"])
+                                        with dpg.tooltip("as_drr_correction"):
+                                            dpg.add_text("Corrects decay curve after dataset expansion. Restores direct-to-reverberation ratios to original ratios.")    
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    # ---------- User selected listener ----------
+                                    with dpg.table_row():
+                                 
+                                        dpg.add_text("Listener")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        dpg.add_combo(items=CN.AS_LISTENER_TYPE_LIST,default_value=loaded_values["as_listener"],label="",tag="as_listener",width=180)
+                                        with dpg.tooltip("as_listener"):
+                                            dpg.add_text("Controls which listener will be used to apply binaural transformations")
+                                            dpg.add_text("If set to 'User Selection', the current listener selection in the first tab will be used")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    # ---------- Room corner angle ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Room Corner Angle (°)")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_int(tag="as_room_corner_angle",width=120,default_value=loaded_values["as_room_corner_angle"],min_value=10,max_value=80,min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_room_corner_angle"):
+                                            dpg.add_text("Defines the angle to the front-left and front-right corners. For a perfectly square room, use 45°")
+                                            dpg.add_text("A higher value (e.g., 60°) simulates a wide/shallow room, while a lower value (e.g., 30°) simulates a narrow/deep room")
+                                            dpg.add_text("The sampler automatically mirrors this for the rear corners")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    # ---------- Reflection Spread ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Reflection Spread")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_int(tag="as_reflection_spread",width=120,default_value=loaded_values["as_reflection_spread"],min_value=5,max_value=100,min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_reflection_spread"):
+                                            dpg.add_text("Controls the focus of corner reflections")
+                                            dpg.add_text("Low Value (5-15): Sharp, pinpoint corners")
+                                            dpg.add_text("Med Value (20-45): Balanced, natural room feel")
+                                            dpg.add_text("High Value (60+): Diffuse, scattered reflections")
+                                            dpg.add_text("Note: Does not apply to binaural inputs.")
+                            
                                 
                                         
                           
@@ -2167,7 +2245,7 @@ def main():
             
                     with dpg.group(horizontal=False):
                         # Panel 2 - Middle (Imported Acoustic Spaces Table)
-                        with dpg.child_window(width=1285, height=310):
+                        with dpg.child_window(width=1285, height=320):
                             dpg.add_text("Imported Acoustic Spaces", tag="imported_as_title")
                             dpg.bind_item_font(dpg.last_item(), font_b_def)
                             with dpg.tooltip("imported_as_title"):
@@ -2196,20 +2274,22 @@ def main():
                                     dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("del_processed_popup", show=False))
                 
                             dpg.add_text("", tag="selected_ir_rows", show=False, user_data=[])
-                            with dpg.table(tag="processed_irs_table", header_row=True,
-                                   resizable=True,
-                                   policy=dpg.mvTable_SizingStretchProp,
-                                   borders_innerH=True, borders_outerH=True,
-                                   borders_innerV=True, borders_outerV=True,
-                                   row_background=True):
-                    
-                                #dpg.add_table_column(label="")  # Selectable column (no header)
-                                dpg.add_table_column(label="Name", init_width_or_weight=60)
-                                dpg.add_table_column(label="RT60 (ms)", init_width_or_weight=20)
-                                dpg.add_table_column(label="Description", init_width_or_weight=330)
+                            
+                            with dpg.child_window(width=1270, height=255): 
+                                with dpg.table(tag="processed_irs_table", header_row=True,
+                                       resizable=True,
+                                       policy=dpg.mvTable_SizingStretchProp,
+                                       borders_innerH=True, borders_outerH=True,
+                                       borders_innerV=True, borders_outerV=True,
+                                       row_background=True):
+                        
+                                    #dpg.add_table_column(label="")  # Selectable column (no header)
+                                    dpg.add_table_column(label="Name", init_width_or_weight=60)
+                                    dpg.add_table_column(label="RT60 (ms)", init_width_or_weight=20)
+                                    dpg.add_table_column(label="Description", init_width_or_weight=330)
                 
                         # Panel 3 - Right (Logger)
-                        with dpg.child_window(width=1285, height=296, tag="import_console_window"):
+                        with dpg.child_window(width=1285, height=286, tag="import_console_window"):
                             pass  # Logger will be added here later
 
                  
@@ -2431,24 +2511,59 @@ def main():
                                         dpg.add_text("Typically results in smoother low frequencies in the integrated binaural simulation")
                                         dpg.add_text("Applies to the direct sound. Reverberation is not modified")
                                         
+                      
+                                
                                 with dpg.table_row():
-                                    dpg.add_text("Reverberation")
+                                    dpg.add_text("Binaural Sim.")
                                     dpg.add_text("Early Reflection Delay (ms)")
                                     dpg.add_input_float(label=" ", width=190, format="%.1f", tag='er_delay_time',min_value=CN.ER_RISE_MIN, max_value=CN.ER_RISE_MAX,default_value=loaded_values["er_delay_time"], min_clamped=True,max_clamped=True, callback=cb.update_brir_param)
                                     with dpg.tooltip("er_delay_time"):
                                         dpg.add_text("This will increase the time between the direct sound and early reflections")
                                         dpg.add_text("This can be used to increase perceived distance")
                                         dpg.add_text("Min. 0ms, Max. 10ms")
-                                        
+                       
                                 with dpg.table_row():
-                                    dpg.add_text("Reverberation")
+                                    dpg.add_text("Binaural Sim.")
+                                    dpg.add_text("Calibration Method")
+                                    dpg.add_combo(CN.BRIR_DF_CAL_MODE_LIST, default_value=loaded_values["brir_df_cal_mode"], width=190,callback=cb.update_brir_param, tag='brir_df_cal_mode')
+                                    with dpg.tooltip("brir_df_cal_mode"):
+                                        dpg.add_text("Sets the method used to apply diffuse-field calibration to the integrated binaural response")
+                                        dpg.add_text("Min Phase Inverse FIR is faster and more accurate. Parametric EQ is slower but better preserves phase")
+                                    
+                                    
+                                with dpg.table_row():
+                                    dpg.add_text("Binaural Sim.")
+                                    dpg.add_text("Calibration Factor")
+                                    dpg.add_input_float(label="",tag="brir_df_cal_factor",width=190,default_value=loaded_values["brir_df_cal_factor"],min_value=0.0,max_value=1.0,format="%.2f",min_clamped=True,max_clamped=True)
+                                    with dpg.tooltip("brir_df_cal_factor"):
+                                        dpg.add_text("Select a value between 0 and 1 to control the strength of the calibration")
+                                
+                                   
+                                with dpg.table_row():
+                                    dpg.add_text("Binaural Sim.")
+                                    dpg.add_text("Calibration Octave Smoothing (1/N)")
+                                    dpg.add_input_int(label="",width=190, tag='octave_smoothing_n', min_value=1, max_value=48, default_value=loaded_values["octave_smoothing_n"],min_clamped=True, max_clamped=True)
+                                    with dpg.tooltip("octave_smoothing_n"):
+                                        dpg.add_text("Sets the fractional octave smoothing for calibration filters (e.g., 3 = 1/3 octave). Higher values result in more detail; lower values result in a smoother curve.")
+                                    
+                                
+                                with dpg.table_row():
+                                    dpg.add_text("Binaural Sim.")
                                     dpg.add_text("Reverb Tail Crop Threshold (dB)")
                                     dpg.add_input_float(label=" ", width=190, format="%.1f", tag='reverb_tail_crop_db',min_value=CN.REVERB_CROP_DB_MIN, max_value=CN.REVERB_CROP_DB_MAX,default_value=loaded_values["reverb_tail_crop_db"], min_clamped=True,max_clamped=True, callback=cb.update_brir_param)
                                     with dpg.tooltip("reverb_tail_crop_db"):
                                         dpg.add_text("Sets the amplitude threshold below which the reverb tail is cropped")
                                         dpg.add_text("Lower values preserve more tail; higher values crop more aggressively")
                                         dpg.add_text("Typical range: -70 dB to -100 dB")
-                                        
+                                
+                                with dpg.table_row():
+                                    dpg.add_text("Binaural Sim.")
+                                    dpg.add_text("Max. Output Length (Samples)")
+                                    dpg.add_input_int(label="",width=190, tag='brir_max_length', min_value=128, max_value=CN.N_FFT_L, default_value=loaded_values["brir_max_length"],min_clamped=True, max_clamped=True)
+                                    with dpg.tooltip("brir_max_length"):
+                                        dpg.add_text("This will limit the sample length of exported BRIRs")
+                             
+                                
                                 with dpg.table_row():
                                     dpg.add_text("LF Extension")
                                     dpg.add_text("Forward-Backward Filtering")
@@ -2588,6 +2703,24 @@ def main():
                                         dpg.add_text("Opens the directory where the settings file is stored")
                 
                                 # ---------- Outputs ----------
+                                with dpg.table_row():
+                                    dpg.add_text("Maintenance")  # Category Column
+                                    dpg.add_text("Clear Local Data Cache") # Description Column
+                                    # The Trigger Button
+                                    dpg.add_button(label="Clear Cache", tag="clear_cache_btn_tag",callback=lambda: dpg.configure_item("clear_cache_popup", show=True))
+                                    # Informative Tooltip
+                                    with dpg.tooltip("clear_cache_btn_tag"):
+                                        dpg.add_text("Warning: This will delete all cached HRIR data and all downloaded acoustic space datasets")
+                                    # Confirmation Modal Popup
+                                    with dpg.popup("clear_cache_btn_tag", modal=True, mousebutton=dpg.mvMouseButton_Left, tag="clear_cache_popup"):
+                                        dpg.add_text("Warning: this will delete processed cache files")
+                                        dpg.add_separator()
+                                        with dpg.group(horizontal=True):
+                                            # The actual execution call
+                                            dpg.add_button(label="OK", width=75, callback=cb.clear_cache_gui)
+                                            # Close without doing anything
+                                            dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("clear_cache_popup", show=False))
+                                            
                                 with dpg.table_row():
                                     dpg.add_text("Outputs")
                                     dpg.add_text("Delete All Exported Filters")

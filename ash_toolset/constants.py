@@ -49,6 +49,22 @@ def sanitize_for_dpg(s: str) -> str:
     
     return s.strip()
 
+def clean_csv_headers(header_list):
+    """
+    Strips the UTF-8 BOM, removes surrounding whitespace, 
+    and filters out empty strings from a list of header names.
+    Works regardless of column order.
+    """
+    if not header_list:
+        return []
+    
+    # 1. lstrip('\ufeff') removes the BOM if present
+    # 2. strip() removes spaces/newlines
+    # 3. 'if h' ensures we don't return empty strings as keys
+    return [h.lstrip('\ufeff').strip() for h in header_list if h]
+
+
+    
 def load_ac_space_field_names_from_csv(
     metadata_filename,
     base_dir,
@@ -56,31 +72,30 @@ def load_ac_space_field_names_from_csv(
     logger=None
 ):
     """
-    Load CSV header fields from a metadata CSV file.
+    Load CSV header fields from a metadata CSV file and clean them.
     Falls back to provided field list if file does not exist or is invalid.
     """
-
     csv_path = pjoin(base_dir, metadata_filename)
 
     try:
         if not os.path.isfile(csv_path):
             raise FileNotFoundError(csv_path)
 
-        with open(csv_path, mode='r', encoding='utf-8') as f:
+        # Open with utf-8-sig to handle the byte-level BOM automatically
+        with open(csv_path, mode='r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             header = next(reader, None)
 
-        if not header or not isinstance(header, list):
+        if not header:
             raise ValueError("Invalid or empty CSV header")
 
-        return [h.strip() for h in header if h.strip()]
+        # Use the reusable helper to clean BOMs, whitespace, and empty strings
+        return clean_csv_headers(header)
 
     except Exception as e:
         if logger:
             logger(f"Metadata header load failed, using fallback: {e}")
-        return fallback_fields or []
-    
-    
+        return fallback_fields or []   
 
 
 def load_csv_as_dicts(csv_dir, csv_name): 
@@ -561,6 +576,10 @@ RT60_MAX_S=1250#reference time in ms to start fading out
 #control level of direct sound
 DIRECT_SCALING_FACTOR = 1.0#reference level - approx 0db DRR. was 0.1
 
+# Define eapo gain boundaries
+MIN_GAIN = -100.0
+MAX_GAIN = 20.0  # Clamping to 20dB max to prevent extreme hardware strain/clipping
+
 #############  Developer settings
 PLOT_ENABLE = False#False
 LOG_MEMORY=False #False
@@ -585,10 +604,14 @@ ORDER=9#8
 F_CROSSOVER = 120#120, default
 EVAL_POLARITY=True#True
 PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
+
+#filtering type
 FILTFILT_TDALIGN = True#apply forward reverse filtering in td alignment method for brir creation
 FILTFILT_TDALIGN_AIR = True#apply forward reverse filtering in td alignment method for reverberation generation
+FILTFILT_TDALIGN_HRIR = True#apply forward reverse filtering in EQ method for HRIR processing
 FILTFILT_THRESH_F = 45
 MIN_FILT_FREQ = 8#values below this will not be allowed in filter generation
+
 #size to hop peak to peak window
 DELAY_WIN_HOP_SIZE = 25#10
 DELAY_WIN_MIN_T = 0
@@ -608,8 +631,8 @@ DELAY_WIN_MIN_A = 0
 DELAY_WIN_MAX_A = 1000#1000
 DELAY_WIN_HOPS_A = int((DELAY_WIN_MAX_A-DELAY_WIN_MIN_A)/DELAY_WIN_HOP_SIZE)
 
-
-
+#HRIR EQ
+F_CROSSOVER_HRIR = 100#100
 
 
 
@@ -669,8 +692,8 @@ SETTINGS_DIR = os.path.dirname(SETTINGS_FILE)
 __version__ = get_version(metadata_file_path=METADATA_FILE)
 
 ################# Repository links
-USER_GUIDE_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/docs/user_guide/user_guide_v4.txt"
-USER_GUIDE_NAME = "user_guide_v4.txt"
+USER_GUIDE_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/docs/user_guide/user_guide_v4.1.txt"
+USER_GUIDE_NAME = "user_guide_v4.1.txt"
 USER_GUIDE_PATH = pjoin(DOCS_DIR_GUIDE, USER_GUIDE_NAME)
 AS_META_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/data/interim/reverberation/reverberation_metadata_v3.csv"
 MAIN_APP_META_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
@@ -720,6 +743,7 @@ BUTTON_IMAGE_OFF='off_image'
 HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength','None']
 HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low','Hp-Comp-None']
 HRTF_DF_CAL_MODE_LIST = ['Enable Calibration','Retain Diffuse-field','Retain and level spectrum ends']
+BRIR_DF_CAL_MODE_LIST = ['Min Phase Inverse FIR','Parametric EQ']
 PLOT_TYPE_LIST = ['Magnitude Response','Impulse Response','Group Delay', 'Decay']
 PLOT_TYPE_LIST_IA = ['Magnitude Response','Impulse Response','Group Delay', 'Decay','Summary Response']
 HPCF_TARGET_LIST = [
@@ -1006,6 +1030,9 @@ AC_SPACE_LIST_COLLECTIONS_BASE = ['All','User Imports','Favourites']
 AS_BASE_LIST_FAV = ['No favourites found']
 AS_TAIL_MODE_LIST = ['Short','Short Windowed','Long','Long Windowed']
 AS_LISTENER_TYPE_LIST = ['FABIAN HATS','KU-100 Dummy Head','User Selection']
+AS_DISTR_MODE_LIST = ["Sequential", "Round-robin", "Random", "Single"]
+AS_PS_COMP_LIST = ["Disable", "Restore Original Curve", "Reshape to Global Reference"]
+AS_SPAT_EXP_LIST = ["Disable", "Pitch Shift - Frequency-based", "Pitch Shift - Time-based"]
 #load other lists from csv file
 
 # Global variable declarations for clarity
@@ -1331,11 +1358,35 @@ DEFAULTS = {
     "er_delay_time":0.0,
     "export_resample_mode": RESAMPLE_MODE_LIST[0],
     "hrtf_df_cal_mode": HRTF_DF_CAL_MODE_LIST[0],
+    "brir_df_cal_mode": BRIR_DF_CAL_MODE_LIST[0],
     "hrtf_low_freq_suppression": True,
     "hpcf_fir_length":HPCF_FIR_LENGTH,
     "hpcf_target_curve": HPCF_TARGET_LIST[0],
     "hpcf_smooth_hf": False,
-    "reverb_tail_crop_db": -90.0
+    "reverb_tail_crop_db": -90.0,
+    "brir_max_length": N_FFT_L,
+    "octave_smoothing_n": 4,
+    "brir_df_cal_factor":1.0,
+    
+    # AS Import tool
+    "as_reverb_tail_mode": AS_TAIL_MODE_LIST[0],
+    "as_subwoofer_mode": False,
+    "as_binaural_meas_inputs": False,
+    "as_noise_reduction_mode": False,
+    "as_rise_time": 5.0,
+    "as_rm_cor_factor": 1.0,
+    "as_listener": AS_LISTENER_TYPE_LIST[0],
+    "as_alignment_freq": 110,
+    "as_grid_points": 360,
+    "as_speaker_count": 7,
+    "as_ir_dist_mode": AS_DISTR_MODE_LIST[0],
+    "as_spatial_exp_method": AS_SPAT_EXP_LIST[1],
+    "as_pitch_range_high": 12.0,
+    "as_pitch_shift_comp": AS_PS_COMP_LIST[1],
+    "as_room_corner_angle": 40,
+    "as_reflection_spread": 45,
+    "as_drr_correction": True
+
     
 
 }

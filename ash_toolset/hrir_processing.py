@@ -910,9 +910,10 @@ def sofa_workflow_new_dataset(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short, rep
     metadata = None  # <--- initialize metadata
     try:
         hp_sos = None
-        f_crossover_var = 100
+        f_crossover_var = CN.F_CROSSOVER_HRIR
+        filtfilt=CN.FILTFILT_TDALIGN_HRIR
         if apply_lf_suppression:
-            hp_sos = hf.get_filter_sos(cutoff=f_crossover_var,fs=CN.FS,order=5,b_type='high')
+            hp_sos = hf.get_filter_sos(cutoff=f_crossover_var,fs=CN.FS,order=5,b_type='high',filtfilt=filtfilt)
             
         #try loading specified sofa object    
         if hrtf_type == 'Human Listener':
@@ -1137,7 +1138,7 @@ def sofa_workflow_new_dataset(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short, rep
             hf.log_with_timestamp(log_string, gui_logger)
             ts = []
             for elev in range(total_elev_hrir):
-                t = threading.Thread(target=apply_hp_to_hrirs, args = (hrir_out, elev, total_samples_hrir, total_azim_hrir, hp_sos))
+                t = threading.Thread(target=apply_hp_to_hrirs, args = (hrir_out, elev, total_samples_hrir, total_azim_hrir, hp_sos, filtfilt))
                 ts.append(t)
                 t.start()
             for t in ts:
@@ -1280,7 +1281,7 @@ def apply_eq_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, hrir_
 
 
   
-def apply_hp_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, hp_sos):
+def apply_hp_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, hp_sos, filtfilt):
     """
     Apply high-pass filtering to HRIRs in numpy array for a single elevation.
 
@@ -1294,7 +1295,7 @@ def apply_hp_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, hp_so
     for azim in range(total_azim_hrir):
         for chan in range(CN.TOTAL_CHAN_BRIR):
             # Apply high-pass filter
-            hrir_filtered = hf.apply_sos_filter(hrir_out[elev, azim, chan, :], hp_sos, filtfilt=False)
+            hrir_filtered = hf.apply_sos_filter(hrir_out[elev, azim, chan, :], hp_sos, filtfilt=filtfilt)
             # Truncate or pad to original length
             hrir_out[elev, azim, chan, :] = hrir_filtered[:total_samples_hrir]
 
@@ -1692,223 +1693,6 @@ def circular_mean(phases):
     )
 
 
-
-# def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,
-#                                       interp_mode='modular',
-#                                       align_directions=True,
-#                                       align_listeners=False,
-#                                       sample_rate=CN.SAMP_FREQ,
-#                                       n_jobs=-1):
-#     """
-#     Build an averaged HRIR dataset by interpolating across listeners in the
-#     frequency domain. Supports:
-#         - complex interpolation (real/imag)  [recommended]
-#         - modular phase interpolation (circular mean)
-
-#     Parameters
-#     ----------
-#     hrir_sets : list[np.ndarray]
-#         List of HRIR datasets shaped [elev, azim, ch, samples].
-#     interp_mode : {'complex', 'modular'}
-#         Phase interpolation mode.
-#     align_directions : bool
-#         Per-direction ITD alignment within listener.
-#     align_listeners : bool
-#         Global cross-listener alignment.
-#     """
-
-#     try:
-#         hf.log_with_timestamp("Validating input HRIR datasets", gui_logger)
-
-#         # ------------ Input Validation ------------
-#         if not isinstance(hrir_sets, list) or len(hrir_sets) == 0:
-#             raise ValueError("hrir_sets must be a non-empty list.")
-
-#         shapes = [h.shape for h in hrir_sets]
-#         if len(set(shapes)) != 1:
-#             raise ValueError(f"Inconsistent HRIR shapes: {shapes}")
-
-#         n_list = len(hrir_sets)
-#         elev_n, azim_n, ch_n, N = hrir_sets[0].shape
-
-#         # ------------ Filters ------------
-#         lp_sos = hf.get_filter_sos(
-#             cutoff=10000, fs=sample_rate, order=8, b_type='low'
-#         )
-        
-#         # ------------ Stage 0: Low-Frequency Polarity Correction ------------
-#         hf.log_with_timestamp("Checking for polarity inversions (Low-Freq focus)...", gui_logger)
-#         # 1. Initialize a 1kHz low-pass filter using your helper
-#         # We use a lower cutoff (1000Hz) to ignore chaotic high-frequency phase
-#         lp_sos_polarity = hf.get_filter_sos(
-#             cutoff=1000, fs=sample_rate, order=4, b_type='low'
-#         )
-#         # 2. Get and filter the reference listener
-#         ref_idx = 0
-#         ref_sig_raw = hrir_sets[ref_idx][elev_n // 2, 0, 0, :]
-#         ref_sig_lp = hf.apply_sos_filter(ref_sig_raw, lp_sos_polarity)
-#         # 3. Compare all other listeners to the reference
-#         for i in range(1, n_list):
-#             target_sig_raw = hrir_sets[i][elev_n // 2, 0, 0, :]
-#             target_sig_lp = hf.apply_sos_filter(target_sig_raw, lp_sos_polarity)
-#             # Dot product check: if negative, the low-frequency pulses are 180° out of phase
-#             if np.dot(ref_sig_lp, target_sig_lp) < 0:
-#                 hf.log_with_timestamp(f"Inverting polarity for listener {i} (detected at <1kHz)", gui_logger)
-#                 hrir_sets[i] *= -1.0
-
-
-#         # ------------ Stage 1: Per-listener direction alignment ------------
-#         if align_directions:
-#             hf.log_with_timestamp("Performing intra-listener alignment...", gui_logger)
-#             for i in range(n_list):
-#                 for el in range(elev_n):
-#                     for az in range(azim_n):
-#                         hrir_sets[i][el, az, :2, :] = shift_2d_impulse_response(
-#                             hrir_sets[i][el, az, :2, :], lp_sos, target_index=55
-#                         )
-
-     
-#         # ------------ Stage 2: Sub-sample Global alignment ------------
-#         if align_listeners:
-#             hf.log_with_timestamp("Performing sub-sample inter-listener alignment...", gui_logger)
-            
-#             # Use a reference (usually the first listener)
-#             ref_hrir = hrir_sets[0][elev_n // 2, azim_n // 2, 0, :]
-#             ref_fft = np.fft.rfft(ref_hrir)
-        
-#             for i in range(1, n_list):
-#                 target_hrir = hrir_sets[i][elev_n // 2, azim_n // 2, 0, :]
-#                 target_fft = np.fft.rfft(target_hrir)
-                
-#                 # Cross-correlation in frequency domain to find sub-sample shift
-#                 # This calculates the phase difference between signals
-#                 cross_pow = ref_fft * np.conj(target_fft)
-#                 # The phase of the cross power spectrum is the delay
-#                 # We find the slope of that phase via the peak of the IR
-#                 correlation = np.fft.irfft(cross_pow)
-                
-#                 # Parabolic interpolation to find the fractional peak
-#                 # (Standard trick for sub-sample accuracy)
-#                 peak_idx = np.argmax(correlation)
-#                 # ... [Insert parabolic fit logic here or use a simpler method] ...
-                
-#                 # Simple high-accuracy alternative: 
-#                 # Shift the entire dataset in the Frequency Domain
-#                 # shift = delay in samples (can be 1.45, 2.12, etc.)
-#                 delay = peak_idx if peak_idx < len(correlation)/2 else peak_idx - len(correlation)
-                
-#                 # Apply the shift to ALL directions/channels for this listener
-#                 freq_bins = np.fft.rfftfreq(N)
-#                 shift_vector = np.exp(1j * 2 * np.pi * freq_bins * delay)
-                
-#                 # Shift in frequency domain
-#                 for el in range(elev_n):
-#                     for az in range(azim_n):
-#                         for ch in range(ch_n):
-#                             spec = np.fft.rfft(hrir_sets[i][el, az, ch, :])
-#                             hrir_sets[i][el, az, ch, :] = np.fft.irfft(spec * shift_vector, n=N)
-                            
-        
-                            
-    
-
-#         # ------------ Stage 3: Spectral leveling per listener ------------
-#         hf.log_with_timestamp("Applying per-listener spectral leveling...", gui_logger)
-#         mag_a, mag_b, n_fft = CN.SPECT_SNAP_M_F0, CN.SPECT_SNAP_M_F1, CN.N_FFT
-
-#         subset_idx = [(el, az)
-#                       for el in np.linspace(0, elev_n - 1, 3, dtype=int)
-#                       for az in np.linspace(0, azim_n - 1, 5, dtype=int)]
-
-#         for i in range(n_list):
-#             mag_sum = 0.0
-#             for el, az in subset_idx:
-#                 padded = hf.padarray(hrir_sets[i][el, az, 0, :], n_fft)
-#                 mag_sum += np.mean(
-#                     np.abs(np.fft.fft(padded)[mag_a:mag_b])
-#                 )
-#             hrir_sets[i] /= (mag_sum / len(subset_idx))
-
-#         # ------------ Stage 4: Convert to frequency domain ------------
-#         hf.log_with_timestamp("Converting HRIRs to frequency domain...", gui_logger)
-#         hrtf_sets = np.array(
-#             [np.fft.rfft(hrir, axis=-1) for hrir in hrir_sets],
-#             dtype=np.complex128
-#         )   # shape: [n_list, elev, azim, ch, freq]
-
-#         # ------------ Stage 5: Interpolation ------------
-#         hf.log_with_timestamp(f"Interpolating across listeners (mode={interp_mode})...",
-#                               gui_logger)
-
-#         hrtf_avg = np.empty((elev_n, azim_n, ch_n, hrtf_sets.shape[-1]),
-#                             dtype=np.complex128)
-
-#         for el in range(elev_n):
-#             for az in range(azim_n):
-#                 for ch in range(ch_n):
-
-#                     H = hrtf_sets[:, el, az, ch]   # shape: [n_list, n_freqs]
-
-#                     if interp_mode == "modular":#most reliable
-#                         # --- Magnitude (in dB) + Circular phase averaging ---
-
-#                         # Magnitude & phase
-#                         mag = np.abs(H)
-#                         phase = np.angle(H)
-#                         # Convert magnitude to dB (amplitude dB)
-#                         mag_db = 20 * np.log10(np.clip(mag, 1e-12, None))
-#                         # Average magnitudes IN dB
-#                         mag_db_interp = np.mean(mag_db, axis=0)
-#                         # Convert back to linear magnitude
-#                         mag_interp = 10 ** (mag_db_interp / 20)
-#                         # Circular phase averaging (preserves wrapped phase)
-#                         phase_interp = circular_mean(phase)
-#                         # Reconstruct complex HRTF
-#                         hrtf_avg[el, az, ch] = mag_interp * np.exp(1j * phase_interp)
-                        
-        
-                      
-                 
-#                     else:
-#                         raise ValueError(f"Invalid interp_mode: {interp_mode}")
-
-#         # ------------ Stage 6: Return to time domain ------------
-#         hf.log_with_timestamp("Converting averaged HRTF back to time domain...", gui_logger)
-#         hrir_avg = np.fft.irfft(hrtf_avg, n=N, axis=-1)
-
-#         # ------------ Stage 7: Final dataset-level normalization ------------
-#         hf.log_with_timestamp("Applying final dataset-level normalization...", gui_logger)
-#         mag_sum = 0.0
-#         for el, az in subset_idx:
-#             padded = hf.padarray(hrir_avg[el, az, 0, :], n_fft)
-#             mag_sum += np.mean(
-#                 np.abs(np.fft.fft(padded)[mag_a:mag_b])
-#             )
-#         hrir_avg /= (mag_sum / len(subset_idx))
-
-#         # ------------ Stage 8: Ensure final shape is [1, elev, azim, ch, N] ------------
-#         if hrir_avg.ndim == 4:
-#             hrir_avg = np.expand_dims(hrir_avg, axis=0)
-#         elif hrir_avg.ndim != 5:
-#             raise ValueError(f"Unexpected HRIR shape: {hrir_avg.shape}")
-
-#         # ------------ Stage 9: Save output ------------
-#         npy_fname = pjoin(CN.DATA_DIR_HRIR_NPY_INTRP,
-#                           CN.HRTF_AVERAGED_NAME_FILE + ".npy")
-#         Path(npy_fname).parent.mkdir(exist_ok=True, parents=True)
-
-#         if hrir_avg.dtype == np.float64:
-#             hrir_avg = hrir_avg.astype(np.float32)
-
-#         np.save(npy_fname, hrir_avg)
-#         hf.log_with_timestamp(f"Saved npy dataset: {npy_fname}", gui_logger)
-#         hf.log_with_timestamp("HRIR averaging complete.", gui_logger)
-
-#         return hrir_avg
-
-#     except Exception as e:
-#         hf.log_with_timestamp(f"Error building averaged listener: {e}", gui_logger)
-#         return None
 
 
 def build_averaged_listener_from_sets(hrir_sets, gui_logger=None,

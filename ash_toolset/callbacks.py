@@ -206,9 +206,8 @@ def load_settings(defaults=None, preset_name=None, version=None,
         # --- Version check ---
         version_loaded = hf.safe_get(config, "version", str, version)
         if version_loaded != version:
-            hf.log_with_timestamp(
-                f"Settings version mismatch: file={version_loaded}, expected={version}. Loading anyway.", logz
-            )
+            hf.log_with_timestamp(f"Settings version mismatch: file={version_loaded}, expected={version}. Clearing cache and loading settings.", logz)
+            clear_cache()
 
         # --- Apply loaded or default values ---
         for key, default_value in defaults.items():
@@ -1206,23 +1205,7 @@ def fde_select_spatial_resolution(sender, app_data):
     """
     try:
 
-        #update hrtf list based on spatial resolution
-        #also update file format selection based on spatial resolution
-        #set some to false and hide irrelevant options
-        # if app_data == 'High':
 
-        #     dpg.configure_item("fde_sofa_brir_toggle", show=True)
- 
-        #     dpg.configure_item("fde_sofa_brir_tooltip", show=True)
-            
-        # else:
-    
-        #     dpg.set_value("fde_sofa_brir_toggle", False)
-    
-        #     dpg.configure_item("fde_sofa_brir_toggle", show=False)
-    
-        #     dpg.configure_item("fde_sofa_brir_tooltip", show=False)
-       
         #reset progress bar
         fde_reset_brir_progress()
         
@@ -2482,7 +2465,14 @@ def fde_process_brirs(sender=None, app_data=None, user_data=None):
     hesuvi_path = dpg.get_value('output_folder_hesuvi')
     sofa_conv=dpg.get_value("sofa_exp_convention")
     resample_mode=CN.RESAMPLE_MODE_LIST[0]
-    
+ 
+    #set low freq suppression to false temporarily
+    acoustic_space= dpg.get_value("acoustic_space")
+    hrtf_low_freq_suppression_prev=dpg.get_value('hrtf_low_freq_suppression')
+    substring = "anechoic"
+    if substring.lower() in acoustic_space.lower():
+        dpg.set_value('hrtf_low_freq_suppression',False)
+        
     #grab parameters
     brir_dict_params=get_brir_dict()
     
@@ -2497,6 +2487,10 @@ def fde_process_brirs(sender=None, app_data=None, user_data=None):
     """
     
     brir_gen, status = brir_generation.generate_integrated_brir(brir_name=brir_name, spatial_res=spat_res_int, report_progress=2, gui_logger=logz, brir_meta_dict=brir_dict_params)
+    
+    
+    #revert parameter
+    dpg.set_value('hrtf_low_freq_suppression',hrtf_low_freq_suppression_prev)
     
     """
     #Run BRIR export
@@ -2531,7 +2525,7 @@ def fde_process_brirs(sender=None, app_data=None, user_data=None):
     #update user data
     dpg.configure_item('fde_progress_bar_brir',user_data=stop_thread_flag)
     save_settings(update_brir_pars=True)
-
+    
 
 def e_apo_apply_brir_params(sender=None, app_data=None):
     """ 
@@ -2609,9 +2603,16 @@ def qc_process_brirs(use_stored_brirs=False):
     spat_res = dpg.get_value("e_apo_brir_spat_res")
     spat_res_int = CN.SPATIAL_RES_LIST.index(spat_res)
     
+    #set low freq suppression to false temporarily
+    acoustic_space= dpg.get_value("acoustic_space")
+    hrtf_low_freq_suppression_prev=dpg.get_value('hrtf_low_freq_suppression')
+    substring = "anechoic"
+    if substring.lower() in acoustic_space.lower():
+        dpg.set_value('hrtf_low_freq_suppression',False)
+    
     #grab parameters
     brir_dict_params=get_brir_dict()
- 
+    
     log_string = 'Processing: ' + brir_name
     hf.log_with_timestamp(log_string, logz)
     
@@ -2639,6 +2640,8 @@ def qc_process_brirs(use_stored_brirs=False):
         brir_gen = np.array([])
         status = 0
     
+    #revert parameter
+    dpg.set_value('hrtf_low_freq_suppression',hrtf_low_freq_suppression_prev)
     
     """
     #Run BRIR export
@@ -2728,6 +2731,7 @@ def qc_process_brirs(use_stored_brirs=False):
         e_apo_reset_progress()
     #plot to integrated analysis
     ia_new_plot()
+    
   
 
 def check_brir_dataset_exported():
@@ -3078,9 +3082,6 @@ def get_brir_dict():
     bit_depth_str = dpg.get_value('wav_bit_depth')
     bit_depth = CN.BIT_DEPTH_DICT.get(bit_depth_str)
     
-    #brir params
-
-    
     #misc
     hrtf_symmetry = dpg.get_value('force_hrtf_symmetry')
     er_delay_time = dpg.get_value('er_delay_time')
@@ -3094,7 +3095,9 @@ def get_brir_dict():
     e_apo_brir_spat_res=dpg.get_value('e_apo_brir_spat_res')
     fde_brir_spat_res=dpg.get_value('fde_brir_spat_res')
     hrtf_low_freq_suppression=dpg.get_value('hrtf_low_freq_suppression')
-    
+    brir_df_cal_mode = dpg.get_value('brir_df_cal_mode')
+    octave_smoothing_n = dpg.get_value('octave_smoothing_n')
+    brir_df_cal_factor = dpg.get_value('brir_df_cal_factor')
     #low freq
     crossover_f_mode = dpg.get_value('crossover_f_mode')
     crossover_f = dpg.get_value('crossover_f')
@@ -3103,7 +3106,7 @@ def get_brir_dict():
     sub_response_short = CN.SUB_RESPONSE_LIST_SHORT[sub_response_int]
     hp_rolloff_comp = dpg.get_value('hp_rolloff_comp')
     fb_filtering = dpg.get_value('fb_filtering')
-
+    brir_max_length = dpg.get_value('brir_max_length')
     
 
     brir_meta_dict = {
@@ -3161,9 +3164,10 @@ def get_brir_dict():
         'bit_depth': bit_depth, 'bit_depth_str': bit_depth_str, 
  
         # Additional variables
-        'hrtf_symmetry': hrtf_symmetry, 'er_delay_time': er_delay_time, 'reverb_tail_crop_db': reverb_tail_crop_db,
+        'hrtf_symmetry': hrtf_symmetry, 'er_delay_time': er_delay_time, 'reverb_tail_crop_db': reverb_tail_crop_db, 'brir_df_cal_mode':brir_df_cal_mode, 'brir_max_length':brir_max_length,
         'crossover_f_mode': crossover_f_mode, 'crossover_f': crossover_f, 'sub_response': sub_response, 'sub_response_short': sub_response_short, 'hp_rolloff_comp': hp_rolloff_comp,
-        'fb_filtering': fb_filtering, 'hrtf_polarity': hrtf_polarity, 'multichan_mapping': multichan_mapping, 'hrtf_low_freq_suppression': hrtf_low_freq_suppression,
+        'fb_filtering': fb_filtering, 'hrtf_polarity': hrtf_polarity, 'multichan_mapping': multichan_mapping, 'hrtf_low_freq_suppression': hrtf_low_freq_suppression, 
+        'octave_smoothing_n': octave_smoothing_n, 'brir_df_cal_factor':brir_df_cal_factor,
         'hrtf_direction_misalign_comp': hrtf_direction_misalign_comp,  'hrtf_df_cal_mode': hrtf_df_cal_mode,  'e_apo_brir_spat_res': e_apo_brir_spat_res,  'fde_brir_spat_res': fde_brir_spat_res
     }
 
@@ -3175,6 +3179,69 @@ def get_brir_dict():
 ############### misc tools and settings
 #
 #
+
+def clear_cache_gui(sender=None, app_data=None, user_data=None):
+    """ 
+    GUI function to delete cached files with recursive search
+    """
+    
+    # 1. Handle base directories with recursive metadata search
+    clear_cache()
+        
+    dpg.configure_item("clear_cache_popup", show=False)
+    
+def clear_cache(sender=None, app_data=None, user_data=None):
+    """ 
+    function to delete cached files with recursive search
+    """
+    
+    # 1. Handle base directories with recursive metadata search
+    base_dirs_to_check = [
+        CN.DATA_DIR_HRIR_NPY_DH, 
+        CN.DATA_DIR_HRIR_NPY_HL, 
+        CN.DATA_DIR_HRIR_NPY_USER
+    ]
+    
+    # We keep track of folders we've already cleared to avoid 
+    # redundant errors if multiple metadata files exist in one folder.
+    cleared_folders = set()
+
+    for base_path in base_dirs_to_check:
+        base_dir = Path(base_path)
+        if not base_dir.exists():
+            continue
+
+        # Find all files ending in _metadata.json at ANY depth
+        for metadata_file in base_dir.rglob("*_metadata.json"):
+            target_folder = metadata_file.parent
+            
+            if target_folder not in cleared_folders:
+                # Clear all contents of the folder containing the metadata
+                for item in target_folder.iterdir():
+                    try:
+                        if item.is_file() or item.is_symlink():
+                            item.unlink()
+                        elif item.is_dir():
+                            shutil.rmtree(item)
+                    except Exception as e:
+                        hf.log_with_timestamp(f"Error clearing {item}: {e}")
+                
+                cleared_folders.add(target_folder)
+                hf.log_with_timestamp(f"Cleared cache in: {target_folder}")
+
+    # 2. Clear out all files in the exact reverb directory
+    reverb_dir = Path(CN.DATA_DIR_REVERB) / 'datasets'
+    
+    if reverb_dir.exists() and reverb_dir.is_dir():
+        for item in reverb_dir.iterdir():
+            try:
+                if item.is_file() or item.is_symlink():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            except Exception as e:
+                hf.log_with_timestamp(f"Failed to delete {item} in reverb: {e}")
+        hf.log_with_timestamp(f"Cleared all files in: {reverb_dir}")
 
 
 def show_selected_folder(sender, files, cancel_pressed):
@@ -3502,8 +3569,7 @@ def e_apo_config_write(estimate_gain=True, caller='apply_hpcf'):
         #brir related selections
         enable_brir_selected=dpg.get_value('e_apo_brir_conv')
         brir_set_folder=CN.FOLDER_BRIRS_LIVE
-        gain_oa_selected=dpg.get_value('e_apo_gain_oa')
-    
+  
         brir_meta_dict = get_brir_dict()
       
         audio_channels=dpg.get_value('e_apo_audio_channels')
@@ -3514,7 +3580,7 @@ def e_apo_config_write(estimate_gain=True, caller='apply_hpcf'):
         #get spatial resolution for this brir set
         spatial_res_sel = 0
         
-        #run function to write custom config
+        #run function to write custom config, returns preamp value used
         gain_conf = e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel, upmix_method=upmix_method, side_delay=side_delay, rear_delay=rear_delay)
      
         #run function to load the custom config file in config.txt
@@ -3531,7 +3597,7 @@ def e_apo_config_write(estimate_gain=True, caller='apply_hpcf'):
         #also update estimated peak gain
         if estimate_gain == True:
 
-            #peak gain
+            #get peak gain
             est_pk_gain_2 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, brir_set=brir_set_folder))
             dpg.set_value("e_apo_gain_peak_2_0", str(est_pk_gain_2))
             est_pk_gain_5 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '5.1 Surround', hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, brir_set=brir_set_folder))
@@ -3544,15 +3610,16 @@ def e_apo_config_write(estimate_gain=True, caller='apply_hpcf'):
             if (mute_fl == True or mute_fr == True):#if at least one channel is muted, dont adjust gain
                 one_chan_mute=True
             #if clipping prevention enabled, grab 2.0 peak gain, calc new gain and rewrite the custom config with gain override
-            if prevent_clipping != CN.AUTO_GAIN_METHODS[0] and load_config == True and one_chan_mute == False:
+            if prevent_clipping != CN.AUTO_GAIN_METHODS[0] and load_config == True and one_chan_mute == False and gain_oa_selected != CN.EAPO_MUTE_GAIN:
                 if prevent_clipping == CN.AUTO_GAIN_METHODS[2] or prevent_clipping == CN.AUTO_GAIN_METHODS[3]:#low or mid frequencies
                     #peak gain estimation at low or mid frequencies
                     est_pk_gain_reference = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, brir_set=brir_set_folder,freq_mode = prevent_clipping))
                 else:
                     est_pk_gain_reference = est_pk_gain_2
-                gain_adjustment = float(est_pk_gain_reference*-1)#change polarity and reduce slightly
-                gain_adjustment = min(gain_adjustment, 40.0)#limit to max of 40db
-                dpg.set_value("e_apo_gain_oa", gain_oa_selected+gain_adjustment)
+                gain_adjustment = float(est_pk_gain_reference*-1)#change polarity
+                new_gain = gain_oa_selected+gain_adjustment#adjust gain to result in 0db peak
+                new_gain = max(CN.MIN_GAIN, min(new_gain, CN.MAX_GAIN))#limit gain to within allowable range
+                dpg.set_value("e_apo_gain_oa", new_gain)
                 brir_meta_dict = get_brir_dict()
                 #run function to write custom config
                 gain_conf = e_apo_config_creation.write_ash_e_apo_config(primary_path=base_folder_selected, hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, audio_channels=audio_channels, gui_logger=logz, spatial_res=spatial_res_sel, upmix_method=upmix_method, side_delay=side_delay, rear_delay=rear_delay)
@@ -3560,7 +3627,7 @@ def e_apo_config_write(estimate_gain=True, caller='apply_hpcf'):
                 #if true, edit config.txt to include the custom config
                 e_apo_config_creation.include_ash_e_apo_config(primary_path=base_folder_selected, enabled=load_config)
          
-                #peak gain
+                #udpated peak gain
                 est_pk_gain_2 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '2.0 Stereo', hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, brir_set=brir_set_folder))
                 dpg.set_value("e_apo_gain_peak_2_0", str(est_pk_gain_2))
                 est_pk_gain_5 = (e_apo_config_creation.est_peak_gain_from_dir(primary_path=base_folder_selected, gain_config=gain_conf, channel_config = '5.1 Surround', hpcf_dict=hpcf_dict, brir_meta_dict=brir_meta_dict, brir_set=brir_set_folder))
@@ -3708,7 +3775,7 @@ def e_apo_update_direction(aquire_config=False, brir_dict_new={}):
         dpg.apply_transform("rr_drawing_inner", dpg.create_rotation_matrix(math.pi*(90.0+180-(azimuth*-1))/180.0 , [0, 0, -1]))
             
         #finally rewrite config file
-        if aquire_config == True or aquire_config == None:#custom parameter will be none if called by gui
+        if aquire_config == True or aquire_config is None:#custom parameter will be none if called by gui
             e_apo_config_acquire(caller='configure_brir')
             
     except Exception as e:
@@ -4065,9 +4132,10 @@ def check_for_app_update(gui_logger=None):
         if __version__ == web_app_version:
             #log results
             log_string = 'No update required'
+            hf.log_with_timestamp(log_string, gui_logger)
         else:
             log_string = "New version available at https://sourceforge.net/projects/ash-toolset/"
-        hf.log_with_timestamp(log_string, gui_logger, log_type=1)
+            hf.log_with_timestamp(log_string, gui_logger, log_type=1)
         
         return True
     
@@ -4327,25 +4395,34 @@ def as_start_processing_callback():
         # --------------------------------------------------
         # Read GUI values ONCE
         # --------------------------------------------------
-        name = dpg.get_value("space_name")
-        description = dpg.get_value("space_description")
-        directions = dpg.get_value("unique_directions")
-        noise_reduction_mode = dpg.get_value("noise_reduction_mode")
-        pitch_high = dpg.get_value("pitch_range_high")
+        name = dpg.get_value("as_space_name")
+        description = dpg.get_value("as_space_description")
+        noise_reduction_mode = dpg.get_value("as_noise_reduction_mode")
+        spatial_exp_method = dpg.get_value("as_spatial_exp_method")
+        pitch_high = dpg.get_value("as_pitch_range_high")
         pitch_low = -abs(pitch_high)
-        reverb_tail_mode = dpg.get_value("reverb_tail_mode")
-        pitch_shift_comp = dpg.get_value("pitch_shift_comp")
-        alignment_freq = dpg.get_value("alignment_freq")
+        reverb_tail_mode = dpg.get_value("as_reverb_tail_mode")
+        pitch_shift_comp = dpg.get_value("as_pitch_shift_comp")
+        alignment_freq = dpg.get_value("as_alignment_freq")
         rise_time = dpg.get_value("as_rise_time")
         as_subwoofer_mode = dpg.get_value("as_subwoofer_mode")
-        binaural_meas_inputs = dpg.get_value("binaural_meas_inputs")
-        correction_factor = round(dpg.get_value("asi_rm_cor_factor"), 2)
+        binaural_meas_inputs = dpg.get_value("as_binaural_meas_inputs")
+        correction_factor = round(dpg.get_value("as_rm_cor_factor"), 2)
         __version__ = dpg.get_item_user_data("log_text")
         as_listener_type=dpg.get_value("as_listener")  
         brir_meta_dict=get_brir_dict()
         brir_hrtf_gui = brir_meta_dict.get('brir_hrtf')
         if as_subwoofer_mode:#enforce short windowed if low frequency mode
-            reverb_tail_mode = 'Short Windowed'
+            reverb_tail_mode = 'Short Windowed'   
+        corner_value=dpg.get_value("as_room_corner_angle")
+        biased_centers = hf.calculate_room_corner_centers(corner_value)
+        azimuth_spread=dpg.get_value("as_reflection_spread")
+        distr_mode=dpg.get_value("as_ir_dist_mode")
+        grid_points = dpg.get_value("as_grid_points")
+        speaker_count = dpg.get_value("as_speaker_count")
+        directions = grid_points*speaker_count#total directions = grid points x speaker count
+        octave_smoothing_n = dpg.get_value("octave_smoothing_n")
+        as_drr_correction = dpg.get_value("as_drr_correction")
 
         # --------------------------------------------------
         # MAIN LOOP (single folder or batch)
@@ -4372,7 +4449,7 @@ def as_start_processing_callback():
             name_short = as_name
             name_label = name_formatted
             name_id = name_formatted
-    
+     
             # Step 1: Check/download and load HRIR dataset
             hf.log_with_timestamp("Step 1: Loading HRIR dataset...")
             # Map listener type to prebuilt dataset file + URLs
@@ -4432,7 +4509,7 @@ def as_start_processing_callback():
                 ir_set=name_id, input_folder=selected_folder, gui_logger=logger_obj,
                 desired_measurements=desired_measurements,
                 pitch_range=pitch_range, tail_mode=reverb_tail_mode,
-                cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, 
+                cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, spatial_exp_method=spatial_exp_method,
                 pitch_shift_comp=pitch_shift_comp,subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, correction_factor=correction_factor
             )
     
@@ -4453,15 +4530,12 @@ def as_start_processing_callback():
             hf.update_gui_progress(report_progress=3, progress=0.70)
     
             # Step 3: Convert IRs to BRIRs
-            if binaural_meas_inputs:
-                distr_mode=2#0=evenly distribute,1=round robin,2=random,3=one measurement per source
-            else:
-                distr_mode=0#0=evenly distribute,1=round robin,2=random,3=one measurement per source
             hf.log_with_timestamp("Step 3: Converting IRs to BRIRs...", gui_logger=logger_obj)
             brir_reverberation, status_code = air_processing.convert_airs_to_brirs(
                 ir_set=name_id, air_dataset=air_dataset, gui_logger=logger_obj,
                  tail_mode=reverb_tail_mode,  correction_factor=correction_factor, as_listener_type=as_listener_type, hrir_dataset=hrir_selected,
-                cancel_event=cancel_event, report_progress=3, rise_time=rise_time, subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, distr_mode=distr_mode
+                cancel_event=cancel_event, report_progress=3, rise_time=rise_time, subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, lf_drr_comp=as_drr_correction,
+                distr_mode=distr_mode, biased_centers=biased_centers, azimuth_spread = azimuth_spread, f_alignment = alignment_freq, virtual_speakers=speaker_count, octave_smoothing_n=octave_smoothing_n
             )
             if status_code != 0:
                 hf.update_gui_progress(report_progress=3, progress=0.0) # Reset on failure
@@ -4493,18 +4567,25 @@ def as_start_processing_callback():
             #notes = f"Created with ASH Toolset (AS Import tool) {__version__} on {timestamp_str}"
             notes = (
                 f"Created with ASH Toolset {__version__} on {timestamp_str} | "
+                
+                f"reverb_tail_mode={reverb_tail_mode}, " 
                 f"low-frequency_mode={as_subwoofer_mode}, "
+                f"binaural_meas_inputs={binaural_meas_inputs}, "
                 f"noise_reduction_mode={noise_reduction_mode}, "
                 f"rise_time={rise_time}ms, "
+                f"correction_factor={correction_factor}, "
+                f"alignment_freq={alignment_freq}Hz, "
+                f"grid_points={grid_points}, "
+                f"speaker_count={speaker_count}, "
+                f"distr_mode={distr_mode}, "
+                f"spatial_exp_method={spatial_exp_method}, "
                 f"pitch_range=({pitch_low}, {pitch_high}), "
                 f"pitch_shift_comp={pitch_shift_comp}, "
-                f"alignment_freq={alignment_freq}Hz, "
-                f"directions={directions}, "
-                f"correction_factor={correction_factor}, "
-                f"binaural_meas_inputs={binaural_meas_inputs}, "
-                f"reverb_tail_mode={reverb_tail_mode}, " 
                 f"listener_type={as_listener_type}, "
                 f"listener_name={listener_name}"
+                f"corner_value={corner_value}, " 
+                f"azimuth_spread={azimuth_spread}, "    
+                f"decay_correction={as_drr_correction}, " 
             )
             description_full = notes if not description.strip() else f"{description}, {notes}"
             low_rt60 = "No" if reverb_tail_mode.lower().startswith("long") else "Yes"
@@ -4528,6 +4609,8 @@ def as_start_processing_callback():
                 topt_ms = topt_mean * 1000  # Convert to milliseconds
                 meas_rt60 = int(round(topt_ms))               # Regular rounding
                 meas_rt60 = int(np.ceil(meas_rt60 / 50.0) * 50) # Round up to nearest 50
+                # This ensures if rounding results in 0, it is bumped to 50
+                meas_rt60 = max(meas_rt60, 50)
             except Exception as rt60_ex:
                 hf.log_with_timestamp(f"RT60 estimation failed: {rt60_ex}", gui_logger=logger_obj, log_type=1)
                 meas_rt60 = 600
@@ -4584,7 +4667,7 @@ def as_start_processing_callback():
                 
             time.sleep(0.1)
             update_as_table_from_csvs()
-            
+            save_settings()
             
         
 
@@ -4866,7 +4949,7 @@ def update_as_table_from_csvs():
             with dpg.table_row(parent="processed_irs_table"):
                 dpg.add_selectable(label=name,callback=on_ir_row_selected,span_columns=True,user_data=name_id)
                 dpg.add_text(str(rt60))
-                dpg.add_text(description,wrap=1050)
+                dpg.add_text(description,wrap=980)
     
         # Reset multi-selection tracking
         dpg.set_item_user_data("selected_ir_rows", [])
@@ -4880,6 +4963,7 @@ def update_as_table_from_csvs():
         
         CN.refresh_sub_responses()#also update sub responses in case sub mode was enabled
         dpg.configure_item("sub_response", items=CN.SUB_RESPONSE_LIST_GUI)
+        
         
     except Exception as e:
         hf.log_with_timestamp(f"Error: {e}", log_type=2, exception=e)

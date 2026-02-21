@@ -161,17 +161,21 @@ def write_ash_e_apo_config(primary_path, hpcf_dict, brir_meta_dict, audio_channe
         output_file.parent.mkdir(exist_ok=True, parents=True)
 
         #relative directories
-        conv_hpcf_rel_dir = 'Convolution: ..\\HpCFs\\FIRs\\'+brand_formatted+'\\'
         conv_hpcf_command = 'Convolution: ..\\HpCFs\\FIRs\\'+brand_formatted+'\\'+ hpcf_name_wav
         conv_brir_rel_dir = 'Convolution: ..\\BRIRs\\'+brir_set_formatted+'\\'
    
         #use overall gain as basis for preamp, user defined or auto adjusted
         preamp=preamp+gain_oa
-        #override gain if a value is passed into function
-        preamp = round(preamp,1)
-        if preamp > 50 or preamp < -100:
-            log_string = 'invalid gains calculated: ' + str(preamp)
-            hf.log_with_timestamp(log_string=log_string, gui_logger=gui_logger, log_type = 1)#log warning
+
+        # Clamp the value: max(MIN, min(VALUE, MAX))
+        preamp = max(CN.MIN_GAIN, min(preamp, CN.MAX_GAIN))
+        # Round to one decimal place for E-APO compatibility
+        preamp = round(preamp, 1)
+
+        # Log a warning if the value was originally outside your logic's range
+        if preamp >= CN.MAX_GAIN or preamp <= CN.MIN_GAIN:
+            log_string = f"Preamp clamped to safety limit: {preamp} dB"
+            hf.log_with_timestamp(log_string=log_string)
 
         
         #write to txt file
