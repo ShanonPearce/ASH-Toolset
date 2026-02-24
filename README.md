@@ -192,7 +192,8 @@ Steps for customising and applying/exporting a new simulation:
 1. Select Acoustic Space
 	- Choose from various environments (audio labs, conference rooms, control rooms, seminar rooms, studios, etc.) 
 	- Results in recreations of real acoustic environments derived from real world measurements.
-	- Details can be found in the reference tables tab. 
+	- Details can be found in the reference tables tab.
+	- To disable reverberation, select 'Anechoic Chamber'.
 2. Select Gain for Direct Sound (dB)
 	- Range: -10 dB to 10 dB.
 	- Higher values decrease perceived distance; lower values increase it.
@@ -328,18 +329,27 @@ Steps for importing and processing acoustic spaces:
 	- Rise Time (ms): Duration of fade-in window applied to IR. Min: 1 ms, Max: 20 ms
 	- Room Correction Factor: Select a value between 0 and 1 to control the strength of room correction.
 	- Listener: Controls which listener will be used to apply binaural transformations. If set to 'User Selection', the current listener selection in the first tab will be used. Not applicable when binaural measurements option is enabled.
-4. Set Spatial Sampling
-	- Desired Directions: Number of simulated source directions to generate.
-		* Minimum: 2000, Maximum: 5000
-		* Lower values reduce processing time but may also reduce quality.
+4. Set Spatial Sampling and Configuration
+	- Spherical Grid Density: Total number of discrete points (directions) on the spherical measurement grid. Range: 192 - 768 points. Not applicable for binaural measurements.
+	- Virtual Speaker Count: Number of independent speaker locations to simulate (e.g., 2 for Stereo, 5 for 5.1). Range: 1 - 24.
+	- IR Distribution Mode: Determines how measurements are assigned to virtual sources.
+		* Sequential: Distributes blocks of neighboring measurements.
+		* Round-Robin: Distributes measurements in a fixed circular order.
+		* Random: Shuffles measurements for a diffuse spatial feel.
+		* Single: Assigns exactly one measurement (or L/R pair) to each virtual speaker.
 	- Alignment Frequency (Hz): Cutoff frequency for time-domain alignment.
 		* Minimum: 50, Maximum: 150
-5. (Optional) Configure Pitch Shifting for Dataset Expansion
-	- Pitch Shift Range: Maximum pitch shift in semitones (default: 12.0)
-	- Pitch Shift Compensation: Enable to correct frequency response of pitch-shifted IRs.
-6. Start Processing
+5. (Optional) Configure Dataset Expansion and Correction
+	- Spatial Expansion Method: Expands sparse datasets to increase spatial resolution and density. Not applicable for binaural measurements.
+	- Pitch Shift Range: Maximum pitch shift in semitones (0.0 to 24.0).
+	- Pitch Shift Correction: Corrects magnitude response after dataset expansion.
+	- Decay Curve Correction: Restores direct-to-reverberation ratios to original levels after expansion.
+6. (Optional) Configure Room Geometry
+	- Room Corner Angle (degrees): Defines the angle to the front-left and front-right corners. 45 degrees is square; 60 degrees is wide and shallow; 30 degrees is narrow and deep.
+	- Reflection Spread: Controls the focus of corner reflections. Low (5 - 15): Sharp, pinpoint corners. Medium (20 - 45): Balanced, natural room feel. High (60+): Diffuse, scattered reflections.
+7. Start Processing
 	- Click 'Start Processing' to begin.
-	- Processing time depends on dataset size and settings.
+	- Processing time depends on dataset size, tail mode, and expansion settings.
 
 ---
 ### Room Target Generator
