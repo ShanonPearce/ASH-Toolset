@@ -87,9 +87,7 @@ def plot_data(
         mag_response = level_spectrum_ends(
             mag_response, 200, 19000, n_fft=n_fft
         )
-        # mag_response = smooth_freq_octaves(
-        #     data=mag_response, n_fft=n_fft
-        # )
+
         mag_response = smooth_gaussian_octave(data=mag_response, n_fft=n_fft, fs=samp_freq, fraction=24)
 
     n_unique_pts = int(np.ceil((n_fft + 1) / 2.0))
@@ -332,7 +330,7 @@ def _plot_magnitude_dpg(
     if level_ends:
         mag = level_spectrum_ends(mag, 240, 19000, n_fft=n_fft)
     if x_lim_b > 200:
-        #mag = smooth_freq_octaves(mag, n_fft=n_fft,fund_freq=100,win_size_base=smooth_win_base)
+
         mag = smooth_gaussian_octave(data=mag, n_fft=n_fft, fs=samp_freq, fraction=12)
 
     mag_db = 20 * np.log10(np.maximum(mag, 1e-12))
@@ -452,7 +450,7 @@ def _plot_decay_dpg(
     mag_full = np.abs(F_full)
 
     # ALWAYS smooth (matches magnitude plot)
-    #mag_full = smooth_freq_octaves(mag_full, n_fft=n_fft_full,fund_freq=100,win_size_base=6)
+
     mag_full = smooth_gaussian_octave(data=mag_full, n_fft=n_fft, fs=samp_freq, fraction=12)
 
     mag_db_full = 20 * np.log10(np.maximum(mag_full, 1e-12))
@@ -510,7 +508,7 @@ def _plot_decay_dpg(
         mag_slice = np.abs(F_slice)
 
         # ALWAYS smooth slice
-        #mag_slice = smooth_freq_octaves(mag_slice, n_fft=n_fft,fund_freq=100,win_size_base=6)
+
         mag_slice = smooth_gaussian_octave(data=mag_slice, n_fft=n_fft, fs=samp_freq, fraction=12)
 
         mag_db_slice = 20 * np.log10(np.maximum(mag_slice, 1e-12))
@@ -768,31 +766,30 @@ def calculate_room_corner_centers(front_angle_deg):
     # Return sorted array for consistent processing
     return np.sort(np.array([fr, rr, rl, fl]))
 
+
 def biased_spherical_coordinate_sampler(azim_src_set, elev_src_set, num_samples,
                                        biased_azimuth_centers=np.array([45, 135, 225, 315]),
-                                       azimuth_spread=20, plot_distribution=False):
+                                       azimuth_spread=20, plot_distribution=False,
+                                       seed=0):
     """
     Samples spherical coordinates with a Gaussian bias towards specific azimuth centers.
     
-    The bias is calculated using a circular wrapping distance. A smaller azimuth_spread 
-    results in a stronger, narrower bias (tight clusters), while a larger spread 
-    results in a weaker bias (more uniform distribution).
-
     Args:
-        azim_src_set (np.ndarray): Sorted array of possible azimuth angles (degrees).
-        elev_src_set (np.ndarray): Array of possible elevation angles (degrees).
-        num_samples (int): Number of coordinate pairs to sample.
-        biased_azimuth_centers (np.ndarray): Azimuths (degrees) to bias towards.
-        azimuth_spread (float): Standard deviation of the bias. 
-            Lower = Stronger bias (narrower peaks).
-            Higher = Weaker bias (broader peaks/more uniform).
-        plot_distribution (bool): If True, shows a histogram of results.
-
-    Returns:
-        tuple: (selected_azimuths, selected_elevations) as lists.
+        ... (existing args)
+        seed (int): Random seed. 0 for non-deterministic (random each time), 
+                    1+ for fixed/reproducible results.
     """
-    # Vectorized calculation of circular differences
-    # Reshape to (num_azim, 1) and (1, num_centers) for broadcasting
+    # --- Seed Handling ---
+    if seed == 0:
+        # Use high-resolution time to ensure a different seed even on fast re-renders
+        effective_seed = int(time.time() * 1000) % 2**32
+    else:
+        effective_seed = seed
+    
+    # Initialize the NumPy generator for local thread-safe randomization
+    rng = np.random.default_rng(effective_seed)
+
+    # --- Probability Calculation (Vectorized) ---
     azim_col = azim_src_set[:, np.newaxis]
     centers_row = biased_azimuth_centers[np.newaxis, :]
     
@@ -805,30 +802,31 @@ def biased_spherical_coordinate_sampler(azim_src_set, elev_src_set, num_samples,
     probabilities = np.sum(gauss_weights, axis=1)
     probabilities /= np.sum(probabilities)
 
-    # Sampling
-    cdf = np.cumsum(probabilities)
-    
-    # Generate random values in bulk for speed
-    rand_azims = [random.random() for _ in range(num_samples)]
-    selected_azim_indices = np.searchsorted(cdf, rand_azims)
-    selected_azimuths = azim_src_set[selected_azim_indices].tolist()
+    # --- Sampling ---
+    # We use rng.choice which handles probabilities and cumulative distribution internally
+    selected_azimuths = rng.choice(azim_src_set, size=num_samples, p=probabilities).tolist()
 
     # Elevation sampling (Uniform/Unbiased)
-    selected_elevations = [random.choice(elev_src_set) for _ in range(num_samples)]
+    selected_elevations = rng.choice(elev_src_set, size=num_samples).tolist()
+
+    # --- Logging ---
+    # Optional: print the seed to console so user can recover a '0' result
+    if seed == 0:
+        log_with_timestamp(
+            f"DEBUG: Volatile seed used: {effective_seed}"
+        )
 
     if plot_distribution:
         plt.figure(figsize=(10, 5))
         plt.hist(selected_azimuths, bins=np.arange(0, 370, 10), edgecolor='black', alpha=0.7)
         plt.xlabel("Azimuth (degrees)")
         plt.ylabel("Frequency")
-        plt.title(f"Azimuth Distribution (Spread={azimuth_spread})")
+        plt.title(f"Azimuth Distribution (Spread={azimuth_spread}, Seed={effective_seed})")
         plt.xticks(np.arange(0, 361, 45))
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.show()
-
+  
     return selected_azimuths, selected_elevations
-
-
 
 def octave_smooth(freqs, values, fraction=1/3):
     """
@@ -1304,7 +1302,7 @@ def expand_measurements(
     fs: int = CN.SAMP_FREQ,
     pitch_range: tuple = (-12, 12),
     shuffle: bool = False,
-    seed="random",#"random"
+    seed=0,#0 = random, 3.7.0: 65529189939976765123732762606216328531
     num_threads: int = 4,
     plot_first_n: int = 10,
     plot: bool = CN.PLOT_ENABLE, 
@@ -1332,8 +1330,8 @@ def expand_measurements(
     # ------------------------------------------------------------
     # Constants & Setup
     # ------------------------------------------------------------
-    n_fft        = 4096#4096,8192,32768,16384
-    truncate_len = 4096#512,8192,
+    n_fft        = 4096#4096 in 3.7.0
+    truncate_len = 1024#512 in 3.7.0,4096 in 4.0.0,
     f_min        = 20
     f_max        = 20000
 
@@ -1375,10 +1373,17 @@ def expand_measurements(
         log_with_timestamp("Invalid pitch range, resetting to default", gui_logger)
         
 
-    if seed == "random":
-        seed = np.random.SeedSequence().entropy
+    # --- UPDATED SEED LOGIC ---
+    if seed == 0:
+        # Consistency with other functions: Use time-based volatile seed
+        effective_seed = int(time.time() * 1000) % 2**32
+    elif seed == 1:#use seed from 3.7.0
+        effective_seed = 65529189939976765123732762606216328531
+    else:
+        effective_seed = seed
+    log_with_timestamp(f"Measurement Expansion started (Seed: {effective_seed})")
 
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(effective_seed)
     num_augmented = desired_measurements
     zero_ir = np.zeros(sample_len)
     
@@ -1421,16 +1426,16 @@ def expand_measurements(
         comp_mag_raw_db = target_ref_db - shifted_db
         
         # ------------------------------------------------------------
-        # NEW: limit compensation strength to ±15 dB
+        # NEW: limit compensation strength to ±X dB
         # ------------------------------------------------------------
-        comp_mag_raw_db = np.clip(comp_mag_raw_db, -15.0, 15.0)
+        comp_mag_raw_db = np.clip(comp_mag_raw_db, -20.0, 20.0)#v4.0.0 -15 15
         
         comp_mag = 10.0 ** (comp_mag_raw_db / 20.0)
-        comp_mag = smooth_gaussian_octave(data=comp_mag, n_fft=n_fft,fs=fs, fraction=4)#6
+        comp_mag = smooth_gaussian_octave(data=comp_mag, n_fft=n_fft,fs=fs, fraction=5)#v4.0.0 4
         comp_mag_db = 20.0 * np.log10(np.maximum(comp_mag, 1e-12))
 
         # HF taper
-        hf_start, hf_end = 6000.0, 11000.0
+        hf_start, hf_end = 6000.0, 11000.0 #v4.0.0 6000.0, 11000.0 v3.7.0 7500.0, 9000.0
         bin_start = int(round(hf_start * n_fft / fs))
         bin_end   = int(round(hf_end   * n_fft / fs))
 
@@ -3122,201 +3127,7 @@ def group_delay(sig):
 
 
 
-def smooth_freq(
-    data,
-    crossover_f=1000,
-    win_size_a=150,
-    win_size_b=750,
-    n_fft=CN.N_FFT, # Example default
-    fs=CN.FS,    # Example default
-    to_full=False,
-    log_domain=True
-):
-    """
-    Applies zero-phase two-stage smoothing to a magnitude FFT spectrum.
-    """
-    is_half = len(data) == n_fft // 2 + 1
-    nyq_bin = n_fft // 2
-    spectrum = data[:nyq_bin + 1].copy() if is_half else data.copy()
 
-    if log_domain:
-        # Avoid log(0)
-        spectrum = 20 * np.log10(np.maximum(spectrum, 1e-12))
-
-    # Convert Hz to bins
-    crossover_bin = int(round(crossover_f * n_fft / fs))
-    win_a_bins = max(1, int(round(win_size_a * n_fft / fs)))
-    win_b_bins = max(1, int(round(win_size_b * n_fft / fs)))
-    
-    # Ensure window sizes are odd for perfect centering
-    win_a_bins = win_a_bins if win_a_bins % 2 != 0 else win_a_bins + 1
-    win_b_bins = win_b_bins if win_b_bins % 2 != 0 else win_b_bins + 1
-
-    # uniform_filter1d with origin=0 is zero-phase (centered)
-    # mode='reflect' handles the boundaries without adding a DC offset bias
-    smooth_a = sp.ndimage.uniform_filter1d(spectrum, size=win_a_bins, mode='reflect', origin=0)
-    smooth_b = sp.ndimage.uniform_filter1d(spectrum, size=win_b_bins, mode='reflect', origin=0)
-
-    # Cross-fade between smooth_a and smooth_b to prevent "steps" at the crossover
-    # We use a small 10-bin ramp for the transition
-    ramp_width = 10 
-    start = max(0, crossover_bin - ramp_width // 2)
-    end = min(len(spectrum), crossover_bin + ramp_width // 2)
-    
-    combined = np.empty_like(spectrum)
-    combined[:start] = smooth_a[:start]
-    combined[end:] = smooth_b[end:]
-    
-    # Linear interpolation for the transition zone
-    if end > start:
-        alpha = np.linspace(0, 1, end - start)
-        combined[start:end] = (1 - alpha) * smooth_a[start:end] + alpha * smooth_b[start:end]
-
-    if log_domain:
-        combined = 10**(combined / 20)
-
-    # Format return
-    if is_half:
-        if to_full:
-            full_spec = np.empty(n_fft, dtype=combined.dtype)
-            full_spec[:nyq_bin + 1] = combined
-            full_spec[nyq_bin + 1:] = combined[1:nyq_bin][::-1]
-            return full_spec
-        return combined
-    else:
-        result = np.empty_like(data)
-        result[:nyq_bin + 1] = combined[:nyq_bin + 1]
-        result[nyq_bin + 1:] = combined[1:nyq_bin][::-1]
-        return result
-
-def smooth_freq_octaves(
-    data,
-    fund_freq=120,
-    win_size_base=15,
-    n_fft=CN.N_FFT,
-    fs=CN.FS,
-    to_full=False,
-    log_domain=True
-):
-    """
-    Applies multi-band smoothing based on octave scaling of smoothing windows.
-    This function performs a sequence of smoothing operations, increasing the smoothing
-    window size with frequency (per-octave) to simulate logarithmic perceptual resolution.
-
-    Parameters:
-        data (np.ndarray): Magnitude spectrum (either full or half spectrum).
-        fund_freq (float): Base frequency in Hz that defines the start of octave scaling.
-        win_size_base (float): Base smoothing window size in Hz at the lowest octave.
-        n_fft (int): FFT size used to calculate the spectrum.
-        fs (int): Sampling rate in Hz.
-        to_full (bool): If True and input is half-spectrum, mirror to full spectrum on return.
-        log_domain (bool): If True, smoothing is applied in dB.
-
-    Returns:
-        np.ndarray: Octave-smoothed spectrum (same type as input unless to_full=True).
-    """
-    # Determine input format
-    is_half = len(data) == n_fft // 2 + 1
-    nyq_bin = n_fft // 2
-    max_freq = fs / 2
-    num_octaves = int(np.log2(max_freq / fund_freq))
-
-    # Work on a copy
-    smoothed = data.copy()
-
-    # Iteratively smooth each octave band
-    for i in range(num_octaves):
-        factor = 2 ** i
-        cutoff = fund_freq * factor
-        win_a = win_size_base
-        win_b = win_size_base * factor
-
-        smoothed = smooth_freq(
-            smoothed,
-            crossover_f=cutoff,
-            win_size_a=win_a,
-            win_size_b=win_b,
-            n_fft=n_fft,
-            fs=fs,
-            to_full=False,      # Keep half-spectrum during iteration
-            log_domain=log_domain
-        )
-
-    # Return in desired format
-    if is_half and to_full:
-        full_spec = np.empty(n_fft, dtype=smoothed.dtype)
-        full_spec[:nyq_bin + 1] = smoothed
-        full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
-        return full_spec
-
-    return smoothed
-     
-
-
-
-def smooth_fractional_octave(
-    data,
-    fraction=12,      # e.g., 3 for 1/3 octave, 12 for 1/12 octave
-    n_fft=CN.N_FFT,
-    fs=CN.FS,
-    to_full=False,
-    log_domain=True
-):
-    """
-    Applies fractional octave smoothing to a magnitude spectrum.
-    The smoothing window width increases proportionally with frequency.
-    """
-    is_half = len(data) == n_fft // 2 + 1
-    nyq_bin = n_fft // 2
-    spectrum = data[:nyq_bin + 1].copy() if is_half else data.copy()
-
-    if log_domain:
-        spectrum = 20 * np.log10(np.maximum(spectrum, 1e-12))
-
-    num_bins = len(spectrum)
-    bin_freqs = np.arange(num_bins) * (fs / n_fft)
-    
-    # Calculate the fractional octave width factor
-    # For 1/N octave, the upper bound is f * 2^(1/2N) and lower is f * 2^(-1/2N)
-    width_factor = 2**(1 / (2 * fraction))
-    
-    # Calculate bin boundaries for each frequency
-    # We ensure at least a 1-bin wide window (no smoothing) at very low frequencies
-    lower_bounds = np.round(np.arange(num_bins) / width_factor).astype(int)
-    upper_bounds = np.round(np.arange(num_bins) * width_factor).astype(int)
-    
-    # Clip bounds to valid array indices
-    lower_bounds = np.clip(lower_bounds, 0, num_bins - 1)
-    upper_bounds = np.clip(upper_bounds, 0, num_bins - 1)
-
-    # Fast sliding window average using cumulative sum
-    # We pad the start to handle the boundary logic easily
-    cumsum = np.cumsum(np.insert(spectrum, 0, 0))
-    
-    smoothed = np.empty_like(spectrum)
-    for i in range(num_bins):
-        low = lower_bounds[i]
-        high = upper_bounds[i]
-        # cumsum[high+1] is the sum up to index 'high'
-        # cumsum[low] is the sum up to index 'low-1'
-        smoothed[i] = (cumsum[high + 1] - cumsum[low]) / (high - low + 1)
-
-    if log_domain:
-        smoothed = 10**(smoothed / 20)
-
-    # Return in correct format (Mirroring for full spectrum)
-    if is_half:
-        if to_full:
-            full_spec = np.empty(n_fft, dtype=smoothed.dtype)
-            full_spec[:nyq_bin + 1] = smoothed
-            full_spec[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
-            return full_spec
-        return smoothed
-    else:
-        result = np.empty_like(data)
-        result[:nyq_bin + 1] = smoothed[:nyq_bin + 1]
-        result[nyq_bin + 1:] = smoothed[1:nyq_bin][::-1]
-        return result
 
 
 
@@ -3486,7 +3297,7 @@ def build_min_phase_filter(
             mag_interp[fft_freqs > freq_axis[-1]] = smoothed_mag[-1]
     
             # Octave smoothing
-            #mag_interp = smooth_freq_octaves(data=mag_interp,n_fft=n_fft,win_size_base=7,fund_freq=100)
+
             mag_interp = smooth_gaussian_octave(data=mag_interp, n_fft=n_fft, fraction=12)
             if DEBUG:
                 # After octave smoothing
@@ -3499,7 +3310,7 @@ def build_min_phase_filter(
         
         if apply_smooth:
             # Octave smoothing
-            #mag = smooth_freq_octaves(data=mag,n_fft=n_fft,win_size_base=6,fund_freq=100)
+
             mag = smooth_gaussian_octave(data=mag, n_fft=n_fft, fraction=12)
     
         # ------------------------------------------------------------
@@ -3513,7 +3324,7 @@ def build_min_phase_filter(
             mag_band[fft_freqs > f_max] = mag[np.argmax(fft_freqs > f_max) - 1]
             mag = mag_band
             # Octave smoothing
-            #mag = smooth_freq_octaves(data=mag,n_fft=n_fft,win_size_base=8,fund_freq=100)
+
             mag = smooth_gaussian_octave(data=mag, n_fft=n_fft, fraction=12)
     
         # ------------------------------------------------------------

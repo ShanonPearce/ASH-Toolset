@@ -578,11 +578,11 @@ def prepare_air_dataset(
     input_folder=None,
     gui_logger=None,
     desired_measurements=3000, noise_reduction_mode=False, remove_direct=True,
-    pitch_range=(0, 12),
+    pitch_range=(0, 12), random_seed=0,
     tail_mode="short",  # options: "short", "long", "short windowed" 
     window_type="hanning",  # new parameter: "hanning" or "triangle"
     report_progress=0, cancel_event=None, f_alignment = 0, pitch_shift_comp=CN.AS_PS_COMP_LIST[1], spatial_exp_method=CN.AS_SPAT_EXP_LIST[1],
-    ignore_ms=CN.IGNORE_MS, subwoofer_mode=False, binaural_mode=False, air_data=None, correction_factor=1.0
+    ignore_ms=CN.IGNORE_MS, subwoofer_mode=False, binaural_mode=False, air_data=None, correction_factor=1.0, time_shift_min=-3.0, time_shift_max=3.0, peak_search_offset=150
 ):
     """
     Loads and processes individual acoustic IR files from a dataset folder, extracting the impulse responses
@@ -764,7 +764,7 @@ def prepare_air_dataset(
             #expand dataset by creating new IRs using pitch shifting
             air_data, status_code = hf.expand_measurements(
                 measurement_array=air_data,
-                desired_measurements=desired_measurements,pitch_range=pitch_range,gui_logger=gui_logger,
+                desired_measurements=desired_measurements,pitch_range=pitch_range,gui_logger=gui_logger, seed=random_seed,
                 cancel_event=cancel_event,report_progress=report_progress, pitch_shift_comp=pitch_shift_comp,ignore_ms=ignore_ms,pitch_shift_mode=spatial_exp_method
             ) 
             if status_code > 0:#failure or cancelled
@@ -832,9 +832,9 @@ def prepare_air_dataset(
                 cutoff_alignment=f_alignment
            
             # ---- Alignment parameters ----
-            shifts, win_starts, win_ends,peak_to_peak_window = compute_lf_alignment_params(
+            shifts, _, _,_ = compute_lf_alignment_params(
                 samp_freq=samp_freq_ash,
-                cutoff_hz=cutoff_alignment
+                cutoff_hz=cutoff_alignment,time_shift_min=time_shift_min,time_shift_max=time_shift_max, delay_win_min_t=peak_search_offset
             )
        
             lp_sos = hf.get_filter_sos(cutoff=cutoff_alignment, fs=CN.FS, order=order, filtfilt=CN.FILTFILT_TDALIGN_AIR, b_type='low')
@@ -847,7 +847,7 @@ def prepare_air_dataset(
 
             for idx in range(0, total_measurements, step):
                 
-                start_sample=220#170,190,200
+                start_sample=peak_search_offset# 4.2.0 was 220 now dynamic
                 lookahead_samples = start_sample + int(0.8*CN.FS/cutoff_alignment)#1.15
                 align_ir_static_window(idx=idx, air_data=air_data, shifts=shifts, lp_sos=lp_sos, binaural_mode=binaural_mode, start_sample=start_sample, lookahead_samples=lookahead_samples)
        
@@ -954,8 +954,8 @@ def prepare_air_dataset(
 def convert_airs_to_brirs(
     ir_set='default_set',
     air_dataset=np.array([]),
-    gui_logger=None, spatial_res=3, hrir_dataset=None, correction_factor=1.0, remove_direct=True, as_listener_type=CN.AS_LISTENER_TYPE_LIST[0],
-    tail_mode="short", biased_centers=None, azimuth_spread = 48, distr_mode=CN.AS_DISTR_MODE_LIST[0], f_alignment = 100, lf_drr_comp=True, 
+    gui_logger=None, spatial_res=3, hrir_dataset=None, correction_factor=1.0, remove_direct=True, as_listener_type=CN.AS_LISTENER_TYPE_LIST[0], fir_length=4096,
+    tail_mode="short", biased_centers=None, azimuth_spread = 48, distr_mode=CN.AS_DISTR_MODE_LIST[0], f_alignment = 100, lf_drr_comp=True, random_seed=0, lf_drr_strength=1.0,
     report_progress=0, cancel_event=None,  rise_time=5.1, subwoofer_mode=False, binaural_mode=False, auto_shape_output=False, virtual_speakers=7, octave_smoothing_n=3
 ):
     """
@@ -1146,6 +1146,18 @@ def convert_airs_to_brirs(
         # Log start
         hf.log_with_timestamp("Estimating BRIRs from IRs", gui_logger)
         
+        # --- 1. Master Seed Resolution ---
+        # Resolve the seed once at the start so all sub-functions stay in sync
+        if random_seed == 0:
+            effective_seed = int(time.time() * 1000) % 2**32
+            hf.log_with_timestamp(f"Estimating BRIRs (Volatile Mode - Seed: {effective_seed})")
+        else:
+            effective_seed = random_seed
+            hf.log_with_timestamp(f"Estimating BRIRs (Fixed Mode - Seed: {effective_seed})")
+
+        # Create the local generator for this function's logic
+        rng = np.random.default_rng(effective_seed)
+        
         # Sampling spatial coordinates with bias
         num_spatial_samples = total_measurements
         if biased_centers is None or len(biased_centers) == 0:
@@ -1155,7 +1167,7 @@ def convert_airs_to_brirs(
             azim_src_set, elev_src_set, num_spatial_samples,
             biased_azimuth_centers=biased_centers,
             azimuth_spread=azimuth_spread,
-            plot_distribution=False
+            plot_distribution=False, seed=random_seed
         )
         # --- GUARANTEED BINAURAL-SAFE RANDOM DISTRIBUTION ---
         if binaural_mode and total_measurements % 2 != 0:
@@ -1193,13 +1205,17 @@ def convert_airs_to_brirs(
         elif dist_mode_clean == "Random":
             if binaural_mode:
                 num_pairs = total_measurements // 2
-                pair_indices = np.column_stack((np.arange(0, total_measurements, 2), np.arange(1, total_measurements, 2)))
-                np.random.shuffle(pair_indices)
+                # Create pairs: [[0,1], [2,3], ...]
+                pair_indices = np.column_stack((np.arange(0, total_measurements, 2), 
+                                              np.arange(1, total_measurements, 2)))
+                # Use the master generator to shuffle rows (keeps L/R pairs together)
+                rng.shuffle(pair_indices) 
                 num_sources_eff = min(num_brir_sources, num_pairs)
                 pair_groups = np.array_split(pair_indices, num_sources_eff)
                 measurements_per_source = [group.reshape(-1) for group in pair_groups]
             else:
-                shuffled_indices = np.random.permutation(total_measurements)
+                # Use the master generator for permutation
+                shuffled_indices = rng.permutation(total_measurements)
                 measurements_per_source = np.array_split(shuffled_indices, num_brir_sources)
     
         elif dist_mode_clean == "Single":
@@ -1304,12 +1320,13 @@ def convert_airs_to_brirs(
         comp_win_size = 7
         # Level ends of spectrum
         high_freq = 12000 if subwoofer_mode == True else 15000
-        low_freq_in = 20
+        low_freq_in = 10
         low_freq_in_target = 150 if subwoofer_mode == True else 90#make target level in sub frequencies
         # Load target
         target_path = pjoin(CN.DATA_DIR_INT, 'reverberation', 'reverb_target_mag_response.npy')
         brir_fft_target_mag = np.load(target_path)
         brir_fft_target_mag = hf.level_spectrum_ends(brir_fft_target_mag, low_freq_in_target, high_freq, smooth_win=comp_win_size)#20
+        brir_fft_target_mag = hf.smooth_gaussian_octave(data=brir_fft_target_mag,n_fft=CN.N_FFT,fraction=3)
         
         if cancel_event and cancel_event.is_set():
             gui_logger.log_warning("Operation cancelled by user.")
@@ -1342,10 +1359,10 @@ def convert_airs_to_brirs(
             
             
             # --- Iterative Correction Loop ---
-            max_iterations = 2
+            max_iterations = 1
             tolerance = 0.15 # Aim for less than X% error
             delay_samples=int(0.015 * CN.FS)
-            fade_len_samples=int(0.04 * CN.FS)#0.05
+            fade_len_samples=int(0.035 * CN.FS)#0.04
             
             
             for i in range(max_iterations):
@@ -1368,7 +1385,11 @@ def convert_airs_to_brirs(
                 # 2. Calculate Correction Mix
                 # We multiply the current ratio by the inverse of the error to "nudge" it
                 # Note: Because this version is complementary, we use the ratio of ratios
-                step_mix = results['brir_ratio'] / (results['air_ratio'] + 1e-10)
+                if lf_drr_strength == 1.0:
+                    step_mix = results['brir_ratio'] / (results['air_ratio'] + 1e-10)
+                else:
+                    step_mix = lf_drr_strength#test
+                
                 
                 # 3. Apply correction
                 brir_reverberation = adjust_lf_drr(
@@ -1404,7 +1425,7 @@ def convert_airs_to_brirs(
                 comp_mag = hf.db2mag(comp_db)
                 comp_mag = hf.smooth_gaussian_octave(data=comp_mag, n_fft=CN.N_FFT, fraction=octave_smoothing_n)#12
                 
-                comp_eq_fir = hf.build_min_phase_filter(comp_mag,truncate_len=4096)
+                comp_eq_fir = hf.build_min_phase_filter(comp_mag,truncate_len=fir_length)
                 for direc in range(num_brir_sources): 
                     # Equalize both channels (loop still needed for convolution)
                     for chan in range(total_chan_hrir):
@@ -1440,7 +1461,7 @@ def convert_airs_to_brirs(
         # then equalise each BRIR (GLOBAL average across all directions)
         #
         if mag_comp and correction_factor >= 0.1:#and subwoofer_mode == True
-            hf.log_with_timestamp("Calibrating BRIRs (global average, stage 1)", gui_logger)
+            hf.log_with_timestamp("Calibrating BRIRs (global average, parametric EQ)", gui_logger)
 
             # ------------------------------------------------------------
             # Collect ALL BRIRs across directions and channels
@@ -1490,73 +1511,10 @@ def convert_airs_to_brirs(
     
     
     
-               
-        #
-        # optional: 2nd phase: create correction filter from average response and target,
-        # then equalise each BRIR (GLOBAL average across all directions)
-        #
-        if mag_comp and correction_factor >= 0.1:#and subwoofer_mode == True
-            hf.log_with_timestamp("Calibrating BRIRs (global average, stage 2)", gui_logger)
-
-            # ------------------------------------------------------------
-            # Collect ALL BRIRs across directions and channels
-            # ------------------------------------------------------------
-            # Shape: (num_directions * 2, N_FFT)
-            brirs_all = brir_reverberation[0, :, :, :CN.N_FFT].reshape(-1, CN.N_FFT)
-        
-            # FFT
-            brir_fft = np.fft.fft(brirs_all, axis=-1)
-            brir_mag = np.abs(brir_fft)
-            brir_db = hf.mag2db(brir_mag)
-        
-            # Global average (directions + channels)
-            brir_fft_avg_db = np.mean(brir_db, axis=0)
-        
-            # ------------------------------------------------------------
-            # Smooth + shape average response
-            # ------------------------------------------------------------
-            brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)
-            brir_fft_avg_mag = hf.level_spectrum_ends(brir_fft_avg_mag,low_freq_in,high_freq,smooth_win=comp_win_size)
-        
-            brir_fft_avg_mag_sm = hf.smooth_gaussian_octave(data=brir_fft_avg_mag,n_fft=CN.N_FFT,fraction=octave_smoothing_n)
-        
-            # ------------------------------------------------------------
-            # Compensation curve
-            # ------------------------------------------------------------
-            comp_db = (hf.mag2db(brir_fft_target_mag)- hf.mag2db(brir_fft_avg_mag_sm)) * correction_factor
-        
-            comp_mag = hf.db2mag(comp_db)
-        
-            # Final smoothing
-            comp_mag = hf.smooth_gaussian_octave(data=comp_mag,n_fft=CN.N_FFT,fraction=octave_smoothing_n)
-        
-            comp_eq_fir = hf.build_min_phase_filter(comp_mag,truncate_len=4096)
-        
-            # ------------------------------------------------------------
-            # Optional plots (GLOBAL)
-            # ------------------------------------------------------------
-            if CN.PLOT_ENABLE:
-                hf.plot_data(brir_fft_target_mag, "brir_fft_target_mag_P2", normalise=0)
-                hf.plot_data(brir_fft_avg_mag, "brir_fft_avg_mag_GLOBAL_P2", normalise=0)
-                hf.plot_data(brir_fft_avg_mag_sm, "brir_fft_avg_mag_sm_GLOBAL_P2", normalise=0)
-                hf.plot_data(comp_mag, "comp_mag_GLOBAL_P2", normalise=0)
-                
-            for direc in range(num_brir_sources):
-                if cancel_event and cancel_event.is_set():
-                    gui_logger.log_warning("Operation cancelled by user.")
-                    return brir_reverberation, 2  
-                
-                # Equalize both channels (loop still needed for convolution)
-                for chan in range(total_chan_hrir):
-                    eq_brir = sp.signal.convolve(brir_reverberation[0, direc, chan, :], comp_eq_fir, 'full', 'auto')
-                    brir_reverberation[0, direc, chan, :] = eq_brir[:n_fft]
-        
-
-    
-            
+  
     
         #
-        #optional: 3rd phase: create correction filter from average response and target, then equalise each BRIR
+        #optional: final phase: create correction filter from average response and target, then equalise each BRIR
         #
         if mag_comp and correction_factor >= 0.1:
             hf.log_with_timestamp("Calibrating BRIRs (per speaker)", gui_logger)
@@ -1588,7 +1546,7 @@ def convert_airs_to_brirs(
                 comp_mag = hf.db2mag(comp_db)
                 comp_mag = hf.smooth_gaussian_octave(data=comp_mag, n_fft=CN.N_FFT, fraction=octave_smoothing_n)#12
                 
-                comp_eq_fir = hf.build_min_phase_filter(comp_mag,truncate_len=4096)
+                comp_eq_fir = hf.build_min_phase_filter(comp_mag,truncate_len=fir_length)
         
                 # Equalize both channels (loop still needed for convolution)
                 for chan in range(total_chan_hrir):
@@ -1734,7 +1692,7 @@ def adjust_lf_drr(
 def calculate_relative_drr_change(
     brir_reverberation,
     air_dataset,
-    n_measurements=40,
+    n_measurements=50,
     fs=CN.FS,
     crossover_hz=100,
     delay_samples=0,
@@ -2279,17 +2237,16 @@ def compute_lf_alignment_params(
     samp_freq,
     cutoff_hz,
     delay_win_min_t=150,#0,200
-    delay_win_max_t=1000,
-    delay_win_hop_size=25,
+    delay_win_hop_size=25, time_shift_min=-3.0, time_shift_max=3.0
 ):
     """
     Compute wavelength-relative alignment parameters for LF BRIR alignment.
     """
-
+    delay_win_max_t=delay_win_min_t+850
     wavelength = samp_freq / cutoff_hz
 
     # ---- Peak-to-peak window ----
-    peak_to_peak_window = int(np.round(1.25 * wavelength))#1.25 * wavelength
+    peak_to_peak_window = int(np.round(1.25 * wavelength))#
     peak_to_peak_window = int(np.clip(peak_to_peak_window,0.75 * wavelength,2.0 * wavelength))
 
     # ---- Shift resolution ----
@@ -2298,8 +2255,8 @@ def compute_lf_alignment_params(
 
     # ---- Shift span ----
     half_span = 0.5 * wavelength
-    min_s = int(np.floor(-(half_span*3.0) / step) * step)#1.25,1.4,2.0 2.2 2.25
-    max_s = int(np.ceil( (half_span*3.0) / step) * step)#1.25,1.4,2.0 2.2 1.75
+    min_s = int(np.floor((half_span*time_shift_min) / step) * step)#
+    max_s = int(np.ceil( (half_span*time_shift_max) / step) * step)#
     shifts = np.arange(min_s, max_s + step, step, dtype=int)
 
     # ---- Delay windows ----

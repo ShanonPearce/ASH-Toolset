@@ -761,7 +761,6 @@ def adjust_ctf_based_on_directions(
     adj_mag = hf.db2mag(adj_ctf_db)
 
     # --- Smooth (linear domain) ---
-    #adj_mag_sm = hf.smooth_freq_octaves(adj_mag, n_fft=n_fft)
     adj_mag_sm = hf.smooth_gaussian_octave(data=adj_mag, n_fft=n_fft, fraction=12)
 
     # --- Optional plotting ---
@@ -891,7 +890,8 @@ def sofa_normalise_source_positions(sofa_dict, gui_logger=None):
         "original_units": original_units,
     }
 
-def sofa_workflow_new_dataset(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short, report_progress=0, gui_logger=None, spatial_res=2, direction_fix_gui=CN.HRTF_DIRECTION_FIX_LIST_GUI[0], apply_lf_suppression=False):
+def sofa_workflow_new_dataset(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short, report_progress=0, gui_logger=None, spatial_res=2, 
+                              direction_fix_gui=CN.HRTF_DIRECTION_FIX_LIST_GUI[0], apply_lf_suppression=False, f_crossover_var = CN.F_CROSSOVER_HRIR, filtfilt=CN.FILTFILT_TDALIGN_HRIR):
     """ 
     Function peforms the following workflow:
         try loading specified sofa object
@@ -910,10 +910,10 @@ def sofa_workflow_new_dataset(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short, rep
     metadata = None  # <--- initialize metadata
     try:
         hp_sos = None
-        f_crossover_var = CN.F_CROSSOVER_HRIR
-        filtfilt=CN.FILTFILT_TDALIGN_HRIR
+        #f_crossover_var = CN.F_CROSSOVER_HRIR
+        #filtfilt=CN.FILTFILT_TDALIGN_HRIR
         if apply_lf_suppression:
-            hp_sos = hf.get_filter_sos(cutoff=f_crossover_var,fs=CN.FS,order=5,b_type='high',filtfilt=filtfilt)
+            hp_sos = hf.get_filter_sos(cutoff=f_crossover_var,fs=CN.FS,order=CN.ORDER,b_type='high',filtfilt=filtfilt)#order=5
             
         #try loading specified sofa object    
         if hrtf_type == 'Human Listener':
@@ -1094,8 +1094,6 @@ def sofa_workflow_new_dataset(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short, rep
         #level ends of spectrum
         hrir_fft_avg_mag_lvl = hf.level_spectrum_ends(hrir_fft_avg_mag, 120, 18500, smooth_win = 7, n_fft=CN.N_FFT)#150, 18000
         #octave smoothing
-        #hrir_fft_avg_mag = hf.smooth_freq_octaves(data=hrir_fft_avg_mag, n_fft=CN.N_FFT)
-        #hrir_fft_avg_mag_lvl = hf.smooth_freq_octaves(data=hrir_fft_avg_mag_lvl, n_fft=CN.N_FFT)
         hrir_fft_avg_mag = hf.smooth_gaussian_octave(data=hrir_fft_avg_mag, n_fft=CN.N_FFT, fraction=6)
         hrir_fft_avg_mag_lvl = hf.smooth_gaussian_octave(data=hrir_fft_avg_mag_lvl, n_fft=CN.N_FFT, fraction=6)
         
@@ -2048,7 +2046,7 @@ def hrtf_param_cleaning(hrtf_type, hrtf_dataset, hrtf_gui, hrtf_short):
    
     
     
-def load_hrirs_list(hrtf_dict_list,spatial_res=2, direction_fix_gui=CN.HRTF_DIRECTION_FIX_LIST_GUI[0], gui_logger=None, metadata_only=False, force_skip_sofa=False, apply_lf_suppression=False):
+def load_hrirs_list(hrtf_dict_list,spatial_res=2, direction_fix_gui=CN.HRTF_DIRECTION_FIX_LIST_GUI[0], gui_logger=None, metadata_only=False, force_skip_sofa=False, brir_meta_dict={}):
     """
     Load a list of HRIR datasets using fully-specified HRTF metadata dictionaries.
 
@@ -2076,6 +2074,15 @@ def load_hrirs_list(hrtf_dict_list,spatial_res=2, direction_fix_gui=CN.HRTF_DIRE
 
         hrir_list_loaded = []  # Will store loaded HRIR arrays (empty if metadata_only)
         metadata_list = []     # Will store metadata for each HRTF
+        
+        if brir_meta_dict:
+            apply_lf_suppression=brir_meta_dict.get('hrtf_low_freq_suppression')
+            f_crossover_var=brir_meta_dict.get('hrtf_suppression_fc')
+            filtfilt = brir_meta_dict.get('hrtf_suppression_zero_phase')
+        else:
+            apply_lf_suppression=False 
+            f_crossover_var = CN.F_CROSSOVER_HRIR
+            filtfilt=CN.FILTFILT_TDALIGN_HRIR
 
         # Iterate through each HRTF dictionary
         for meta in hrtf_dict_list:
@@ -2166,7 +2173,7 @@ def load_hrirs_list(hrtf_dict_list,spatial_res=2, direction_fix_gui=CN.HRTF_DIRE
                     gui_logger,
                 )
                 status, new_metadata = sofa_workflow_new_dataset(hrtf_type=hrtf_type, hrtf_dataset=hrtf_dataset, hrtf_gui=hrtf_gui, hrtf_short=hrtf_short, 
-                                                   direction_fix_gui=direction_fix_gui, gui_logger=gui_logger, apply_lf_suppression=apply_lf_suppression)
+                                                   direction_fix_gui=direction_fix_gui, gui_logger=gui_logger, apply_lf_suppression=apply_lf_suppression, f_crossover_var = f_crossover_var, filtfilt=filtfilt)
                 if status == 2:
                     # User cancelled workflow
                     return [], 2, []

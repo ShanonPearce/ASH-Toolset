@@ -150,7 +150,43 @@ def load_csv_as_dicts(csv_dir, csv_name):
 
     return data_list
 
+def migrate_metadata_csv(path, rows):
+    """
+    Updates an older metadata CSV to the current format and overwrites it.
+    """
+    if not rows:
+        return rows
 
+    # Define required keys and their default logic
+    for row in rows:
+        label = row.get("name_gui", "unknown_id")
+        label_formatted = label.replace(" ", "_")
+        if "id" not in row or not row["id"]:
+            row["id"] = label_formatted
+        
+        if "label" not in row or not row["label"]:
+            row["label"] = label_formatted
+            
+        if "collection_1" not in row or not row["collection_1"]:
+            row["collection_1"] = "User Imports"
+            
+        # Ensure these exist even if blank
+        row.setdefault("collection_2", "")
+        row.setdefault("collection_3", "")
+
+    # Write back to the same path
+    try:
+        import csv
+        fieldnames = list(rows[0].keys())
+        with open(path, 'w', encoding='utf-8-sig', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"Successfully migrated metadata: {path}")
+    except Exception as e:
+        print(f"Failed to save migrated CSV {path}: {e}")
+    
+    return rows
 
 def load_user_reverb_csvs_recursive(directory, filename_key=None, filter_mode="include", match_mode="contains"):
     """
@@ -202,11 +238,22 @@ def load_user_reverb_csvs_recursive(directory, filename_key=None, filter_mode="i
 
             path = os.path.join(root, file)
             try:
+                
+    
+                        
                 with open(path, encoding='utf-8-sig', newline='') as csvfile:
                     reader = csv.DictReader(csvfile)
+                    file_rows = []
+                    needs_migration = False
+                    
+                    # Check header for missing columns
+                    if reader.fieldnames and ("label" not in reader.fieldnames or "id" not in reader.fieldnames):
+                        needs_migration = True
+
                     for row in reader:
                         parsed_row = {}
                         for key, value in row.items():
+                            # ... your existing value parsing logic (int/float check) ...
                             value = value.strip()
                             try:
                                 parsed_row[key] = int(value) if '.' not in value else float(value)
@@ -216,7 +263,13 @@ def load_user_reverb_csvs_recursive(directory, filename_key=None, filter_mode="i
                                     parsed_row[key] = int(float_value) if float_value.is_integer() else float_value
                                 except ValueError:
                                     parsed_row[key] = value
-                        found_rows.append(parsed_row)
+                        file_rows.append(parsed_row)
+
+                    # If file was outdated, fix it and overwrite
+                    if needs_migration:
+                        file_rows = migrate_metadata_csv(path, file_rows)
+                    
+                    found_rows.extend(file_rows)
             except Exception as e:
                 print(f"Failed to load user CSV {path}: {e}")
 
@@ -303,8 +356,9 @@ def refresh_acoustic_space_metadata():
     user_data = load_user_reverb_csvs_recursive(
         user_csv_dir, filename_key=USER_CSV_KEY, filter_mode="include", match_mode="contains"
     )
-    # NEW: only keep user rows that contain the new 'label' key
-    user_data = [row for row in user_data if "label" in row]
+    
+    # # NEW: only keep user rows that contain the new 'label' key
+    # user_data = [row for row in user_data if "label" in row]
 
     # --- Normalize missing columns between internal and user CSVs ---
     all_keys = set()
@@ -422,50 +476,188 @@ def load_user_room_targets(data_dir_rt_user, room_targets_dict, room_target_list
 
 
 
+
 def refresh_room_targets():
     """
     Reloads room target arrays from internal and user sources.
-    Rebuilds the global ROOM_TARGETS_* structures.
+    Rebuilds the global ROOM_TARGETS_* structures safely.
     """
     global ROOM_TARGETS_DICT, ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT, ROOM_TARGET_KEYS, ROOM_TARGET_INDEX_MAP
 
-    # Load the FIR array from .npy file (base targets)
-    npy_fname = pjoin(DATA_DIR_INT, 'room_targets_firs.npy')
-    room_target_arr = np.load(npy_fname)
+    # 1. Load the FIR array
+    npy_fname = pjoin(DATA_DIR_INT, 'room_targets', 'room_targets_firs.npy')
+    try:
+        room_target_arr = np.load(npy_fname).astype(np.float64)
+        num_firs = len(room_target_arr)
+    except Exception as e:
+        print(f"Error loading internal room targets array: {e}")
+        room_target_arr = []
+        num_firs = 0
 
-    # ---- Read long and short names from CSV ----
-    csv_fname = pjoin(DATA_DIR_INT, 'room_target_metadata.csv')
+    # 2. Read metadata
+    csv_fname = pjoin(DATA_DIR_INT, 'room_targets', 'room_target_metadata.csv')
     ROOM_TARGET_LIST = []
     ROOM_TARGET_LIST_SHORT = []
 
-    with open(csv_fname, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            ROOM_TARGET_LIST.append(row['long_name'])
-            ROOM_TARGET_LIST_SHORT.append(row['short_name'])
+    if os.path.exists(csv_fname):
+        with open(csv_fname, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                ROOM_TARGET_LIST.append(row['long_name'].strip())
+                ROOM_TARGET_LIST_SHORT.append(row['short_name'].strip())
+    else:
+        print(f"Warning: Room target metadata not found at {csv_fname}")
 
-    # ---- Build dict from FIRs ----
-    ROOM_TARGETS_DICT = {
-        name: {
-            "short_name": short,
-            "impulse_response": room_target_arr[i]
-        }
-        for i, (name, short) in enumerate(zip(ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT))
-    }
+    # 3. Build dict from FIRs (Safe zip/enumerate)
+    # This ensures we only create entries where both metadata AND array data exist
+    ROOM_TARGETS_DICT = {}
+    for i, (name, short) in enumerate(zip(ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT)):
+        if i < num_firs:
+            ROOM_TARGETS_DICT[name] = {
+                "short_name": short,
+                "impulse_response": room_target_arr[i]
+            }
+        else:
+            # Metadata exists but no corresponding FIR in .npy; trim the lists to match
+            ROOM_TARGET_LIST = ROOM_TARGET_LIST[:i]
+            ROOM_TARGET_LIST_SHORT = ROOM_TARGET_LIST_SHORT[:i]
+            break
 
-    # ---- Load and append user targets ----
-    ROOM_TARGETS_DICT, ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT = load_user_room_targets(
-        DATA_DIR_RT_USER,
-        ROOM_TARGETS_DICT,
-        ROOM_TARGET_LIST,
-        ROOM_TARGET_LIST_SHORT
-    )
+    # 4. Load and append user targets
+    # Wrapping in try/except to prevent external helper errors from stopping the refresh
+    try:
+        ROOM_TARGETS_DICT, ROOM_TARGET_LIST, ROOM_TARGET_LIST_SHORT = load_user_room_targets(
+            DATA_DIR_RT_USER,
+            ROOM_TARGETS_DICT,
+            ROOM_TARGET_LIST,
+            ROOM_TARGET_LIST_SHORT
+        )
+    except Exception as e:
+        print(f"Error loading user room targets: {e}")
 
-    # ---- Rebuild access helpers ----
+    # 5. Rebuild access helpers
     ROOM_TARGET_KEYS = ROOM_TARGET_LIST
     ROOM_TARGET_INDEX_MAP = {name: idx for idx, name in enumerate(ROOM_TARGET_LIST)}
 
 
+def refresh_hp_comp():
+    """
+    Reloads headphone compensation arrays and metadata.
+    Ensures dictionaries are only built for matching pairs of data and metadata.
+    """
+    global HP_COMP_DICT, HP_COMP_LIST, HP_COMP_LIST_SHORT, HP_COMP_KEYS, HP_COMP_INDEX_MAP
+
+    # 1. Load the FIR array
+    npy_fname = pjoin(DATA_DIR_INT, 'headphone_comp', 'headphone_ear_comp_dataset.npy')
+    try:
+        HP_COMP_arr = np.load(npy_fname).astype(np.float64)
+        num_ir_entries = HP_COMP_arr.shape[0] # Get count of IRs in the array
+    except FileNotFoundError:
+        print(f"Error: {npy_fname} not found.")
+        return
+
+    # 2. Read metadata from CSV
+    csv_fname = pjoin(DATA_DIR_INT, 'headphone_comp', 'headphone_ear_comp_metadata.csv')
+    temp_metadata = []
+    
+    try:
+        with open(csv_fname, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                temp_metadata.append(row)
+    except FileNotFoundError:
+        print(f"Error: {csv_fname} not found.")
+        return
+
+    # 3. Synchronize and build structures
+    HP_COMP_DICT = {}
+    HP_COMP_LIST = []
+    HP_COMP_LIST_SHORT = []
+    
+    # We only iterate up to the shorter of the two (metadata vs array)
+    for i, row in enumerate(temp_metadata):
+        if i < num_ir_entries:
+            # .strip() removes leading/trailing spaces, tabs, and newlines
+            long_name = row['long_name'].strip()
+            short_name = row['short_name'].strip()
+            
+            # Populate the Lists
+            HP_COMP_LIST.append(long_name)
+            HP_COMP_LIST_SHORT.append(short_name)
+            
+            # Populate the Dict
+            HP_COMP_DICT[long_name] = {
+                "long_name": long_name,
+                "short_name": short_name,
+                "impulse_response": HP_COMP_arr[i]
+            }
+        else:
+            # Optional: Log that some metadata rows have no matching IR in the .npy
+            break
+
+    # 4. Rebuild access helpers
+    HP_COMP_KEYS = HP_COMP_LIST
+    HP_COMP_INDEX_MAP = {name: idx for idx, name in enumerate(HP_COMP_LIST)}
+
+
+def refresh_elf():
+    """
+    Reloads equal loudness arrays and metadata.
+    Ensures dictionaries are only built for matching pairs of data and metadata.
+    """
+    global ELF_DICT, ELF_LIST, ELF_LIST_SHORT, ELF_KEYS, ELF_INDEX_MAP
+
+    # 1. Load the FIR array
+    npy_fname = pjoin(DATA_DIR_INT, 'loudness_comp', 'loudness_comp_dataset.npy')
+    try:
+        ELF_arr = np.load(npy_fname).astype(np.float64)
+        num_ir_entries = ELF_arr.shape[0] # Get count of IRs in the array
+    except FileNotFoundError:
+        print(f"Error: {npy_fname} not found.")
+        return
+
+    # 2. Read metadata from CSV
+    csv_fname = pjoin(DATA_DIR_INT, 'loudness_comp', 'loudness_comp_metadata.csv')
+    temp_metadata = []
+    
+    try:
+        with open(csv_fname, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                temp_metadata.append(row)
+    except FileNotFoundError:
+        print(f"Error: {csv_fname} not found.")
+        return
+
+    # 3. Synchronize and build structures
+    ELF_DICT = {}
+    ELF_LIST = []
+    ELF_LIST_SHORT = []
+    
+    # We only iterate up to the shorter of the two (metadata vs array)
+    for i, row in enumerate(temp_metadata):
+        if i < num_ir_entries:
+            # .strip() removes leading/trailing spaces, tabs, and newlines
+            long_name = row['long_name'].strip()
+            short_name = row['short_name'].strip()
+            
+            # Populate the Lists
+            ELF_LIST.append(long_name)
+            ELF_LIST_SHORT.append(short_name)
+            
+            # Populate the Dict
+            ELF_DICT[long_name] = {
+                "long_name": long_name,
+                "short_name": short_name,
+                "impulse_response": ELF_arr[i]
+            }
+        else:
+            # Optional: Log that some metadata rows have no matching IR in the .npy
+            break
+
+    # 4. Rebuild access helpers
+    ELF_KEYS = ELF_LIST
+    ELF_INDEX_MAP = {name: idx for idx, name in enumerate(ELF_LIST)}
 
 def refresh_sub_responses():
     """
@@ -608,7 +800,7 @@ PEAK_MEAS_MODE=1#0=local max peak, 1 =peak to peak
 #filtering type
 FILTFILT_TDALIGN = True#apply forward reverse filtering in td alignment method for brir creation
 FILTFILT_TDALIGN_AIR = True#apply forward reverse filtering in td alignment method for reverberation generation
-FILTFILT_TDALIGN_HRIR = True#apply forward reverse filtering in EQ method for HRIR processing
+FILTFILT_TDALIGN_HRIR = False#apply forward reverse filtering in EQ method for HRIR processing
 FILTFILT_THRESH_F = 45
 MIN_FILT_FREQ = 8#values below this will not be allowed in filter generation
 
@@ -632,7 +824,7 @@ DELAY_WIN_MAX_A = 1000#1000
 DELAY_WIN_HOPS_A = int((DELAY_WIN_MAX_A-DELAY_WIN_MIN_A)/DELAY_WIN_HOP_SIZE)
 
 #HRIR EQ
-F_CROSSOVER_HRIR = 100#100
+F_CROSSOVER_HRIR = 120#100
 
 
 
@@ -692,8 +884,8 @@ SETTINGS_DIR = os.path.dirname(SETTINGS_FILE)
 __version__ = get_version(metadata_file_path=METADATA_FILE)
 
 ################# Repository links
-USER_GUIDE_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/docs/user_guide/user_guide_v4.1.txt"
-USER_GUIDE_NAME = "user_guide_v4.1.txt"
+USER_GUIDE_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/docs/user_guide/user_guide_v4.2.txt"
+USER_GUIDE_NAME = "user_guide_v4.2.txt"
 USER_GUIDE_PATH = pjoin(DOCS_DIR_GUIDE, USER_GUIDE_NAME)
 AS_META_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/refs/heads/main/data/interim/reverberation/reverberation_metadata_v3.csv"
 MAIN_APP_META_URL = "https://raw.githubusercontent.com/ShanonPearce/ASH-Toolset/main/metadata.json"
@@ -740,8 +932,7 @@ PROCESS_BUTTON_HPCF='Apply Filter'
 BUTTON_IMAGE_ON='on_blue_image'
 BUTTON_IMAGE_OFF='off_image'
 
-HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength','None']
-HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low','Hp-Comp-None']
+
 HRTF_DF_CAL_MODE_LIST = ['Enable Calibration','Retain Diffuse-field','Retain and level spectrum ends']
 BRIR_DF_CAL_MODE_LIST = ['Min Phase Inverse FIR','Parametric EQ']
 PLOT_TYPE_LIST = ['Magnitude Response','Impulse Response','Group Delay', 'Decay']
@@ -782,6 +973,31 @@ ROOM_TARGET_INDEX_MAP = []
 # Automatically refresh on import
 refresh_room_targets()
 
+
+######################################### Headphone ear comp related
+
+#HP_COMP_LIST = ['In-Ear Headphones - High Strength','In-Ear Headphones - Low Strength','Over/On-Ear Headphones - High Strength','Over/On-Ear Headphones - Low Strength','None']
+#HP_COMP_LIST_SHORT = ['In-Ear-High','In-Ear-Low','Over+On-Ear-High','Over+On-Ear-Low','Hp-Comp-None']
+
+HP_COMP_DICT = {}
+HP_COMP_LIST = []
+HP_COMP_LIST_SHORT = []
+HP_COMP_KEYS = []
+HP_COMP_INDEX_MAP = []
+
+# Automatically refresh on import
+refresh_hp_comp()
+
+######################################### Equal loudness related
+
+ELF_DICT = {}
+ELF_LIST = []
+ELF_LIST_SHORT = []
+ELF_KEYS = []
+ELF_INDEX_MAP = []
+
+# Automatically refresh on import
+refresh_elf()
 
 #######################################   BRIR writing
 #number of directions to grab to built HESUVI IR
@@ -1257,7 +1473,8 @@ DEFAULTS = {
     "hpcf_active_database": HPCF_DATABASE_LIST[0],
     
     # === QC Tab BRIR ===
-    "brir_hp_type": HP_COMP_LIST[2],
+    "brir_hp_comp": HP_COMP_LIST[2],
+    "brir_elf": ELF_LIST[0],
     "room_target": ROOM_TARGET_LIST[1],
     "direct_gain": 3.0,
     "direct_gain_slider": 3.0,
@@ -1269,7 +1486,7 @@ DEFAULTS = {
     "crossover_f_mode": SUB_FC_SETTING_LIST[0],
     "crossover_f": SUB_FC_DEFAULT,
     "hp_rolloff_comp": False,
-    "fb_filtering": False,
+    "fb_filtering": True,
     'hrtf_direction_misalign_comp': HRTF_DIRECTION_FIX_LIST_GUI[0],
     
     "wav_sample_rate": SAMPLE_RATE_LIST[0],
@@ -1355,25 +1572,28 @@ DEFAULTS = {
     "check_updates_start_toggle": False,
     "hrtf_polarity_rev": HRTF_POLARITY_LIST[0],
     "force_hrtf_symmetry":HRTF_SYM_LIST[0],
-    "er_delay_time":0.0,
+    "er_delay_time":0.5,
     "export_resample_mode": RESAMPLE_MODE_LIST[0],
     "hrtf_df_cal_mode": HRTF_DF_CAL_MODE_LIST[0],
     "brir_df_cal_mode": BRIR_DF_CAL_MODE_LIST[0],
     "hrtf_low_freq_suppression": True,
+    "hrtf_suppression_fc":120,
+    "hrtf_suppression_zero_phase":True,
     "hpcf_fir_length":HPCF_FIR_LENGTH,
     "hpcf_target_curve": HPCF_TARGET_LIST[0],
     "hpcf_smooth_hf": False,
     "reverb_tail_crop_db": -90.0,
     "brir_max_length": N_FFT_L,
-    "octave_smoothing_n": 4,
+    "octave_smoothing_n": 6,
     "brir_df_cal_factor":1.0,
+    "gen_fir_length":4096,
     
     # AS Import tool
     "as_reverb_tail_mode": AS_TAIL_MODE_LIST[0],
     "as_subwoofer_mode": False,
     "as_binaural_meas_inputs": False,
     "as_noise_reduction_mode": False,
-    "as_rise_time": 5.0,
+    "as_rise_time": 3.0,
     "as_rm_cor_factor": 1.0,
     "as_listener": AS_LISTENER_TYPE_LIST[0],
     "as_alignment_freq": 110,
@@ -1383,9 +1603,14 @@ DEFAULTS = {
     "as_spatial_exp_method": AS_SPAT_EXP_LIST[1],
     "as_pitch_range_high": 12.0,
     "as_pitch_shift_comp": AS_PS_COMP_LIST[1],
-    "as_room_corner_angle": 40,
+    "as_room_corner_angle": 35,
     "as_reflection_spread": 45,
-    "as_drr_correction": True
+    "as_drr_correction": True,
+    "as_drr_corr_strength": 3.3,
+    "as_random_seed":1,
+    "as_time_shift_min":-2.0,
+    "as_time_shift_max":2.0,
+    "as_peak_search_offset":200
 
     
 
@@ -1400,7 +1625,7 @@ DEFAULTS = {
 #It’s structured as:"old_key": "new_key",
 LEGACY_KEY_MAP = {
     # === BRIR Quick Config 3.7.0 ===
-    "qc_brir_hp_type": "brir_hp_type",
+    "qc_brir_hp_type": "brir_hp_comp",
     "qc_room_target": "room_target",
     "qc_direct_gain": "direct_gain",
     "qc_direct_gain_slider": "direct_gain_slider",#not originally saved
@@ -1464,7 +1689,7 @@ LEGACY_KEY_MAP = {
     "qc_hpcf_sample": "hpcf_sample",
 
     # === BRIR Quick Config ===
-    "qc_brir_headphone_type": "brir_hp_type",
+    "qc_brir_headphone_type": "brir_hp_comp",
     "qc_brir_room_target": "room_target",
     "qc_brir_direct_gain": "direct_gain",
     "qc_brir_direct_gain_slider": "direct_gain_slider",#not originally saved

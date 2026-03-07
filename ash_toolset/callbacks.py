@@ -34,7 +34,7 @@ import platform
 import json
 import urllib.request
 from os.path import join as pjoin, expanduser, normpath
-
+import glob
 
 ############################################### Settings and preset related
 #
@@ -364,7 +364,7 @@ def save_settings(update_hpcf_pars=False, update_brir_pars=False, preset_name=No
     # --- Define deferred keys ---
     hpcf_keys = {'hpcf_brand', 'hpcf_headphone', 'hpcf_sample','hpcf_active_database'}
     brir_keys = {
-        'brir_hp_type', 'room_target', 'direct_gain', 'direct_gain_slider',
+        'brir_hp_comp','brir_elf', 'room_target', 'direct_gain', 'direct_gain_slider',
         'acoustic_space', 'brir_hrtf', 'brir_hrtf_type','e_apo_brir_spat_res',
         'brir_hrtf_dataset', 'crossover_f_mode', 'crossover_f',
         'sub_response', 'hp_rolloff_comp', 'fb_filtering_mode','hrtf_direction_misalign_comp'
@@ -1307,32 +1307,35 @@ def fde_update_angle_list():
 def select_hp_comp(sender, app_data):
     _handle_hp_comp_selection()
 
+    
+ 
 def _handle_hp_comp_selection():
     """
-    Unified handler for headphone compensation selection.
+    Unified handler for headphone compensation selection using in-memory data.
     """
-
-    # Get selected HP type depending on tab
-    hp_type = dpg.get_value("brir_hp_type")
-
-    pinna_comp = CN.HP_COMP_LIST.index(hp_type)
+    # 1. Get the selected long_name from the DearPyGui widget
+    brir_hp_comp = dpg.get_value("brir_hp_comp")
 
     try:
-        # Load FIR dataset
-        npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
-        ear_comp_fir_dataset = hf.load_convert_npy_to_float64(npy_fname)
-        pinna_comp_fir_loaded = ear_comp_fir_dataset[pinna_comp, :]
+        # 2. Directly access the IR from the pre-loaded dictionary
+        # This replaces the entire .npy load and indexing block
+        if brir_hp_comp not in CN.HP_COMP_DICT:
+            hf.log_with_timestamp(f"Warning: {brir_hp_comp} not found in loaded HP_COMP_DICT")
+            return
 
-        # Zero-pad / place FIR into FFT buffer
+        pinna_comp_fir_loaded = CN.HP_COMP_DICT[brir_hp_comp]["impulse_response"]
+
+        # 3. Prepare FFT buffer (Zero-padding)
         pinna_comp_fir = np.zeros(CN.N_FFT)
-        pinna_comp_fir[:1024] = pinna_comp_fir_loaded[:1024]
+        
+        # Safe copy: take the minimum of the loaded IR length or 1024
+        ir_len = min(len(pinna_comp_fir_loaded), 1024)
+        pinna_comp_fir[:ir_len] = pinna_comp_fir_loaded[:ir_len]
 
-        # Plot
-        plot_title = f"Headphone Compensation: {hp_type}"
-
+        # 4. Plotting logic
+        plot_title = f"Headphone Compensation: {brir_hp_comp}"
         view = dpg.get_value("plot_type")
 
-        # Plot using the new generic function
         hf.plot_fir_generic(
             fir_array=pinna_comp_fir,
             view=view,
@@ -1353,12 +1356,65 @@ def _handle_hp_comp_selection():
     except Exception as e:
         hf.log_with_timestamp(f"_handle_hp_comp_selection failed: {e}")
 
-    # Tab-specific BRIR update
+    # 5. Tab-specific BRIR update
     fde_reset_brir_progress()
-    update_brir_param()
-        
-        
+    update_brir_param()        
 
+def select_elf(sender, app_data):
+    _handle_elf_selection()
+
+    
+ 
+def _handle_elf_selection():
+    """
+    Unified handler for equal loudness selection using in-memory data.
+    """
+    # 1. Get the selected long_name from the DearPyGui widget
+    brir_elf = dpg.get_value("brir_elf")
+
+    try:
+        # 2. Directly access the IR from the pre-loaded dictionary
+        # This replaces the entire .npy load and indexing block
+        if brir_elf not in CN.ELF_DICT:
+            hf.log_with_timestamp(f"Warning: {brir_elf} not found in loaded ELF_DICT")
+            return
+
+        elf_fir_loaded = CN.ELF_DICT[brir_elf]["impulse_response"]
+
+        # 3. Prepare FFT buffer (Zero-padding)
+        elf_fir = np.zeros(CN.N_FFT)
+        
+        # Safe copy: take the minimum of the loaded IR length or 1024
+        ir_len = min(len(elf_fir_loaded), 1024)
+        elf_fir[:ir_len] = elf_fir_loaded[:ir_len]
+
+        # 4. Plotting logic
+        plot_title = f"Loudness Compensation: {brir_elf}"
+        view = dpg.get_value("plot_type")
+
+        hf.plot_fir_generic(
+            fir_array=elf_fir,
+            view=view,
+            title_name=plot_title,
+            samp_freq=CN.SAMP_FREQ,
+            n_fft=CN.N_FFT,
+            normalise=1,
+            level_ends=0,
+            x_lim_adjust=True,
+            x_lim_a=20,
+            x_lim_b=20000,
+            y_lim_adjust=True,
+            y_lim_a=-10,
+            y_lim_b=10,
+            plot_dest=CN.TAB_QC_CODE
+        )
+
+    except Exception as e:
+        hf.log_with_timestamp(f"_handle_elf_selection failed: {e}")
+
+    # 5. Tab-specific BRIR update
+    fde_reset_brir_progress()
+    update_brir_param()  
  
 def update_direct_gain(sender, app_data):
     """ 
@@ -1852,8 +1908,7 @@ def _load_hrir_selection(skip_sofa=True):
         hrir_list, status, hrir_metadata_list = hrir_processing.load_hrirs_list(
             hrtf_dict_list=hrtf_dict_list,
             force_skip_sofa=skip_sofa,
-            direction_fix_gui=hrtf_direction_misalign_comp,
-            apply_lf_suppression=hrtf_low_freq_suppression
+            direction_fix_gui=hrtf_direction_misalign_comp, brir_meta_dict=brir_meta_dict
         )
 
         if status != 0:
@@ -2920,14 +2975,10 @@ def calc_brir_set_name(full_name=True):
     er_delay_time = brir_meta_dict.get("er_delay_time")
     hrtf_polarity = brir_meta_dict.get("hrtf_polarity")
     hrtf_df_cal_mode = brir_meta_dict.get("hrtf_df_cal_mode")
-    
- 
-    room_target_name = brir_meta_dict.get("room_target")
-    target_name_short = CN.ROOM_TARGETS_DICT[room_target_name]["short_name"]
-    
+
     direct_gain_db = brir_meta_dict.get("direct_gain_db")
     ac_space_short = brir_meta_dict.get("ac_space_short")
-    pinna_comp = brir_meta_dict.get("pinna_comp")
+
     sample_rate = brir_meta_dict.get("samp_freq_str")
     bit_depth = brir_meta_dict.get("bit_depth_str")
     brir_hrtf_short=brir_meta_dict.get('brir_hrtf_short')
@@ -2938,6 +2989,18 @@ def calc_brir_set_name(full_name=True):
     hp_rolloff_comp=brir_meta_dict.get('hp_rolloff_comp')
     fb_filtering=brir_meta_dict.get('fb_filtering')
     
+    # Safe Room Target Lookup
+    room_target_name = brir_meta_dict.get("room_target")
+    target_name_short = CN.ROOM_TARGETS_DICT.get(room_target_name, {}).get("short_name", "Unknown")
+
+    # Safe HP Comp Lookup
+    brir_hp_comp = brir_meta_dict.get("brir_hp_comp")
+    brir_hp_comp_short = CN.HP_COMP_DICT.get(brir_hp_comp, {}).get("short_name", "None")
+
+    # Safe ELF/Loudness Lookup
+    brir_elf = brir_meta_dict.get("brir_elf")
+    brir_elf_short = CN.ELF_DICT.get(brir_elf, {}).get("short_name", "None")
+    
     e_apo_brir_spat_res=brir_meta_dict.get('e_apo_brir_spat_res')
     fde_brir_spat_res=brir_meta_dict.get('fde_brir_spat_res')
 
@@ -2945,12 +3008,12 @@ def calc_brir_set_name(full_name=True):
     
  
     if full_name==True:
-        brir_name = (brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + target_name_short + ' ' + CN.HP_COMP_LIST_SHORT[pinna_comp] 
+        brir_name = (brir_hrtf_short + ' '+ac_space_short + ' ' + str(direct_gain_db) + 'dB ' + target_name_short + ' ' + brir_hp_comp_short + ' ' + brir_elf_short 
                      + ' ' + sample_rate + ' ' + bit_depth + ' ' + hrtf_symmetry + ' ' + str(er_delay_time) + ' ' + str(crossover_f) + ' ' + str(sub_response) 
                      + ' ' + str(hp_rolloff_comp) + ' ' + str(fb_filtering) + ' ' + hrtf_polarity + ' ' + averaged_last_saved + ' ' + hrtf_df_cal_mode 
                      + ' ' + hrtf_direction_misalign_comp + ' ' + e_apo_brir_spat_res)
     else:
-        brir_name = (ac_space_short + ', ' + str(direct_gain_db) + 'dB, '  + brir_hrtf_short + ', ' + target_name_short + ', ' + CN.HP_COMP_LIST_SHORT[pinna_comp] + ', ' +   sub_response_short + '-' +str(crossover_f) + 'Hz'  )
+        brir_name = (ac_space_short + ', ' + str(direct_gain_db) + 'dB, '  + brir_hrtf_short + ', ' + target_name_short + ', ' + brir_hp_comp_short + ', ' + brir_elf_short + ', ' +   sub_response_short + '-' +str(crossover_f) + 'Hz'  )
 
 
     return brir_name
@@ -3074,9 +3137,8 @@ def get_brir_dict():
     ac_space_short = CN.extract_column(data=reverb_data, column='name_short', condition_key='name_gui', condition_value=ac_space_gui, return_all_matches=False)
 
     
-    hp_type = dpg.get_value("brir_hp_type")
-    pinna_comp_int = CN.HP_COMP_LIST.index(hp_type)
-    pinna_comp = pinna_comp_int
+    brir_hp_comp = dpg.get_value("brir_hp_comp")
+    brir_elf = dpg.get_value("brir_elf")
     samp_freq_str = dpg.get_value('wav_sample_rate')
     samp_freq_int = CN.SAMPLE_RATE_DICT.get(samp_freq_str)
     bit_depth_str = dpg.get_value('wav_bit_depth')
@@ -3095,9 +3157,12 @@ def get_brir_dict():
     e_apo_brir_spat_res=dpg.get_value('e_apo_brir_spat_res')
     fde_brir_spat_res=dpg.get_value('fde_brir_spat_res')
     hrtf_low_freq_suppression=dpg.get_value('hrtf_low_freq_suppression')
+    hrtf_suppression_fc=dpg.get_value('hrtf_suppression_fc')
+    hrtf_suppression_zero_phase=dpg.get_value('hrtf_suppression_zero_phase')
     brir_df_cal_mode = dpg.get_value('brir_df_cal_mode')
     octave_smoothing_n = dpg.get_value('octave_smoothing_n')
     brir_df_cal_factor = dpg.get_value('brir_df_cal_factor')
+    gen_fir_length = dpg.get_value('gen_fir_length')
     #low freq
     crossover_f_mode = dpg.get_value('crossover_f_mode')
     crossover_f = dpg.get_value('crossover_f')
@@ -3159,15 +3224,15 @@ def get_brir_dict():
     
         # QC room and acoustic space selections
         'room_target': room_target, 'room_target_int': room_target_int, 'direct_gain_db': direct_gain_db, 
-        'ac_space_short': ac_space_short,   'ac_space_gui': ac_space_gui,
-        'pinna_comp': pinna_comp, 'samp_freq_int': samp_freq_int, 'samp_freq_str': samp_freq_str,   
+        'ac_space_short': ac_space_short,   'ac_space_gui': ac_space_gui, 'brir_hp_comp': brir_hp_comp, 'brir_elf':brir_elf,
+        'samp_freq_int': samp_freq_int, 'samp_freq_str': samp_freq_str,   
         'bit_depth': bit_depth, 'bit_depth_str': bit_depth_str, 
  
         # Additional variables
         'hrtf_symmetry': hrtf_symmetry, 'er_delay_time': er_delay_time, 'reverb_tail_crop_db': reverb_tail_crop_db, 'brir_df_cal_mode':brir_df_cal_mode, 'brir_max_length':brir_max_length,
         'crossover_f_mode': crossover_f_mode, 'crossover_f': crossover_f, 'sub_response': sub_response, 'sub_response_short': sub_response_short, 'hp_rolloff_comp': hp_rolloff_comp,
-        'fb_filtering': fb_filtering, 'hrtf_polarity': hrtf_polarity, 'multichan_mapping': multichan_mapping, 'hrtf_low_freq_suppression': hrtf_low_freq_suppression, 
-        'octave_smoothing_n': octave_smoothing_n, 'brir_df_cal_factor':brir_df_cal_factor,
+        'fb_filtering': fb_filtering, 'hrtf_polarity': hrtf_polarity, 'multichan_mapping': multichan_mapping, 'hrtf_low_freq_suppression': hrtf_low_freq_suppression, 'gen_fir_length':gen_fir_length,
+        'octave_smoothing_n': octave_smoothing_n, 'brir_df_cal_factor':brir_df_cal_factor, 'hrtf_suppression_fc': hrtf_suppression_fc,  'hrtf_suppression_zero_phase': hrtf_suppression_zero_phase, 
         'hrtf_direction_misalign_comp': hrtf_direction_misalign_comp,  'hrtf_df_cal_mode': hrtf_df_cal_mode,  'e_apo_brir_spat_res': e_apo_brir_spat_res,  'fde_brir_spat_res': fde_brir_spat_res
     }
 
@@ -4401,9 +4466,13 @@ def as_start_processing_callback():
         spatial_exp_method = dpg.get_value("as_spatial_exp_method")
         pitch_high = dpg.get_value("as_pitch_range_high")
         pitch_low = -abs(pitch_high)
-        reverb_tail_mode = dpg.get_value("as_reverb_tail_mode")
         pitch_shift_comp = dpg.get_value("as_pitch_shift_comp")
+        reverb_tail_mode = dpg.get_value("as_reverb_tail_mode")
+        random_seed = dpg.get_value("as_random_seed")
         alignment_freq = dpg.get_value("as_alignment_freq")
+        time_shift_min = dpg.get_value("as_time_shift_min")
+        time_shift_max = dpg.get_value("as_time_shift_max")
+        peak_search_offset = dpg.get_value("as_peak_search_offset")
         rise_time = dpg.get_value("as_rise_time")
         as_subwoofer_mode = dpg.get_value("as_subwoofer_mode")
         binaural_meas_inputs = dpg.get_value("as_binaural_meas_inputs")
@@ -4412,6 +4481,7 @@ def as_start_processing_callback():
         as_listener_type=dpg.get_value("as_listener")  
         brir_meta_dict=get_brir_dict()
         brir_hrtf_gui = brir_meta_dict.get('brir_hrtf')
+        gen_fir_length = brir_meta_dict.get('gen_fir_length')
         if as_subwoofer_mode:#enforce short windowed if low frequency mode
             reverb_tail_mode = 'Short Windowed'   
         corner_value=dpg.get_value("as_room_corner_angle")
@@ -4422,12 +4492,22 @@ def as_start_processing_callback():
         speaker_count = dpg.get_value("as_speaker_count")
         directions = grid_points*speaker_count#total directions = grid points x speaker count
         octave_smoothing_n = dpg.get_value("octave_smoothing_n")
-        as_drr_correction = dpg.get_value("as_drr_correction")
+        drr_correction = dpg.get_value("as_drr_correction")
+        drr_corr_strength = dpg.get_value("as_drr_corr_strength")
 
         # --------------------------------------------------
         # MAIN LOOP (single folder or batch)
         # --------------------------------------------------
         for folder_index, selected_folder in enumerate(folder_list, start=1):
+            
+            # 'selected_folder' is the folder name string
+            if check_and_copy_existing_output(selected_folder, logger_obj=logger_obj):
+                # Update progress bar to reflect completion of this item
+                hf.update_gui_progress(report_progress=3, progress=folder_index / len(folder_list))
+                update_as_table_from_csvs()
+                save_settings()
+                # Skip the rest of the heavy DSP steps
+                continue
 
             if cancel_event.is_set():
                 hf.log_with_timestamp(
@@ -4508,9 +4588,10 @@ def as_start_processing_callback():
             air_dataset, status_code  = air_processing.prepare_air_dataset(
                 ir_set=name_id, input_folder=selected_folder, gui_logger=logger_obj,
                 desired_measurements=desired_measurements,
-                pitch_range=pitch_range, tail_mode=reverb_tail_mode,
+                pitch_range=pitch_range, tail_mode=reverb_tail_mode, random_seed=random_seed,
                 cancel_event=cancel_event, report_progress=3, noise_reduction_mode=noise_reduction_mode, f_alignment = alignment_freq, spatial_exp_method=spatial_exp_method,
-                pitch_shift_comp=pitch_shift_comp,subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, correction_factor=correction_factor
+                pitch_shift_comp=pitch_shift_comp,subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, correction_factor=correction_factor, 
+                time_shift_min=time_shift_min, time_shift_max=time_shift_max, peak_search_offset=peak_search_offset
             )
     
             if status_code != 0:
@@ -4533,8 +4614,8 @@ def as_start_processing_callback():
             hf.log_with_timestamp("Step 3: Converting IRs to BRIRs...", gui_logger=logger_obj)
             brir_reverberation, status_code = air_processing.convert_airs_to_brirs(
                 ir_set=name_id, air_dataset=air_dataset, gui_logger=logger_obj,
-                 tail_mode=reverb_tail_mode,  correction_factor=correction_factor, as_listener_type=as_listener_type, hrir_dataset=hrir_selected,
-                cancel_event=cancel_event, report_progress=3, rise_time=rise_time, subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, lf_drr_comp=as_drr_correction,
+                 tail_mode=reverb_tail_mode,  correction_factor=correction_factor, as_listener_type=as_listener_type, hrir_dataset=hrir_selected, random_seed=random_seed, fir_length=gen_fir_length,
+                cancel_event=cancel_event, report_progress=3, rise_time=rise_time, subwoofer_mode=as_subwoofer_mode, binaural_mode=binaural_meas_inputs, lf_drr_comp=drr_correction, lf_drr_strength=drr_corr_strength,
                 distr_mode=distr_mode, biased_centers=biased_centers, azimuth_spread = azimuth_spread, f_alignment = alignment_freq, virtual_speakers=speaker_count, octave_smoothing_n=octave_smoothing_n
             )
             if status_code != 0:
@@ -4569,7 +4650,7 @@ def as_start_processing_callback():
                 f"Created with ASH Toolset {__version__} on {timestamp_str} | "
                 
                 f"reverb_tail_mode={reverb_tail_mode}, " 
-                f"low-frequency_mode={as_subwoofer_mode}, "
+                f"low-freq_mode={as_subwoofer_mode}, "
                 f"binaural_meas_inputs={binaural_meas_inputs}, "
                 f"noise_reduction_mode={noise_reduction_mode}, "
                 f"rise_time={rise_time}ms, "
@@ -4578,14 +4659,19 @@ def as_start_processing_callback():
                 f"grid_points={grid_points}, "
                 f"speaker_count={speaker_count}, "
                 f"distr_mode={distr_mode}, "
-                f"spatial_exp_method={spatial_exp_method}, "
+                f"spatial_exp={spatial_exp_method}, "
+                f"random_seed={random_seed}, "
                 f"pitch_range=({pitch_low}, {pitch_high}), "
                 f"pitch_shift_comp={pitch_shift_comp}, "
                 f"listener_type={as_listener_type}, "
                 f"listener_name={listener_name}"
                 f"corner_value={corner_value}, " 
                 f"azimuth_spread={azimuth_spread}, "    
-                f"decay_correction={as_drr_correction}, " 
+                f"decay_correction={drr_correction}, " 
+                f"drr_corr_strength={drr_corr_strength}, "
+                f"time_shift_min={time_shift_min}, "
+                f"time_shift_max={time_shift_max}, "
+                f"pk_search_offset={peak_search_offset}, "
             )
             description_full = notes if not description.strip() else f"{description}, {notes}"
             low_rt60 = "No" if reverb_tail_mode.lower().startswith("long") else "Yes"
@@ -4676,8 +4762,52 @@ def as_start_processing_callback():
 
     
     
+def check_and_copy_existing_output(input_folder, logger_obj=None):
+    """
+    Checks if the input_folder contains a file ending in _metadata.csv.
+    If found, copies the entire folder to the output directory.
     
+    Returns:
+        bool: True if file was found and copied (bypass triggered), False otherwise.
+    """
+    # 1. Construct the full path to the input folder
+    # Assuming input_folder is a relative name like "MyRoom_Processed"
+    input_path = pjoin(CN.DATA_DIR_IRS_USER, input_folder)
     
+    # 2. Search for the metadata file using the full path
+    search_pattern = os.path.join(input_path, "*_metadata.csv")
+    metadata_files = glob.glob(search_pattern)
+
+    if metadata_files:
+        # Construct destination path
+        destination_path = pjoin(CN.DATA_DIR_AS_USER, input_folder)
+
+        # Log the detection
+        msg = f"Detected existing output in '{input_folder}'. Copying instead of processing..."
+        if logger_obj:
+            hf.log_with_timestamp(msg, log_type=1, gui_logger=logger_obj)
+        else:
+            print(msg)
+
+        try:
+            # 3. Clean up destination if it already exists to prevent copytree error
+            if os.path.exists(destination_path):
+                shutil.rmtree(destination_path)
+            
+            # 4. Perform the copy
+            shutil.copytree(input_path, destination_path)
+            
+            # Trigger a small GUI update so the user sees the jump
+            if logger_obj:
+                hf.log_with_timestamp(f"Successfully moved '{input_folder}' to output.", gui_logger=logger_obj)
+            
+            return True
+        except Exception as e:
+            if logger_obj:
+                hf.log_with_timestamp(f"Failed to copy existing output: {e}", log_type=2, gui_logger=logger_obj)
+            return False
+            
+    return False
     
     
     
@@ -4925,9 +5055,10 @@ def update_as_table_from_csvs():
                         with open(file_path, mode='r', newline='', encoding='utf-8') as csvfile:
                             reader = csv.DictReader(csvfile)
                             for row in reader:
-                                # NEW: skip legacy rows without the new schema
-                                if "label" not in row:
-                                    continue
+                                
+                                # # NEW: skip legacy rows without the new schema
+                                # if "label" not in row:
+                                #     continue
                                 
                                 name = row.get("name_gui", "")
                                 rt60 = row.get("meas_rt60", "")
@@ -5414,9 +5545,8 @@ def create_hrtf_favourite_avg(sender, app_data):
             ]
             # Get currently selected BRIR info
             brir_meta_dict = get_brir_dict()
-            hrtf_low_freq_suppression = brir_meta_dict.get('hrtf_low_freq_suppression')
-            
-            hrir_list_favs_loaded, status, hrir_metadata_list = hrir_processing.load_hrirs_list(hrtf_dict_list=hrtf_dict_list,gui_logger=logz,apply_lf_suppression=hrtf_low_freq_suppression)
+     
+            hrir_list_favs_loaded, status, hrir_metadata_list = hrir_processing.load_hrirs_list(hrtf_dict_list=hrtf_dict_list,gui_logger=logz, brir_meta_dict=brir_meta_dict)
 
             if status != 0 or not hrir_list_favs_loaded:
                 hf.log_with_timestamp("Failed to load HRIR datasets or too few loaded.", logz)

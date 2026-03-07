@@ -721,7 +721,8 @@ def main():
     VALIDATION_MAP = {
         "acoustic_space": CN.AC_SPACE_LIST_GUI,
         "room_target": CN.ROOM_TARGET_LIST,
-        "brir_hp_type": CN.HP_COMP_LIST,
+        "brir_hp_comp": CN.HP_COMP_LIST,
+        "brir_elf": CN.ELF_LIST,
         "sub_response": CN.SUB_RESPONSE_LIST_GUI,
         "e_apo_prevent_clip": CN.AUTO_GAIN_METHODS,
         "e_apo_upmix_method": CN.UPMIXING_METHODS
@@ -1149,14 +1150,22 @@ def main():
                                             with dpg.tooltip("rm_target_title"):
                                                 dpg.add_text("This will influence the overall balance of low and high frequencies")
                                             dpg.add_separator()
-                                            dpg.add_text("Headphone Compensation", tag='brir_hp_type_title')
-                                            dpg.bind_item_font(dpg.last_item(), font_b_def)
-                                            dpg.add_listbox(CN.HP_COMP_LIST, default_value=loaded_values["brir_hp_type"], num_items=5, width=345, callback=cb.select_hp_comp, tag='brir_hp_type')
-                                            with dpg.tooltip("brir_hp_type_title"):
-                                                dpg.add_text("This will compensate typical interactions between the headphone and the outer ear")
-                                                dpg.add_text("Selection should align with the listener's headphone type")
-                                                dpg.add_text("Reduce to low strength if sound localisation or timbre is compromised")
-                                                
+                                            with dpg.group(horizontal=True):
+                                                with dpg.group():
+                                                    dpg.add_text("Driver-to-Ear Interaction", tag='brir_hp_type_title')
+                                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                                    dpg.add_listbox(CN.HP_COMP_LIST, default_value=loaded_values["brir_hp_comp"], num_items=5, width=250, callback=cb.select_hp_comp, tag='brir_hp_comp')
+                                                    with dpg.tooltip("brir_hp_type_title"):
+                                                        dpg.add_text("This compensates for acoustic interaction between the headphone driver and the outer ear (pinna)")
+                                                        dpg.add_text("Establishes a neutral baseline for accurate HRTF spatialization and externalization")
+                                                with dpg.group():
+                                                    dpg.add_text("Loudness Compensation", tag='brir_elf_title')
+                                                    dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                                    dpg.add_listbox(CN.ELF_LIST, default_value=loaded_values["brir_elf"], num_items=5, width=250, callback=cb.select_elf, tag='brir_elf')
+                                                    with dpg.tooltip("brir_elf_title"):
+                                                        dpg.add_text("This can be used to adjust tonal balance according to human equal-loudness perception")
+                                                        dpg.add_text("Compensates for frequency-dependent hearing sensitivity at different listening levels")
+                                                        dpg.add_text("Low frequencies are not adjusted")
                                 
                                                 
                                 with dpg.tab(label="Low-frequency Extension",tag='lfe_tab', parent="brir_tab_bar"): 
@@ -2092,8 +2101,34 @@ def main():
                             
                                         dpg.add_input_int(tag="as_alignment_freq",width=120,default_value=loaded_values["as_alignment_freq"],min_value=50,max_value=150)
                                         with dpg.tooltip("as_alignment_freq"):
-                                            dpg.add_text("Low-pass cutoff used for time-domain alignment")
+                                            dpg.add_text("Low-pass cutoff used for time-domain alignment. The frequency used to isolate low-end phase information for timing calculations")
                                             dpg.add_text("Min: 50 Hz, Max: 150 Hz")
+                                            
+                                    # ---------- Shift Range ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Min. Shift Limit")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        with dpg.group():
+                                            dpg.add_input_float(label="",tag="as_time_shift_min",width=120,default_value=loaded_values["as_time_shift_min"],min_value=-6.0,max_value=-1.0,format="%.2f",min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_time_shift_min"):
+                                            dpg.add_text("Maximum negative time shift allowed (in half-cycles) to achieve phase alignment")
+                                            
+                                    with dpg.table_row():
+                                        dpg.add_text("Max. Shift Limit")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        with dpg.group():
+                                            dpg.add_input_float(label="",tag="as_time_shift_max",width=120,default_value=loaded_values["as_time_shift_max"],min_value=0.0,max_value=6.0,format="%.2f",min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_time_shift_max"):
+                                            dpg.add_text("Maximum positive time shift allowed (in half-cycles) to achieve phase alignment")
+
+                                    with dpg.table_row():
+                                        dpg.add_text("Search Offset (Samples)")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                            
+                                        dpg.add_input_int(tag="as_peak_search_offset",width=120,default_value=loaded_values["as_peak_search_offset"],min_value=0,max_value=1000)
+                                        with dpg.tooltip("as_peak_search_offset"):
+                                            dpg.add_text("Starting sample for the alignment window")
+                                            dpg.add_text("Enforces a minimum delay by skipping early samples, forcing the global maxima to occur later in the IR")
                           
                                     # ---------- Desired Grid Directions ----------
                                     with dpg.table_row():
@@ -2139,6 +2174,17 @@ def main():
                                         with dpg.tooltip("as_spatial_exp_method"):
                                             dpg.add_text("Expands sparse datasets and increases the spatial resolution and density of the spherical array")
                                             dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    # ---------- Randomization Seed ----------
+                                    with dpg.table_row():
+                                        dpg.add_text("Randomization Seed")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        dpg.add_input_int(tag="as_random_seed",width=120,default_value=loaded_values.get("as_random_seed", 1),min_value=0,max_value=999999,min_clamped=True,max_clamped=True)
+                                        with dpg.tooltip("as_random_seed"):
+                                            dpg.add_text("Sets the seed for the random number generator.")
+                                            dpg.add_text("0: Non-deterministic (New random result every render). 1+: Fixed seed (Reproducible results for the same value).")
+                                            dpg.add_text("Ensures that pitch shifting and binaural transformations are reproducible across different renders.")
+                                            dpg.add_text("Change this value to get a different 'flavor' of spatial distribution.")
                    
                                     # ---------- Pitch Shift Range ----------
                                     with dpg.table_row():
@@ -2170,6 +2216,13 @@ def main():
                                         with dpg.tooltip("as_drr_correction"):
                                             dpg.add_text("Corrects decay curve after dataset expansion. Restores direct-to-reverberation ratios to original ratios.")    
                                             dpg.add_text("Note: Does not apply to binaural inputs.")
+                                            
+                                    with dpg.table_row():
+                                        dpg.add_text("Decay Correction Strength")
+                                        dpg.bind_item_font(dpg.last_item(), font_b_def)
+                                        dpg.add_input_float(label="",tag="as_drr_corr_strength",width=120,default_value=loaded_values["as_drr_corr_strength"],min_value=0.2,max_value=10.0,format="%.2f",min_clamped=True,max_clamped=True,)
+                                        with dpg.tooltip("as_drr_corr_strength"):
+                                            dpg.add_text("Adjust strength of Decay Curve Correction. Set to 1.0 for dynamic calculation. Typical range: 3.0-4.0")    
                                             
                                     # ---------- User selected listener ----------
                                     with dpg.table_row():
@@ -2476,6 +2529,14 @@ def main():
                 
                                 # ---------- Misc Parameters ----------
                                 with dpg.table_row():
+                                    dpg.add_text("General")
+                                    dpg.add_text("FIR Length (samples)")
+                                    dpg.add_input_int(label="",width=190, tag='gen_fir_length', min_value=256, max_value=8192, default_value=loaded_values["gen_fir_length"],min_clamped=True, max_clamped=True)
+                                    with dpg.tooltip("gen_fir_length"):
+                                        dpg.add_text("Defines the length of compensation filters in samples (before resampling)")
+                                        dpg.add_text("Increasing length improves frequency resolution and accuracy of the minimum-phase filter, especially at low frequencies, but also increases computation time")
+                                        
+                                with dpg.table_row():
                                     dpg.add_text("HRTFs")
                                     dpg.add_text("Force Left/Right Symmetry")
                                     dpg.add_combo(CN.HRTF_SYM_LIST, default_value=loaded_values["force_hrtf_symmetry"], width=190,
@@ -2511,7 +2572,19 @@ def main():
                                         dpg.add_text("Typically results in smoother low frequencies in the integrated binaural simulation")
                                         dpg.add_text("Applies to the direct sound. Reverberation is not modified")
                                         
-                      
+                                with dpg.table_row():
+                                    dpg.add_text("HRTFs")
+                                    dpg.add_text("Suppression Cutoff Frequency (Hz)")
+                                    dpg.add_input_int(label="",width=190, tag='hrtf_suppression_fc', min_value=20, max_value=200, default_value=loaded_values["hrtf_suppression_fc"],min_clamped=True, max_clamped=True)
+                                    with dpg.tooltip("hrtf_suppression_fc"):
+                                        dpg.add_text("Sets the frequency below which energy is reduced in the direct sound.")
+                                
+                                with dpg.table_row():
+                                    dpg.add_text("HRTFs")
+                                    dpg.add_text("Zero-Phase Suppression Filters")
+                                    dpg.add_checkbox(label="Enable", default_value=loaded_values["hrtf_suppression_zero_phase"],tag="hrtf_suppression_zero_phase", callback=cb.update_brir_param)
+                                    with dpg.tooltip("hrtf_suppression_zero_phase"):
+                                        dpg.add_text("Enables forward-backward filtering to keep the low-end aligned in time with the rest of the audio")
                                 
                                 with dpg.table_row():
                                     dpg.add_text("Binaural Sim.")
@@ -2566,10 +2639,11 @@ def main():
                                 
                                 with dpg.table_row():
                                     dpg.add_text("LF Extension")
-                                    dpg.add_text("Forward-Backward Filtering")
+                                    dpg.add_text("Zero-Phase Extension Filters")
                                     dpg.add_checkbox(label="Enable", default_value = loaded_values["fb_filtering"],  tag='fb_filtering', callback=cb.update_brir_param)
                                     with dpg.tooltip("fb_filtering"):
-                                        dpg.add_text("This will eliminate the delays introduced by the filters when extending the low frequencies, however can introduce edge artefacts in some cases")
+                                        dpg.add_text("Enables forward-backward filtering to keep the low-end aligned in time with the rest of the audio")
+                                        dpg.add_text("This will eliminate the delays in the low-end introduced by the filters when extending the low frequencies, however can introduce edge artefacts in some cases")
                                         
                 
                                 with dpg.table_row():

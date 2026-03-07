@@ -67,7 +67,8 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             room_target_name = brir_meta_dict.get("room_target")
             direct_gain_db = brir_meta_dict.get("direct_gain_db")
             acoustic_space= brir_meta_dict.get("ac_space_gui")
-            pinna_comp = brir_meta_dict.get("pinna_comp")
+            brir_hp_comp = brir_meta_dict.get("brir_hp_comp")
+            brir_elf = brir_meta_dict.get("brir_elf")
             crossover_f=brir_meta_dict.get('crossover_f')
             sub_response=brir_meta_dict.get('sub_response')
             hp_rolloff_comp=brir_meta_dict.get('hp_rolloff_comp')
@@ -83,6 +84,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
             brir_max_length=brir_meta_dict.get("brir_max_length")
             octave_smoothing_n=brir_meta_dict.get("octave_smoothing_n")
             brir_df_cal_factor=brir_meta_dict.get("brir_df_cal_factor")
+            gen_fir_length=brir_meta_dict.get("gen_fir_length")
         else:
             raise ValueError('brir_meta_dict not populated')
             
@@ -161,9 +163,12 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         #
         # load pinna comp filter (FIR)
  
-        npy_fname = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
-        ear_comp_fir_dataset = hf.load_convert_npy_to_float64(npy_fname)
-        pinna_comp_fir = ear_comp_fir_dataset[pinna_comp,:]
+        pinna_comp_fir = CN.HP_COMP_DICT[brir_hp_comp]["impulse_response"]
+        
+        #
+        # load Equal loudness filter (FIR)
+ 
+        brir_elf_fir = CN.ELF_DICT[brir_elf]["impulse_response"]
         
         #
         # load additional headphone eq
@@ -345,7 +350,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
 
         
         hrir_list, status, hrir_metadata_list = hrir_processing.load_hrirs_list(hrtf_dict_list=hrtf_dict_list, spatial_res=spatial_res, direction_fix_gui=hrtf_direction_misalign_comp, 
-                                                                                gui_logger=gui_logger, apply_lf_suppression=hrtf_low_freq_suppression)
+                                                                                gui_logger=gui_logger, brir_meta_dict=brir_meta_dict)
         if status != 0 or not hrir_list:
             raise ValueError(f"Failed to load HRIR dataset: {brir_hrtf_short}")
             
@@ -651,7 +656,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
        
         #integreate low frequency BRIRs into BRIRs. Only perform if enabled 
         if CN.ENABLE_SUB_INTEGRATION == True and f_crossover_var >= CN.MIN_FILT_FREQ:
-        
+     
             sub_brir_align(sub_brir_ir, n_fft, f_crossover_var, brir_sample, initial_removal_win_sub, order_var)
             
             if report_progress > 0:
@@ -677,6 +682,8 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                            for elev in range(total_elev_hrir)]
                 for future in concurrent.futures.as_completed(futures):
                     future.result()  # Optionally, handle exceptions
+                    
+    
 
         log_string = 'Applying EQ'
         hf.log_with_timestamp(log_string, gui_logger)
@@ -713,7 +720,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 brir_fft_avg_db = np.add(brir_fft_avg_db,result)
         #divide by total number of elevations
         brir_fft_avg_db = brir_fft_avg_db/num_results_avg
-        # Limit maximum boost to +10 dB
+        # Limit maximum boost to +X dB
         brir_fft_avg_db = np.clip(brir_fft_avg_db, np.median(brir_fft_avg_db)-20.0, np.median(brir_fft_avg_db)+40.0)
         #convert to mag
         brir_fft_avg_mag = hf.db2mag(brir_fft_avg_db)      
@@ -743,7 +750,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
                 
         #create min phase FIR
         if brir_df_cal_mode == CN.BRIR_DF_CAL_MODE_LIST[0]:
-            brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=4096, n_fft=CN.N_FFT)
+            brir_df_inv_fir = hf.build_min_phase_filter(smoothed_mag=brir_fft_avg_mag_inv,  truncate_len=gen_fir_length, n_fft=CN.N_FFT)#v4.0.0 truncate_len=4096
         elif brir_df_cal_mode == CN.BRIR_DF_CAL_MODE_LIST[1]:
             # 1. Define your impulse (e.g., 8192 samples long)
             n_fft_param = 8192 
@@ -797,7 +804,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
  
         #merge filters into single EQ filter
         eq_filter = brir_df_inv_fir
-        for f in (room_target_fir, pinna_comp_fir, data_lf_comp_eq):
+        for f in (room_target_fir, pinna_comp_fir, data_lf_comp_eq, brir_elf_fir):
             if f is not None:
                 eq_filter = sp.signal.convolve(eq_filter, f, mode='full', method='auto')
         
@@ -1060,19 +1067,18 @@ def integrate_sub_brirs(brir_out, elev, n_fft, total_azim_hrir, direction_matrix
 
 
 
-
-
-
         
    
 
 
-def process_mono_cues_v5(gui_logger=None):
+
+def process_mono_cues(gui_logger=None):
     """
-    Condensed function to perform statistical analysis on monoaural cues.
+    Refined function: Generates separate Headphone Compensation and 
+    Equal Loudness (Perceptual) datasets.
     """
     from ash_toolset import pyquadfilter
-    
+
     try:
         n_fft = CN.N_FFT
         fir_length = 1024
@@ -1081,14 +1087,14 @@ def process_mono_cues_v5(gui_logger=None):
         impulse = np.zeros(n_fft)
         impulse[0] = 1
 
-        # --- Helpers ---
-        def load_wav_mag(fname, n_fft=n_fft):
+        # --- Internal Helpers ---
+        def load_wav_mag(fname):
             sr, data = hf.read_wav_file(pjoin(CN.DATA_DIR_INT, fname))
             fir = np.zeros(n_fft)
-            fir[:1024] = data[:1024]
+            fir[:min(len(data), 1024)] = data[:min(len(data), 1024)]
             return hf.mag2db(np.abs(np.fft.fft(fir)))
 
-        def load_npy_avg_mag(folder, fr_flat_db=fr_flat_db):
+        def load_npy_avg_mag(folder):
             avg_db = fr_flat_db.copy()
             count = 0
             for root, _, files in os.walk(folder):
@@ -1096,145 +1102,150 @@ def process_mono_cues_v5(gui_logger=None):
                     if f.endswith('.npy'):
                         avg_db += hf.mag2db(np.load(pjoin(root, f)))
                         count += 1
-            avg_db /= count
+            avg_db /= max(count, 1)
             mag = hf.db2mag(avg_db)
             mag = hf.level_spectrum_ends(mag, level_f_a, level_f_b, smooth_win=20)
-            return hf.smooth_freq_octaves(mag, n_fft=n_fft, win_size_base=20)
+            return hf.smooth_gaussian_octave(data=mag, n_fft=n_fft, fraction=6)
 
-        def diff_mag(a, b, eq_db=None, eq_scale=1.0):
-            diff_db = hf.mag2db(a) - hf.mag2db(b)
-            if eq_db is not None:
-                diff_db -= eq_db * eq_scale
-            return hf.db2mag(diff_db)
-
-        def weighted_avg(mags, weights, fr_flat_db=fr_flat_db):
-            avg_db = fr_flat_db.copy()
-            for mag, w in zip(mags, weights):
-                avg_db += hf.mag2db(mag) * w
-            return hf.db2mag(avg_db)
-
-        def apply_peaking_filters(filter_seq, impulse, samp_freq):
-            fir = np.copy(impulse)
+        def apply_peaking_filters(filter_seq, impulse_in, samp_freq):
+            fir_out = np.copy(impulse_in)
             for f in filter_seq:
                 pyquad = pyquadfilter.PyQuadFilter(samp_freq)
                 pyquad.set_params("peaking", f['fc'], f['q'], f['gain_db'])
-                fir = pyquad.filter(fir)
-            return fir
+                fir_out = pyquad.filter(fir_out)
+            return fir_out
 
-        # --- Load in-ear EQ ---
-        in_ear_eq_db = load_wav_mag('diffuse_field_eq_for_in_ear_headphones.wav')
+        # --- 1. Load & Process Base Mags ---
+        # Note: in_ear_eq_db is kept if needed for future logic, but high-strength vars are gone.
+        hp_cue_mean_mag = {m: load_npy_avg_mag(pjoin(CN.DATA_DIR_INT, 'mono_cues', 'hp_cues', f)) 
+                           for m, f in zip(['onear', 'overear', 'inear'], ['on_ear', 'over_ear', 'in_ear'])}
 
-        # --- Load HP cues ---
-        hp_cue_mean_mag = {}
-        for mode, folder in zip(['onear', 'overear', 'inear'], ['on_ear', 'over_ear', 'in_ear']):
-            path = pjoin(CN.DATA_DIR_INT, 'mono_cues', 'hp_cues', folder)
-            hp_cue_mean_mag[mode] = load_npy_avg_mag(path)
-            if CN.PLOT_ENABLE:
-                hf.plot_data(hp_cue_mean_mag[mode], f'hp_cue_{mode}_mean_mag (derived from headphone measurements)', normalise=1)
+        # Difference curve between Over-Ear and In-Ear
+        oe_ie_diff_mag = hf.db2mag(hf.mag2db(hp_cue_mean_mag['overear']) - hf.mag2db(hp_cue_mean_mag['inear']))
 
-        # --- Differences ---
-        hp_cue_overear_diff_mean_mag = diff_mag(hp_cue_mean_mag['overear'], hp_cue_mean_mag['inear'])
-
-        # --- Pinna compensation FIR ---
+        # Load Pinna Reference
         pinna_fir = np.zeros(n_fft)
         pinna_short = np.load(pjoin(CN.DATA_DIR_INT, 'headphone_pinna_comp_fir.npy'))
         pinna_fir[:4096] = pinna_short[:4096]
         pinna_comp_pos = hf.db2mag(-hf.mag2db(np.abs(np.fft.fft(pinna_fir))))
-        if CN.PLOT_ENABLE:
-            hf.plot_data(hp_cue_overear_diff_mean_mag, 'hp_cue_overear_diff_mean_mag ( over - in difference curve)', normalise=1)
-            hf.plot_data(pinna_comp_pos, 'pinna_comp_pos (Original Over ear HP Ear interactions, low strength)', normalise=1)
 
-        # --- Over-in-ear difference FIR ---
-        new_diff_data = hf.read_wav_file(pjoin(CN.DATA_DIR_INT, 'over_minus_in_avg.wav'))[1][:1024]
-        new_over_in_ear_diff_mag = np.abs(np.fft.fft(np.pad(new_diff_data, (0, n_fft-1024))))
-        if CN.PLOT_ENABLE:
-            hf.plot_data(new_over_in_ear_diff_mag, 'new_over_in_ear_diff_mag (Over ear HP Ear interactions, over - in difference curve)', normalise=1)
-            
-        # --- Over-in-ear difference FIR V2 ---
-        new_diff_data_v2 = hf.read_wav_file(pjoin(CN.DATA_DIR_INT, 'over_minus_in_avg_selected_sources.wav'))[1][:1024]
-        new_over_in_ear_diff_mag_v2 = np.abs(np.fft.fft(np.pad(new_diff_data_v2, (0, n_fft-1024))))
-        if CN.PLOT_ENABLE:
-            hf.plot_data(new_over_in_ear_diff_mag_v2, 'new_over_in_ear_diff_mag_v2 (Over ear HP Ear interactions, over - in difference curve)', normalise=1)
+        # External Over-minus-In difference curves
+        new_diff_mag = np.abs(np.fft.fft(np.pad(hf.read_wav_file(pjoin(CN.DATA_DIR_INT, 'over_minus_in_avg.wav'))[1][:1024], (0, n_fft-1024))))
+        new_diff_mag_v2 = np.abs(np.fft.fft(np.pad(hf.read_wav_file(pjoin(CN.DATA_DIR_INT, 'over_minus_in_avg_selected_sources.wav'))[1][:1024], (0, n_fft-1024))))
 
-        # --- Weighted HP estimates ---
-        hp_est_avg_mag = weighted_avg([pinna_comp_pos, hp_cue_overear_diff_mean_mag, new_over_in_ear_diff_mag, new_over_in_ear_diff_mag_v2],
-                                     [0.45, 0.25, 0.05, 0.25])#[0.64, 0.31, 0.05]
+        # --- 2. Build Derived Curves ---
+        # HP Estimate (Weighted average for Over-Ear interaction)
+        hp_est_avg_mag = hf.db2mag(
+            0.25 * hf.mag2db(pinna_comp_pos) + 
+            0.40 * hf.mag2db(oe_ie_diff_mag) + 
+            0.10 * hf.mag2db(new_diff_mag) + 
+            0.25 * hf.mag2db(new_diff_mag_v2)
+        )
+        
+        # --- NEW: Plotting Base Components ---
+        if CN.PLOT_ENABLE:
+            base_components = [
+                (pinna_comp_pos, "Pinna Comp Pos (Reference)"),
+                (oe_ie_diff_mag, "OE-IE Mean Difference"),
+                (new_diff_mag, "External Over-In Avg"),
+                (new_diff_mag_v2, "External Over-In Selected Sources")
+            ]
+            for mag, title in base_components:
+                hf.plot_data(mag.flatten(), title_name=f"BASE COMP: {title}", normalise=1)
 
-        # --- Additional EQ ---
         over_ear_add_eq_mag = hf.db2mag(-load_wav_mag('additional_comp_for_over_&_on_ear_headphones.wav'))
-        in_ear_add_eq_db = -load_wav_mag('additional_comp_for_in_ear_headphones.wav')
+        
+        # Headphone Comp Bases
+        over_ear_low_db = hf.mag2db(hp_est_avg_mag)
 
-        in_ear_high_db = in_ear_add_eq_db #- in_ear_eq_db*0.5 #< no longer required
-        in_ear_low_db = 0.5 * in_ear_add_eq_db
-
-        #over_ear_high_mag = weighted_avg([hp_est_avg_mag, over_ear_add_eq_mag], [0.5, 0.5])
-        over_ear_low_mag = hp_est_avg_mag.copy()
-        over_ear_low_db = hf.mag2db(over_ear_low_mag)
-
-
-        # --- Multi-stage peaking filters (OE HS compensation) ---
+        # Equal Loudness (ELF) Base
         hs_filters = {
-            'a': [{'fc': 2100, 'q': 2.0, 'gain_db': -4.0}, {'fc': 4000, 'q': 2.0, 'gain_db': 2.0}],
-            'b': [{'fc': 2200, 'q': 3.0, 'gain_db': -4.0}, {'fc': 5500, 'q': 2.5, 'gain_db': 1.5},
-                  {'fc': 6500, 'q': 3.0, 'gain_db': 3.0}, {'fc': 10200, 'q': 6.0, 'gain_db': -4.0},
-                  {'fc': 7500, 'q': 5.0, 'gain_db': 2.0}],
-            'c': [{'fc': 2900, 'q': 2.5, 'gain_db': -5.0}, {'fc': 5500, 'q': 2.0, 'gain_db': 2.0},
-                  {'fc': 5000, 'q': 3.0, 'gain_db': 1.5}, {'fc': 3400, 'q': 5.0, 'gain_db': 2.0},
-                  {'fc': 10500, 'q': 5.0, 'gain_db': -3.0}],
-            'd': [{'fc': 3000, 'q': 2.0, 'gain_db': -6.0}, {'fc': 1500, 'q': 3.0, 'gain_db': 1.5}, {'fc': 5900, 'q': 3.0, 'gain_db': 3.5},
-                  {'fc': 4500, 'q': 3.0, 'gain_db': 2.5}, {'fc': 9500, 'q': 7.0, 'gain_db': -4.0}, {'fc': 3600, 'q': 5.0, 'gain_db': -2.0},
-                  {'fc': 10800, 'q': 4.0, 'gain_db': -2.0}, {'fc': 7700, 'q': 7.0, 'gain_db': 2.0}, {'fc': 6300, 'q': 7.0, 'gain_db': 1.0}],
-            'e': [{'fc': 1400, 'q': 2.5, 'gain_db': 1.0}, {'fc': 2100, 'q': 4.0, 'gain_db': -2.5}, {'fc': 2800, 'q': 2.5, 'gain_db': -3.0},
-                  {'fc': 4500, 'q': 4.0, 'gain_db': -3.0}, {'fc': 5900, 'q': 2.0, 'gain_db': 1.0}, {'fc': 6600, 'q': 8.0, 'gain_db': -1.5},
-                  {'fc': 7200, 'q': 4.0, 'gain_db': 4.0}, {'fc': 8200, 'q': 4.0, 'gain_db': 2.0}, {'fc': 10100, 'q': 9.0, 'gain_db': -7.0}, {'fc': 11000, 'q': 7.0, 'gain_db': -5.0}]
+                    # 'a': [{'fc': 2100, 'q': 2.0, 'gain_db': -4.0}, {'fc': 4000, 'q': 2.0, 'gain_db': 2.0}],
+                    'b': [{'fc': 2200, 'q': 3.0, 'gain_db': -4.0}, {'fc': 5500, 'q': 2.5, 'gain_db': 1.5},
+                          {'fc': 6500, 'q': 3.0, 'gain_db': 3.0}, {'fc': 10200, 'q': 6.0, 'gain_db': -4.0},
+                          {'fc': 7500, 'q': 5.0, 'gain_db': 2.0}],
+                    'c': [{'fc': 2900, 'q': 2.5, 'gain_db': -5.0}, {'fc': 5500, 'q': 2.0, 'gain_db': 2.0},
+                          {'fc': 5000, 'q': 3.0, 'gain_db': 1.5}, {'fc': 3400, 'q': 5.0, 'gain_db': 2.0},
+                          {'fc': 10500, 'q': 5.0, 'gain_db': -3.0}],
+                    'd': [{'fc': 3000, 'q': 2.0, 'gain_db': -6.0}, {'fc': 1500, 'q': 3.0, 'gain_db': 1.5}, {'fc': 5900, 'q': 3.0, 'gain_db': 3.5},
+                          {'fc': 4500, 'q': 3.0, 'gain_db': 2.5}, {'fc': 9500, 'q': 7.0, 'gain_db': -4.0}, {'fc': 3600, 'q': 5.0, 'gain_db': -2.0},
+                          {'fc': 10800, 'q': 4.0, 'gain_db': -2.0}, {'fc': 7700, 'q': 7.0, 'gain_db': 2.0}, {'fc': 6300, 'q': 7.0, 'gain_db': 1.0}],
+                    'e': [{'fc': 1400, 'q': 2.5, 'gain_db': 1.0}, {'fc': 2100, 'q': 4.0, 'gain_db': -2.5}, {'fc': 2800, 'q': 2.5, 'gain_db': -3.0},
+                          {'fc': 4500, 'q': 4.0, 'gain_db': -3.0}, {'fc': 5900, 'q': 2.0, 'gain_db': 1.0}, {'fc': 6600, 'q': 8.0, 'gain_db': -1.5},
+                          {'fc': 7200, 'q': 4.0, 'gain_db': 4.0}, {'fc': 8200, 'q': 4.0, 'gain_db': 2.0}, {'fc': 10100, 'q': 9.0, 'gain_db': -7.0}, {'fc': 11000, 'q': 7.0, 'gain_db': -5.0}]
+                }
+        
+        oe_hs_comp_mags = []
+        for seq in hs_filters.values():
+            fir = apply_peaking_filters(seq, impulse, CN.SAMP_FREQ)
+            oe_hs_comp_mags.append(hf.mag2db(np.abs(np.fft.fft(fir, n=n_fft))))
+
+        oe_hs_comp_avg_db = np.mean(oe_hs_comp_mags, axis=0) * -1 #will be inverted once more, returning original curve
+        oe_hs_new_avg_db = (oe_hs_comp_avg_db * 0.70) + (hf.mag2db(over_ear_add_eq_mag) * 0.30)
+        
+        in_ear_high_db = (-load_wav_mag('additional_comp_for_in_ear_headphones.wav'))
+
+        # --- 3. Final Export Preparation ---
+        # Collection 1: Headphone Comp (Flat, Flat/None, Over-Ear Low)
+        hp_comp_mags = [np.zeros(n_fft), np.zeros(n_fft), over_ear_low_db]
+        hp_comp_labels = ["None", "In-Ear (Flat Interaction)", "Over-Ear Low"]
+
+        # Collection 2: Equal Loudness (Flat, In-Ear high/Perceptual, OE HS Avg)
+        elf_mags = [np.zeros(n_fft), in_ear_high_db, oe_hs_new_avg_db]
+        elf_labels = ["None", "In-Ear Perceptual", "Over-Ear Perceptual"]
+
+        # --- 4. Plotting Export Curves ---
+        if CN.PLOT_ENABLE:
+            # Helper to handle the 1D conversion and plot both states
+            def plot_pair(mag_db, label, category):
+                # 1. Plot the "Natural" interaction curve (as measured)
+                hf.plot_data(
+                    hf.db2mag(mag_db).flatten(), 
+                    title_name=f"{category} INTERACTION: {label}", 
+                    normalise=1
+                )
+                # 2. Plot the "Inverted" compensation curve (as applied by FIR)
+                # This is what build_min_phase_filter actually uses: hf.db2mag(-mag_db)
+                hf.plot_data(
+                    hf.db2mag(-mag_db).flatten(), 
+                    title_name=f"{category} COMPENSATION (INVERTED): {label}", 
+                    normalise=1
+                )
+
+            # Plot Headphone Compensation pairs
+            for mag_db, label in zip(hp_comp_mags, hp_comp_labels):
+                plot_pair(mag_db, label, "HP COMP")
+
+            # Plot Equal Loudness pairs
+            for mag_db, label in zip(elf_mags, elf_labels):
+                plot_pair(mag_db, label, "ELF")
+
+        # --- 5. Export to FIR ---
+        # Using .flatten() here as well to ensure build_min_phase_filter 
+        # receives a clean 1D magnitude vector.
+        hp_comp_npy = np.array([
+            hf.build_min_phase_filter(hf.db2mag(-m).flatten(), truncate_len=fir_length) 
+            for m in hp_comp_mags
+        ])
+        
+        elf_npy = np.array([
+            hf.build_min_phase_filter(hf.db2mag(-m).flatten(), truncate_len=fir_length) 
+            for m in elf_mags
+        ])
+
+        # Save Logic
+        paths = {
+            'hp': pjoin(CN.DATA_DIR_INT, 'headphone_comp', 'headphone_ear_comp_dataset_new.npy'),
+            'elf': pjoin(CN.DATA_DIR_INT, 'loudness_comp', 'loudness_comp_dataset_new.npy')
         }
 
-        oe_hs_comp_mag = {}
-        for key, seq in hs_filters.items():
-            fir = apply_peaking_filters(seq, impulse, CN.FS)
-            data_fft = np.fft.fft(fir[0][:n_fft] if fir.ndim > 1 else fir[:n_fft])
-            oe_hs_comp_mag[key] = hf.mag2db(np.abs(data_fft))
-            if CN.PLOT_ENABLE:
-                hf.plot_data(np.abs(data_fft), f'oe_hs_comp_{key}_mag', normalise=1)
-
-        # Weighted average of HS comp a/b/c
-        oe_hs_comp_avg_db = np.sum([oe_hs_comp_mag[k]*w for k, w in zip(['a','b','c','d','e'], [0.17,0.17,0.17,0.29,0.20])], axis=0) * -1#0.4,0.3,0.3 - 0.25,0.15,0.15,0.45
-        oe_hs_new_avg_db = np.sum([oe_hs_comp_avg_db*0.70, hf.mag2db(over_ear_add_eq_mag)*0.30], axis=0)
-        
-        # --- Final over-ear curves ---
-        over_ear_high_db = hf.mag2db(hp_est_avg_mag) + oe_hs_new_avg_db
-        
-        if CN.PLOT_ENABLE:
-            oe_hs_comp_avg_mag = hf.db2mag(oe_hs_comp_avg_db)
-            oe_hs_new_avg_mag = hf.db2mag(oe_hs_new_avg_db)
-            oe_hs_new_avg_mag_inv = hf.db2mag(oe_hs_new_avg_db*-1)
-            over_ear_high_mag = hf.db2mag(over_ear_high_db)
-            in_ear_high_mag = hf.db2mag(in_ear_high_db)
-            in_ear_low_mag = hf.db2mag(in_ear_low_db)
+        for p in paths.values():
+            Path(p).parent.mkdir(exist_ok=True, parents=True)
             
-            hf.plot_data(hp_est_avg_mag, 'hp_est_avg_mag (Over ear HP Ear interactions, low strength)', normalise=1)
-            hf.plot_data(over_ear_add_eq_mag, 'over_ear_add_eq_mag (Over ear additional interactions v1)', normalise=1)
-            hf.plot_data(oe_hs_comp_avg_mag, 'oe_hs_comp_avg_mag (Over ear additional interactions v2)', normalise=1)
-            hf.plot_data(oe_hs_new_avg_mag, 'oe_hs_new_avg_mag (Over ear additional interactions v3 avg)', normalise=1)
-            hf.plot_data(oe_hs_new_avg_mag_inv, 'oe_hs_new_avg_mag_inv (Over ear additional interactions inverted)', normalise=1)
-            hf.plot_data(over_ear_high_mag, 'over_ear_high_mag (Over ear HP Ear interactions, high strength)', normalise=1)
-            hf.plot_data(in_ear_low_mag, 'in_ear_high_mag (In ear HP Ear interactions, low strength)', normalise=1)
-            hf.plot_data(in_ear_high_mag, 'in_ear_low_mag (In ear HP Ear interactions, high strength)', normalise=1)
+        np.save(paths['hp'], hp_comp_npy)
+        np.save(paths['elf'], elf_npy)
 
-        
-
-        # --- Prepare min-phase inverse FIRs ---
-        mags_to_fir = [in_ear_high_db, in_ear_low_db, over_ear_high_db, over_ear_low_db]
-        npy_out = np.array([hf.build_min_phase_filter(hf.db2mag(-mag), truncate_len=fir_length) for mag in mags_to_fir]
-                           + [np.eye(1, fir_length, 0)[0]])
-
-        # --- Save output ---
-        out_file_path = pjoin(CN.DATA_DIR_INT, 'headphone_ear_comp_dataset.npy')
-        Path(out_file_path).parent.mkdir(exist_ok=True, parents=True)
-        np.save(out_file_path, npy_out)
-        hf.log_with_timestamp(f'Exported numpy file to: {out_file_path}', gui_logger)
+        hf.log_with_timestamp(f"Exported {len(hp_comp_npy)} HP Comp and {len(elf_npy)} ELF filters.", gui_logger)
 
     except Exception as ex:
-        hf.log_with_timestamp('Failed to complete BRIR processing', gui_logger=gui_logger, log_type=2, exception=ex)
-
-
+        hf.log_with_timestamp('Failed to complete mono cue processing', gui_logger=gui_logger, log_type=2, exception=ex)
