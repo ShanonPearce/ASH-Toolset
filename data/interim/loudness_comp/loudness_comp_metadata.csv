@@ -1,0 +1,13 @@
+long_name,short_name
+None,LC-None
+ASH In-Ear,LC-ASH-IE
+ASH Over/On-Ear,LC-ASH-OE
+ISO 226:2003 100 Phons Adjusted (50%),LC-ISO100-50
+ISO 226:2003 100 Phons Adjusted (75%),LC-ISO100-75
+ISO 226:2003 100 Phons Adjusted,LC-ISO100
+ISO 226:2003 80 Phons Adjusted (50%),LC-ISO80-50
+ISO 226:2003 80 Phons Adjusted (75%),LC-ISO80-75
+ISO 226:2003 80 Phons Adjusted,LC-ISO80
+ASH In-Ear Legacy (v4.1.0),LC-ASH-IE-v41
+ASH Over/On-Ear Legacy (v3.7.0),LC-ASH-OE-v37
+ASH Over/On-Ear Legacy (v4.1.0),LC-ASH-OE-v41

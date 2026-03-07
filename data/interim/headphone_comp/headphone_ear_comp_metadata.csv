@@ -1,0 +1,8 @@
+long_name,short_name
+None,HpC-None
+In-Ear (Direct Canal Coupling),HpC-IE
+Over/On-Ear (Near-Field Coupling),HpC-OE
+"Free-Field Reference (KU100, Side)",HpC-FF-KU 
+"Free-Field Reference (Average, Side)",HpC-FF-AVG
+Over/On-Ear Legacy (v3.7.0),HpC-OE-37
+Over/On-Ear Legacy (v4.1.0),HpC-OE-41

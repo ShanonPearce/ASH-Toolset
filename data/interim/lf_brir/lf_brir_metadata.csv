@@ -14,3 +14,4 @@ lf_brir_dataset_l,Low-frequency Response L - 300ms Room,LFR-L,Generalised Room,3
 lf_brir_dataset_m,Low-frequency Response M - 350ms Room,LFR-M,Generalised Room,350,Newly added in v4.0.0,0Hz-150Hz,20Hz-120Hz +/-2.0dB,lf_brir,Derived from multiple RIR Datasets,Mixed,Binaural
 lf_brir_dataset_n,Low-frequency Response N - 450ms Room,LFR-N,Generalised Room,450,Newly added in v4.0.0,0Hz-150Hz,20Hz-120Hz +/-3.0dB,lf_brir,Derived from multiple RIR Datasets,Loudspeaker,Binaural
 lf_brir_dataset_o,Low-frequency Response O - 500ms Room,LFR-O,Generalised Room,500,Newly added in v4.0.0,0Hz-150Hz,20Hz-120Hz +/-3.0dB,lf_brir,Derived from multiple RIR Datasets,Loudspeaker,Binaural
+lf_brir_dataset_p,Low-frequency Response P - Anechoic,LFR-P,Anechoic Chamber,0,Newly added in v4.1.0,0Hz-150Hz,20Hz-120Hz +/-0.0dB,lf_brir,,Virtual,Binaural
