@@ -121,42 +121,41 @@ Steps for customising and applying/exporting a new simulation:
 	- Options: flat, ASH target, Harman target, etc.
 	- Influences overall balance of low and high frequencies.
 	- Flat is recommended if using other headphone correction sources (e.g., AutoEq).
-8. Select Headphone Compensation
-	- Match the listener's headphone type. High strength is default. Reduce to low strength or None if localisation or timbre is compromised.
-		* In-Ear Headphones, high strength
-		* In-Ear Headphones, low strength
-		* Over-Ear/On-Ear Headphones, high strength
-		* Over-Ear/On-Ear Headphones, low strength
-		* None
-9. Optional: Low-frequency Integration Crossover Frequency
+8. Select Driver-to-Ear Interaction
+	- Compensates for the unique acoustic interaction between the headphone driver and the outer ear (pinna). 
+	- This establishes a neutral baseline for accurate spatialization and externalization.
+9. Optional: Select Loudness Compensation
+	- Adjusts tonal balance based on human equal-loudness perception. It compensates for frequency-dependent hearing sensitivity.
+10. Optional: Low-frequency Integration Crossover Frequency
 	- Range: 0 Hz to 150 Hz.
 	- Auto Select chooses an optimal value for the selected acoustic space.
 	- Tunes integration of cleaner low-frequency response with original room response. Higher values may result in a smoother bass response. Set to 0Hz to disable this feature.
-10. Select Low-frequency Response for Extension
+11. Select Low-frequency Response for Extension
 	- Select from a set of generalised low frequency binaural responses sourced from a range of real world acoustic measurements.  
 	- Provides clean extension and/or replacement of low frequencies due to limited range and varying quality of original measurements. 
 	- Compare responses in the reference tables tab. 
-11. Optional: Enable Additional EQ
+12. Optional: Enable Additional EQ
 	- Compensate Headphone Roll-off: adds ~4 dB at 20 Hz.
-12. Select Sample Rate
+13. Select Sample Rate
 	- Options: 44.1 kHz, 48 kHz, 96 kHz.
 	- Must match playback device.
-13. Select Bit Depth
+14. Select Bit Depth
 	- Options: 24 bit, 32 bit.
-14. (Quick Config Tab Only) Apply Parameters
+15. (Quick Config Tab Only) Apply Parameters
 	- Click the apply button in the "Quick Config - Equalizer APO" tab to apply the simulation in Equalizer APO.
 Simulation Export tab:
-15. (Export Tab Only) Select Spatial Resolution
+16. (Export Tab Only) Select Spatial Resolution
 	- Low: Elevation -30 to 30° in 15° steps, Azimuth 0 to 360° in varying steps.
 	- Medium: Elevation -45 to 45° in 15° steps, Azimuth 0 to 360°.
 	- High: Elevation -50° (WAV) or -60° (SOFA) in 5° steps, Azimuth 0 to 360° in 5° steps.
-16. (Export Tab Only) Select which files to export
+17. (Export Tab Only) Select which files to export
 	- Direction-specific WAV BRIRs: one file per source direction, 2 channels.
 	- True Stereo WAV BRIRs: one file, 4 channels (LL, LR, RL, RR). Compatible with EasyEffects.
 	- HeSuVi WAV BRIRs: 14 channels, 24/32 bit, 44.1/48 kHz. Directions configurable in HeSuVi tab.
 	- 16 Channel WAV BRIRs: FFMPEG-compatible, 16 channels, configurable in HeSuVi tab.
 	- SOFA File: BRIR dataset in SOFA format. Convention selectable in Additional Settings.
-17. (Export Tab Only) Click the export button to export the binaural dataset to the output folder.
+18. (Export Tab Only) Click the export button to export the binaural dataset to the output folder.
+
     
 ---
 ### Using the Correction Filters and Binaural Simulations
@@ -238,11 +237,19 @@ Steps for importing and processing acoustic spaces:
 		* Single: Assigns exactly one measurement (or L/R pair) to each virtual speaker.
 	- Alignment Frequency (Hz): Cutoff frequency for time-domain alignment.
 		* Minimum: 50, Maximum: 150
+	- Min. Shift Limit: Maximum negative time shift allowed (in half-cycles) to achieve phase alignment.
+		* Minimum: -6, Maximum: -1
+	- Max. Shift Limit: Maximum positive time shift allowed (in half-cycles) to achieve phase alignment.
+		* Minimum: 0, Maximum: 6
+	- Search Offset (Samples): Starting sample for the alignment window. Enforces a minimum delay by skipping early samples, forcing the global maxima to occur later in the IR.
+		* Minimum: 0, Maximum: 1000
 5. (Optional) Configure Dataset Expansion and Correction
 	- Spatial Expansion Method: Expands sparse datasets to increase spatial resolution and density. Not applicable for binaural measurements.
+	- Randomization Seed: Sets the seed for the random number generator. 0: Non-deterministic (New random result every render). 1+: Fixed seed (Reproducible results for the same value).
 	- Pitch Shift Range: Maximum pitch shift in semitones (0.0 to 24.0).
 	- Pitch Shift Correction: Corrects magnitude response after dataset expansion.
 	- Decay Curve Correction: Restores direct-to-reverberation ratios to original levels after expansion.
+	- Decay Correction Strength: Adjust strength of Decay Curve Correction. Set to 1.0 for dynamic calculation. Typical range: 3.0-4.0.
 6. (Optional) Configure Room Geometry
 	- Room Corner Angle (degrees): Defines the angle to the front-left and front-right corners. 45 degrees is square; 60 degrees is wide and shallow; 30 degrees is narrow and deep.
 	- Reflection Spread: Controls the focus of corner reflections. Low (5 - 15): Sharp, pinpoint corners. Medium (20 - 45): Balanced, natural room feel. High (60+): Diffuse, scattered reflections.
