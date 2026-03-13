@@ -1166,16 +1166,17 @@ def convert_airs_to_brirs(
 
         
         #set number of output directions (brir sources) 
-        if auto_shape_output:#derive based on number of measurements
-            if subwoofer_mode == True:#only 1 set required if subwoofer response
-                num_brir_sources=1
-            elif total_measurements < CN.IR_MIN_THRESHOLD_FULLSET:#limited number of measurements
-                num_brir_sources = max(2, total_measurements // 250)#calculate one source per 250 measurements
-            else:
-                num_brir_sources = max(2, total_measurements // 360)#calculate one source per 360 measurements
-            
-        else:#manual shape mode -> use when called by AS import tool
-            num_brir_sources = virtual_speakers
+        if subwoofer_mode == True:#only 1 set required if subwoofer response
+            num_brir_sources=1
+        else:
+            if auto_shape_output:#derive based on number of measurements
+                if total_measurements < CN.IR_MIN_THRESHOLD_FULLSET:#limited number of measurements
+                    num_brir_sources = max(2, total_measurements // 250)#calculate one source per 250 measurements
+                else:
+                    num_brir_sources = max(2, total_measurements // 360)#calculate one source per 360 measurements
+                
+            else:#manual shape mode -> use when called by AS import tool
+                num_brir_sources = virtual_speakers
    
         log_string_a = 'num_brir_sources: ' + str(num_brir_sources)
         hf.log_with_timestamp(log_string_a)

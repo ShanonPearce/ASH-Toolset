@@ -2057,7 +2057,7 @@ def main():
                                         dpg.add_checkbox(label="Enable", tag="as_subwoofer_mode",default_value=loaded_values["as_subwoofer_mode"])
                                         with dpg.tooltip("as_subwoofer_mode"):
                                             dpg.add_text("Enable to treat the IRs as low-frequency responses")
-                                            dpg.add_text("The result will appear under low-frequency extension options")
+                                            dpg.add_text("The result will appear under low-frequency extension options instead of acoustic space options")
                                             
                                     # ---------- Binaural Measurements ----------
                                     with dpg.table_row():

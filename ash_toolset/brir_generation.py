@@ -190,7 +190,7 @@ def generate_integrated_brir(brir_name,  spatial_res=1, report_progress=0, gui_l
         if sub_folder == 'sub' or sub_folder == 'lf_brir':#default sub responses
             npy_fname = pjoin(CN.DATA_DIR_SUB, sub_file_name+'.npy')
         else:#user sub response
-            file_folder = pjoin(CN.DATA_DIR_AS_USER,sub_response)
+            file_folder = pjoin(CN.DATA_DIR_AS_USER, sub_response.replace(" ", "_") )
             npy_fname = pjoin(file_folder, sub_file_name+'.npy')
         sub_brir_npy = hf.load_convert_npy_to_float64(npy_fname)
         sub_brir_ir = np.zeros((2,n_fft))

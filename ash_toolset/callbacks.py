@@ -2105,7 +2105,7 @@ def plot_sub_brir(name, plot_dest,plot_type):
         if sub_folder in ('sub', 'lf_brir'):  # default sub responses
             npy_fname = pjoin(CN.DATA_DIR_SUB, sub_file_name + '.npy')
         else:  # user-provided sub response
-            file_folder = pjoin(CN.DATA_DIR_AS_USER, name)
+            file_folder = pjoin(CN.DATA_DIR_AS_USER, name.replace(" ", "_"))
             npy_fname = pjoin(file_folder, sub_file_name + '.npy')
 
         sub_brir_npy = hf.load_convert_npy_to_float64(npy_fname)
