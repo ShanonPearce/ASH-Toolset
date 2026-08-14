@@ -1269,12 +1269,15 @@ def apply_eq_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, hrir_
         total_azim_hrir (int): Total number of azimuths
         hrir_df_inv_fir (np.ndarray): EQ filter to apply
     """
-    for azim in range(total_azim_hrir):
-        for chan in range(CN.TOTAL_CHAN_BRIR):
-            # Convolve HRIR with EQ filter
-            hrir_eq = sp.signal.convolve(hrir_out[elev, azim, chan, :], hrir_df_inv_fir, mode='full')
-            # Truncate or pad to original length
-            hrir_out[elev, azim, chan, :] = hrir_eq[:total_samples_hrir]
+    # Only the leading total_samples_hrir taps of the filter can contribute to the
+    # first total_samples_hrir output samples, which is all that is kept below.
+    eq_fir = hrir_df_inv_fir[:total_samples_hrir]
+
+    # Convolve all azimuths and channels for this elevation in one pass
+    hrir_block = hrir_out[elev, :total_azim_hrir, :CN.TOTAL_CHAN_BRIR, :]
+    hrir_eq = sp.signal.fftconvolve(hrir_block, eq_fir[None, None, :], mode='full', axes=-1)
+    # Truncate or pad to original length
+    hrir_out[elev, :total_azim_hrir, :CN.TOTAL_CHAN_BRIR, :] = hrir_eq[..., :total_samples_hrir]
 
 
 
@@ -1290,12 +1293,12 @@ def apply_hp_to_hrirs(hrir_out, elev, total_samples_hrir, total_azim_hrir, hp_so
         total_azim_hrir (int): Total number of azimuths
         hp_sos (np.ndarray): SOS filter coefficients for high-pass filter
     """
-    for azim in range(total_azim_hrir):
-        for chan in range(CN.TOTAL_CHAN_BRIR):
-            # Apply high-pass filter
-            hrir_filtered = hf.apply_sos_filter(hrir_out[elev, azim, chan, :], hp_sos, filtfilt=filtfilt)
-            # Truncate or pad to original length
-            hrir_out[elev, azim, chan, :] = hrir_filtered[:total_samples_hrir]
+    # Filter all azimuths and channels for this elevation in one pass
+    hrir_block = hrir_out[elev, :total_azim_hrir, :CN.TOTAL_CHAN_BRIR, :]
+    # Apply high-pass filter
+    hrir_filtered = hf.apply_sos_filter(hrir_block, hp_sos, filtfilt=filtfilt, axis=-1)
+    # Truncate or pad to original length
+    hrir_out[elev, :total_azim_hrir, :CN.TOTAL_CHAN_BRIR, :] = hrir_filtered[..., :total_samples_hrir]
 
 
 
