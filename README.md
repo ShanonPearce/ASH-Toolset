@@ -68,7 +68,7 @@ Required libraries:
     rapidfuzz==3.9.3
     pyfar==0.6.5
     Requests==2.32.5
-    scipy==1.11.4
+    scipy>=1.15.0
     sofar==1.1.3
     SOFASonix==1.0.7
     sounddevice==0.5.3
